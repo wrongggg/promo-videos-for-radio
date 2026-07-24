@@ -1,0 +1,11 @@
+{
+  "name": "hyperframes-rendering",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "HYPERFRAMES_BROWSER_PATH=chrome-headless-shell/linux-152.0.7969.0/chrome-headless-shell-linux64/chrome-headless-shell npx --yes hyperframes@0.7.70 preview",
+    "check": "HYPERFRAMES_BROWSER_PATH=chrome-headless-shell/linux-152.0.7969.0/chrome-headless-shell-linux64/chrome-headless-shell npx --yes hyperframes@0.7.70 check",
+    "render": "HYPERFRAMES_BROWSER_PATH=chrome-headless-shell/linux-152.0.7969.0/chrome-headless-shell-linux64/chrome-headless-shell npx --yes hyperframes@0.7.70 render",
+    "publish": "npx --yes hyperframes@0.7.70 publish"
+  }
+}

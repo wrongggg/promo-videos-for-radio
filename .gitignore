@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.agents/
+agent/
+.claude/
+skills-lock.json
+chrome-headless-shell/
+renders/
+*.mp4
+*.log
+.DS_Store

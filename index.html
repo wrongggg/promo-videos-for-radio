@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Music Showcase 9:16 Template</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #000;
+        color: #fff;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      }
+
+      #root {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #050508;
+      }
+
+      /* Base Scene Styling */
+      .scene {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1080px;
+        height: 1920px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 60px;
+      }
+
+      /* Individual Scene Background Gradients */
+      #scene-1 {
+        background: radial-gradient(circle at center, #1e0b36 0%, #07020d 100%);
+      }
+      #scene-2 {
+        background: radial-gradient(circle at center, #2c0a1c 0%, #0c0208 100%);
+      }
+      #scene-3 {
+        background: radial-gradient(circle at center, #0a242c 0%, #01080a 100%);
+      }
+
+      /* Animated Background Orbs */
+      .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(120px);
+        opacity: 0.4;
+        z-index: 1;
+      }
+      .orb-1 { width: 600px; height: 600px; background: #ff007f; top: 15%; left: 10%; }
+      .orb-2 { width: 500px; height: 500px; background: #00f0ff; bottom: 15%; right: 10%; }
+      .orb-3 { width: 600px; height: 600px; background: #9d4edd; top: 20%; right: 5%; }
+
+      /* Album Artwork Container & Frames */
+      .artwork-wrapper {
+        position: relative;
+        z-index: 5;
+        margin-top: 100px;
+        margin-bottom: 120px;
+        perspective: 1000px;
+      }
+
+      .art-glow {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 600px;
+        height: 600px;
+        border-radius: 40px;
+        filter: blur(40px);
+        opacity: 0.6;
+        z-index: 4;
+      }
+      .art-glow-1 { background: linear-gradient(135deg, #ff007f, #7b2cbf); }
+      .art-glow-2 { background: linear-gradient(135deg, #ffb703, #fb8500); }
+      .art-glow-3 { background: linear-gradient(135deg, #00f0ff, #3a0ca3); }
+
+      .artwork {
+        position: relative;
+        width: 600px;
+        height: 600px;
+        border-radius: 40px;
+        border: 4px solid rgba(255, 255, 255, 0.15);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+        overflow: hidden;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8);
+      }
+
+      .art-neon {
+        background: linear-gradient(135deg, #140526, #3c096c);
+      }
+      .art-cyber {
+        background: linear-gradient(135deg, #24001c, #7209b7);
+      }
+      .art-time {
+        background: linear-gradient(135deg, #03045e, #00b4d8);
+      }
+
+      .artwork-icon {
+        font-size: 180px;
+        filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.5));
+      }
+
+      /* Audio Visualizer Ring Placeholder */
+      .visualizer-ring {
+        position: absolute;
+        top: -40px;
+        left: -40px;
+        width: 680px;
+        height: 680px;
+        border: 2px dashed rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        z-index: 3;
+      }
+
+      /* Text Info Area */
+      .meta-container {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .track-title {
+        font-size: 90px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        color: #ffffff;
+        margin-bottom: 24px;
+        line-height: 1.1;
+        text-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+      }
+
+      .artist-name {
+        font-size: 36px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 12px;
+        color: #00f0ff;
+        text-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
+        margin-bottom: 40px;
+      }
+
+      /* Progress Bar */
+      .progress-container {
+        width: 300px;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, #ff007f, #00f0ff);
+        transform-origin: left center;
+        transform: scaleX(0);
+      }
+
+      /* Common Kinetic Overlay */
+      .scene-indicator {
+        position: absolute;
+        top: 80px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 28px;
+        letter-spacing: 6px;
+        color: rgba(255, 255, 255, 0.4);
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="15"
+      data-width="1080"
+      data-height="1920"
+    >
+      <!-- SCENE 1 (0s to 5s) -->
+      <div id="scene-1" class="clip scene" data-start="0" data-duration="5" data-track-index="0">
+        <!-- Floating orbs -->
+        <div id="orb-1-1" class="orb orb-1"></div>
+        <div id="orb-1-2" class="orb orb-2"></div>
+
+        <div class="scene-indicator">SCENE 01 / 03</div>
+
+        <!-- Artwork visualizer -->
+        <div class="artwork-wrapper">
+          <div id="ring-1" class="visualizer-ring"></div>
+          <div id="glow-1" class="art-glow art-glow-1"></div>
+          <div id="artwork-1" class="artwork art-neon">
+            <div id="icon-1" class="artwork-icon">🎵</div>
+          </div>
+        </div>
+
+        <!-- Text metadata -->
+        <div class="meta-container">
+          <h1 id="title-1" class="track-title">Neon Dreams</h1>
+          <p id="artist-1" class="artist-name">Synthwave Nexus</p>
+          <div class="progress-container">
+            <div id="progress-1" class="progress-bar"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 2 (5s to 10s) -->
+      <div id="scene-2" class="clip scene" data-start="5" data-duration="5" data-track-index="0">
+        <!-- Floating orbs -->
+        <div id="orb-2-1" class="orb orb-3"></div>
+        <div id="orb-2-2" class="orb orb-2" style="background: #fb8500;"></div>
+
+        <div class="scene-indicator">SCENE 02 / 03</div>
+
+        <!-- Artwork visualizer -->
+        <div class="artwork-wrapper">
+          <div id="ring-2" class="visualizer-ring"></div>
+          <div id="glow-2" class="art-glow art-glow-2"></div>
+          <div id="artwork-2" class="artwork art-cyber">
+            <div id="icon-2" class="artwork-icon">🌆</div>
+          </div>
+        </div>
+
+        <!-- Text metadata -->
+        <div class="meta-container">
+          <h1 id="title-2" class="track-title">Cyber City</h1>
+          <p id="artist-2" class="artist-name" style="color: #fb8500; text-shadow: 0 0 15px rgba(251, 133, 0, 0.6);">RetroFuture</p>
+          <div class="progress-container">
+            <div id="progress-2" class="progress-bar"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 3 (10s to 15s) -->
+      <div id="scene-3" class="clip scene" data-start="10" data-duration="5" data-track-index="0">
+        <!-- Floating orbs -->
+        <div id="orb-3-1" class="orb orb-1" style="background: #00f0ff;"></div>
+        <div id="orb-3-2" class="orb orb-3" style="background: #3a0ca3;"></div>
+
+        <div class="scene-indicator">SCENE 03 / 03</div>
+
+        <!-- Artwork visualizer -->
+        <div class="artwork-wrapper">
+          <div id="ring-3" class="visualizer-ring"></div>
+          <div id="glow-3" class="art-glow art-glow-3"></div>
+          <div id="artwork-3" class="artwork art-time">
+            <div id="icon-3" class="artwork-icon">⏳</div>
+          </div>
+        </div>
+
+        <!-- Text metadata -->
+        <div class="meta-container">
+          <h1 id="title-3" class="track-title">Lost In Time</h1>
+          <p id="artist-3" class="artist-name" style="color: #00b4d8; text-shadow: 0 0 15px rgba(0, 180, 216, 0.6);">Chronos</p>
+          <div class="progress-container">
+            <div id="progress-3" class="progress-bar"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // --- Scene 1 Animations (0s to 5s) ---
+      // Artwork & Glow Entrance
+      tl.fromTo("#artwork-1", { scale: 0.4, rotation: -30, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 1.2, ease: "power4.out" }, 0)
+        .fromTo("#glow-1", { scale: 0.3, opacity: 0 }, { scale: 1, opacity: 0.6, duration: 1.5, ease: "power4.out" }, 0)
+        .fromTo("#ring-1", { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, rotation: 45, duration: 1.8, ease: "power3.out" }, 0.2);
+
+      // Icon continuous subtle breathing
+      tl.to("#icon-1", { scale: 1.08, duration: 0.8, yoyo: true, repeat: 5, ease: "sine.inOut" }, 0.5);
+
+      // Orbs breathing background effect
+      tl.to("#orb-1-1", { x: 80, y: -40, duration: 2.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 0)
+        .to("#orb-1-2", { x: -60, y: 50, duration: 2.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 0);
+
+      // Kinetic Texts
+      tl.fromTo("#title-1", { y: 120, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: "power4.out" }, 0.4)
+        .fromTo("#artist-1", { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2, ease: "power3.out" }, 0.6);
+
+      // Progress and Outro Scene 1
+      tl.to("#progress-1", { scaleX: 1, duration: 4.0, ease: "linear" }, 0.5)
+        .to("#artwork-1, #glow-1, #ring-1", { scale: 0.8, opacity: 0, y: -100, duration: 0.8, ease: "power3.in" }, 4.2)
+        .to("#title-1, #artist-1", { opacity: 0, y: -50, duration: 0.6, ease: "power3.in" }, 4.4);
+
+      // Hard kill at boundary
+      tl.set("#artwork-1, #glow-1, #ring-1", { opacity: 0 }, 5.0)
+        .set("#title-1, #artist-1", { opacity: 0 }, 5.0);
+
+
+      // --- Scene 2 Animations (5s to 10s) ---
+      // Artwork & Glow Entrance
+      tl.fromTo("#artwork-2", { scale: 1.5, rotation: 45, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 1.2, ease: "elastic.out(1, 0.75)" }, 5)
+        .fromTo("#glow-2", { scale: 1.3, opacity: 0 }, { scale: 1, opacity: 0.6, duration: 1.5, ease: "power4.out" }, 5)
+        .fromTo("#ring-2", { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 1, rotation: -90, duration: 1.8, ease: "power3.out" }, 5.2);
+
+      // Icon continuous subtle breathing
+      tl.to("#icon-2", { scale: 1.08, duration: 0.8, yoyo: true, repeat: 5, ease: "sine.inOut" }, 5.5);
+
+      // Orbs breathing background effect
+      tl.to("#orb-2-1", { x: -100, y: 80, duration: 2.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 5)
+        .to("#orb-2-2", { x: 120, y: -50, duration: 2.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 5);
+
+      // Kinetic Texts
+      tl.fromTo("#title-2", { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.1, ease: "back.out(1.7)" }, 5.4)
+        .fromTo("#artist-2", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 1.3, ease: "power2.out" }, 5.7);
+
+      // Progress and Outro Scene 2
+      tl.to("#progress-2", { scaleX: 1, duration: 4.0, ease: "linear" }, 5.5)
+        .to("#artwork-2, #glow-2, #ring-2", { scale: 1.2, opacity: 0, y: 100, duration: 0.8, ease: "power3.in" }, 9.2)
+        .to("#title-2, #artist-2", { opacity: 0, y: 50, duration: 0.6, ease: "power3.in" }, 9.4);
+
+      // Hard kill at boundary
+      tl.set("#artwork-2, #glow-2, #ring-2", { opacity: 0 }, 10.0)
+        .set("#title-2, #artist-2", { opacity: 0 }, 10.0);
+
+
+      // --- Scene 3 Animations (10s to 15s) ---
+      // Artwork & Glow Entrance
+      tl.fromTo("#artwork-3", { x: -300, rotation: -15, opacity: 0 }, { x: 0, rotation: 0, opacity: 1, duration: 1.2, ease: "power3.out" }, 10)
+        .fromTo("#glow-3", { x: -300, opacity: 0 }, { x: 0, opacity: 0.6, duration: 1.2, ease: "power3.out" }, 10)
+        .fromTo("#ring-3", { scale: 0.8, opacity: 0 }, { scale: 1, opacity: 1, rotation: 180, duration: 1.6, ease: "power3.out" }, 10.2);
+
+      // Icon continuous subtle breathing
+      tl.to("#icon-3", { scale: 1.08, duration: 0.8, yoyo: true, repeat: 5, ease: "sine.inOut" }, 10.5);
+
+      // Orbs breathing background effect
+      tl.to("#orb-3-1", { x: 50, y: 50, duration: 2.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 10)
+        .to("#orb-3-2", { x: -50, y: -50, duration: 2.5, yoyo: true, repeat: 1, ease: "sine.inOut" }, 10);
+
+      // Kinetic Texts
+      tl.fromTo("#title-3", { x: 150, opacity: 0 }, { x: 0, opacity: 1, duration: 1, ease: "power4.out" }, 10.4)
+        .fromTo("#artist-3", { x: -150, opacity: 0 }, { x: 0, opacity: 1, duration: 1.2, ease: "power4.out" }, 10.6);
+
+      // Progress Scene 3
+      tl.to("#progress-3", { scaleX: 1, duration: 4.5, ease: "linear" }, 10.5);
+
+
+      // Register the main timeline
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
