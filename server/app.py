@@ -9,6 +9,7 @@ from functools import wraps
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 import analytics
@@ -57,6 +58,11 @@ def _load_or_create_secret_key() -> str:
 
 app = Flask(__name__)
 app.secret_key = _load_or_create_secret_key()
+# Railway (and most PaaS) terminate HTTPS at their edge and forward to the
+# container over plain HTTP -- without this, Flask thinks every request is
+# HTTP and generates http:// URLs (breaking Google's redirect_uri match and
+# cookie `Secure` handling). Trust one proxy hop for proto/host.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 JOBS = {}
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
