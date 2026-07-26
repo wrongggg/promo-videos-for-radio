@@ -151,6 +151,10 @@ def _esc(s: str) -> str:
     return html.escape(s or "", quote=True)
 
 
+def _looks_hebrew(text: str) -> bool:
+    return any("֐" <= ch <= "׿" for ch in (text or ""))
+
+
 def _loop_repeat(span: float, cycle: float) -> int:
     """Finite repeat count so a yoyo tween of length `cycle` visibly fills `span`
     seconds. The deterministic frame-seeking renderer forbids repeat: -1."""
@@ -280,8 +284,11 @@ HERO_TO_HEADER_SHOW = {"x": -400, "y": -300, "scale": 0.31}
 HERO_TO_HEADER_EPISODE = {"x": -400, "y": -370, "scale": 0.6}
 
 
-def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float, language: str = "en") -> tuple[str, str]:
-    rtl = ' dir="rtl"' if language == "he" else ""
+def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float) -> tuple[str, str]:
+    # Alignment follows the show/episode name's own script, not the on-screen
+    # language toggle -- an English show name shouldn't right-align just
+    # because Hebrew is selected for the UI strings elsewhere.
+    rtl = ' dir="rtl"' if _looks_hebrew(show_name) or _looks_hebrew(episode_label) else ""
     logo_html = f'<img class="header-logo" src="{_esc(LOGO_PATH)}" alt="logo" />' if LOGO_PATH else ""
     header_html = f"""
       <div id="header" class="clip header" data-start="0" data-duration="{total_duration}" data-track-index="20">
@@ -300,12 +307,12 @@ def _header_html(show_name: str, episode_label: str, total_duration: float, fade
     return header_html, header_js
 
 
-def _hero_html(show_name: str, episode_label: str, language: str = "en") -> tuple[str, str]:
+def _hero_html(show_name: str, episode_label: str) -> tuple[str, str]:
     """Big centered show/episode reveal shown only at the very start of scene 0,
     then flies up and shrinks toward the header's corner as it fades — reads as
     the same text handing off to the persistent header rather than two unrelated
     elements swapping."""
-    rtl = ' dir="rtl"' if language == "he" else ""
+    rtl = ' dir="rtl"' if _looks_hebrew(show_name) or _looks_hebrew(episode_label) else ""
     hero_html = f"""
         <div class="hero-container"{rtl}>
           <div id="hero-show" class="hero-show">{_esc(show_name)}</div>
@@ -411,7 +418,7 @@ def build_composition_html(
         pal = palette[i % len(palette)]
         is_last = i == len(standout) - 1
         audio_duration = scene_duration + OUTRO_DURATION if is_last else None
-        hero = _hero_html(show_name, episode_label, language=language) if i == 0 else None
+        hero = _hero_html(show_name, episode_label) if i == 0 else None
         sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, hero=hero, motion=motion, language=language)
         scenes_html.append(sh)
         media_tags_html.append(mh)
@@ -426,7 +433,7 @@ def build_composition_html(
 
     total_duration = cursor
     header_fade_in_at = HERO_HANDOFF_START + HERO_HANDOFF_DURATION - 0.25
-    header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at, language=language)
+    header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at)
     scenes_js.append(header_js)
     frame_html = _frame_overlay_html(frame, total_duration, palette[0]["accent"])
 
