@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio Promo Video Generator</title>
+    <style>
+        :root {
+            --bg: #08080c;
+            --glass: rgba(255,255,255,0.055);
+            --glass-strong: rgba(255,255,255,0.09);
+            --border: rgba(255,255,255,0.11);
+            --border-soft: rgba(255,255,255,0.07);
+            --text: #f5f5f7;
+            --text-muted: rgba(245,245,247,0.55);
+            --accent: #ff2d92;
+            --accent2: #00e5ff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* --- animated background blobs --- */
+        .blobs { position: fixed; inset: 0; z-index: 0; overflow: hidden; contain: strict; }
+        .blob {
+            position: absolute; border-radius: 50%; opacity: 0.6;
+            will-change: transform; transform: translateZ(0);
+        }
+        .blob1 { width: 46vw; height: 46vw; background: radial-gradient(circle, #ff2d92 0%, rgba(255,45,146,0) 68%); top: -12%; left: -10%; animation: drift1 26s ease-in-out infinite; }
+        .blob2 { width: 40vw; height: 40vw; background: radial-gradient(circle, #00e5ff 0%, rgba(0,229,255,0) 68%); bottom: -14%; right: -8%; animation: drift2 32s ease-in-out infinite; }
+        .blob3 { width: 34vw; height: 34vw; background: radial-gradient(circle, #7b2cbf 0%, rgba(123,44,191,0) 68%); top: 30%; right: 20%; animation: drift3 22s ease-in-out infinite; opacity: 0.4; }
+        @media (prefers-reduced-motion: reduce) {
+            .blob { animation: none; }
+        }
+        @keyframes drift1 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(6vw, 8vh) scale(1.12); }
+        }
+        @keyframes drift2 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-7vw, -6vh) scale(1.08); }
+        }
+        @keyframes drift3 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-5vw, 5vh) scale(0.92); }
+        }
+
+        .layout {
+            position: relative; z-index: 1;
+            max-width: 1440px; margin: 0 auto; padding: 48px 24px;
+            display: grid; grid-template-columns: 1fr; gap: 24px;
+        }
+        @media (min-width: 900px) {
+            .layout { grid-template-columns: minmax(0, 480px) 1fr; align-items: start; }
+        }
+
+        .panel {
+            background: var(--glass);
+            backdrop-filter: blur(18px) saturate(140%);
+            -webkit-backdrop-filter: blur(18px) saturate(140%);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            padding: 32px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+        }
+
+        h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.3px; }
+        .subtitle { color: var(--text-muted); margin: 0 0 26px; font-size: 14px; }
+
+        .form-group { margin-bottom: 18px; }
+        label {
+            display: block; margin-bottom: 7px; font-weight: 600; font-size: 11px;
+            color: var(--text-muted); letter-spacing: 0.3px; text-transform: uppercase;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        input[type="text"], input[type="number"], textarea, select {
+            width: 100%; padding: 12px 14px; border-radius: 14px;
+            border: 1px solid var(--border-soft); background: rgba(255,255,255,0.04);
+            color: var(--text); font-size: 14px; font-family: inherit;
+        }
+        textarea {
+            height: 170px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 13px; line-height: 1.5; resize: vertical;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none; border-color: rgba(255,45,146,0.55);
+            box-shadow: 0 0 0 3px rgba(255,45,146,0.12);
+        }
+        input:-webkit-autofill, input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus, input:-webkit-autofill:active {
+            -webkit-text-fill-color: var(--text);
+            -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.04) inset;
+            box-shadow: 0 0 0 1000px rgba(255,255,255,0.04) inset;
+            caret-color: var(--text);
+            transition: background-color 9999s ease-in-out 0s;
+        }
+        select { appearance: none; -webkit-appearance: none; cursor: pointer; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+        /* segmented control */
+        .segmented {
+            display: flex; background: rgba(255,255,255,0.04); border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 3px; gap: 3px;
+        }
+        .segmented button {
+            flex: 1; background: transparent; border: none; color: var(--text-muted);
+            font-size: 13px; font-weight: 600; padding: 9px 10px; border-radius: 11px;
+            cursor: pointer; transition: background 0.15s, color 0.15s; margin: 0;
+        }
+        .segmented button.active { background: var(--glass-strong); color: var(--text); }
+
+        button.primary {
+            width: 100%; background: linear-gradient(90deg, var(--accent), #8a2be2);
+            color: #fff; padding: 15px; border: none; border-radius: 16px;
+            font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 8px;
+            box-shadow: 0 8px 24px rgba(255,45,146,0.28);
+        }
+        button.primary:disabled { background: rgba(255,255,255,0.08); color: var(--text-muted); box-shadow: none; cursor: not-allowed; }
+        button.secondary {
+            background: rgba(255,255,255,0.06); border: 1px solid var(--border-soft); color: var(--text);
+            font-weight: 600; font-size: 13px; padding: 10px 16px; border-radius: 12px; cursor: pointer;
+        }
+
+        .track-list {
+            max-height: 260px; overflow-y: auto; border: 1px solid var(--border-soft);
+            border-radius: 14px; padding: 6px; background: rgba(255,255,255,0.03);
+        }
+        .track-row {
+            display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px;
+            font-size: 13px; cursor: pointer;
+        }
+        .track-row:hover { background: rgba(255,255,255,0.05); }
+        .track-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+        .track-empty { color: var(--text-muted); font-size: 13px; padding: 10px; }
+
+        /* --- right panel: status / preview --- */
+        .preview-panel { display: none; min-height: 200px; }
+        .status-line { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; color: var(--accent2); }
+        .spinner {
+            width: 16px; height: 16px; border: 3px solid rgba(0,229,255,0.2); border-radius: 50%;
+            border-top-color: var(--accent2); animation: spin 0.8s linear infinite; flex: none;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .uploads-box { margin-top: 20px; display: none; }
+        .upload-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .upload-row .upload-track { flex: 1; font-size: 13px; }
+        .upload-row .upload-status { flex: none; font-size: 11px; color: var(--text-muted); }
+        .upload-row input[type="file"] { flex: none; font-size: 12px; color: var(--text-muted); max-width: 140px; }
+        .upload-row .skip-btn { flex: none; padding: 8px 12px; font-size: 12px; }
+
+        .video-wrap { display: none; text-align: center; }
+        .video-wrap video {
+            width: 100%; max-width: 420px; border-radius: 20px; border: 1px solid var(--border);
+            margin: 0 auto 18px; display: block; background: #000;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .video-wrap a {
+            display: inline-block; background: var(--accent2); color: #05050a; font-weight: 700;
+            padding: 12px 26px; border-radius: 14px; text-decoration: none; font-size: 14px;
+        }
+        .swatches { display: flex; gap: 6px; margin-top: 16px; justify-content: center; }
+        .swatch { width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); }
+        .save-theme-box { display: none; margin-top: 16px; }
+        .save-theme-row { display: flex; gap: 8px; }
+        .save-theme-row input { flex: 1; }
+        .hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+        .preview-empty { color: var(--text-muted); font-size: 14px; text-align: center; padding: 40px 10px; }
+    </style>
+</head>
+<body>
+<div class="blobs">
+    <div class="blob blob1"></div>
+    <div class="blob blob2"></div>
+    <div class="blob blob3"></div>
+</div>
+
+<div class="layout">
+    <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+                <h1>Radio Promo Video Generator</h1>
+                <p class="subtitle">Paste a tracklist, get a 9:16 promo video.</p>
+            </div>
+            <div style="display:flex; gap:14px; align-items:center; padding-top:4px; flex-shrink:0; white-space:nowrap;">
+                {% if username %}
+                {% if personal_mode %}<a href="{{ url_for('analytics_page') }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">Analytics</a>{% endif %}
+                <a href="{{ url_for('account') }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">{{ username }}</a>
+                <form method="POST" action="{{ url_for('logout') }}" style="margin:0;">
+                    <button type="submit" style="all:unset; cursor:pointer; color:var(--text-muted); font-size:12px; white-space:nowrap;">Log out</button>
+                </form>
+                {% else %}
+                <a href="{{ url_for('login', next=request.path) }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">Sign in</a>
+                {% endif %}
+            </div>
+        </div>
+
+        <form id="startForm">
+            <div class="form-group">
+                <label>Tracklist (one per line, "Artist - Title")</label>
+                <textarea id="tracklistInput" name="tracklist" required placeholder="Four Tet - Baby&#10;Bicep - Glue&#10;Overmono - So U Kno"></textarea>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label>Show name</label>
+                    <input type="text" name="show_name" placeholder="{{ default_show_name }}" value="{{ default_show_name }}">
+                </div>
+                <div class="form-group">
+                    <label>Episode name</label>
+                    <input type="text" name="episode_label" placeholder="Episode 42">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Track selection</label>
+                <div class="segmented" id="selectionModeToggle">
+                    <button type="button" data-value="auto" class="active">Auto</button>
+                    <button type="button" data-value="manual">I'll pick</button>
+                </div>
+            </div>
+
+            <div class="form-group" id="trackListGroup" style="display:none;">
+                <label>Pick tracks to feature</label>
+                <div class="track-list" id="trackList"><div class="track-empty">Paste a tracklist above to load tracks here.</div></div>
+            </div>
+
+            <div class="row3">
+                <div class="form-group" id="numStandoutGroup">
+                    <label title="Number of standout tracks">Tracks</label>
+                    <input type="number" name="num_standout" value="5" min="2" max="15">
+                </div>
+                <div class="form-group">
+                    <label>Pace</label>
+                    <select name="pace">
+                        <option value="chill">Chill</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="fast">Fast</option>
+                        <option value="hyper">Hyper</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Theme</label>
+                    <select id="themeMode" name="theme_mode" title="Auto (from music)">
+                        <option value="auto" selected>Auto</option>
+                        {% if personal_mode %}<option value="custom">Custom...</option>{% endif %}
+                        <optgroup id="presetGroup" label="Presets"></optgroup>
+                        <optgroup id="savedGroup" label="Saved themes"></optgroup>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" id="themeDescriptionGroup" style="display:none;">
+                <label>Describe the theme</label>
+                <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
+            </div>
+
+            <div class="form-group">
+                <label>On-screen language</label>
+                <div class="segmented" id="languageToggle">
+                    <button type="button" data-value="en" class="active">English</button>
+                    <button type="button" data-value="he">עברית</button>
+                </div>
+                <input type="hidden" name="language" id="languageInput" value="en">
+            </div>
+
+            <button type="submit" class="primary" id="submitBtn">Generate Promo Video</button>
+        </form>
+    </div>
+
+    <div class="panel preview-panel" id="previewPanel">
+        <div class="status-line" id="statusLine"><div class="spinner" id="spinner"></div><span id="statusText">Working...</span></div>
+
+        <div class="uploads-box" id="uploadsBox">
+            <label>Some tracks need an audio file</label>
+            <div id="uploadRows"></div>
+        </div>
+
+        <div class="video-wrap" id="downloadBox">
+            <video id="previewPlayer" controls playsinline></video>
+            <a id="downloadLink" href="#">Download MP4</a>
+            <div class="swatches" id="paletteSwatches"></div>
+            <div class="save-theme-box" id="saveThemeBox">
+                <div class="save-theme-row">
+                    <input type="text" id="saveThemeName" placeholder="Name this theme to reuse it">
+                    <button type="button" class="secondary" id="saveThemeBtn">Save theme</button>
+                </div>
+                <div class="hint" id="saveThemeHint"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const PERSONAL_MODE = {{ "true" if personal_mode else "false" }};
+const LOGGED_IN = {{ "true" if username else "false" }};
+let pollInterval = null;
+let currentJobId = null;
+let lastTheme = null;
+let selectionMode = "auto";
+let language = "en";
+let activeUploadRows = {};
+
+function setActive(container, value) {
+    container.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.value === value));
+}
+
+document.getElementById("selectionModeToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    selectionMode = btn.dataset.value;
+    setActive(e.currentTarget, selectionMode);
+    document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
+    document.getElementById("trackListGroup").style.display = selectionMode === "manual" ? "block" : "none";
+    if (selectionMode === "manual") loadTrackCheckboxes();
+});
+
+document.getElementById("languageToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    language = btn.dataset.value;
+    setActive(e.currentTarget, language);
+    document.getElementById("languageInput").value = language;
+});
+
+let trackLoadTimer = null;
+document.getElementById("tracklistInput").addEventListener("input", () => {
+    if (selectionMode !== "manual") return;
+    clearTimeout(trackLoadTimer);
+    trackLoadTimer = setTimeout(loadTrackCheckboxes, 500);
+});
+
+function loadTrackCheckboxes() {
+    const text = document.getElementById("tracklistInput").value;
+    const listEl = document.getElementById("trackList");
+    if (!text.trim()) {
+        listEl.innerHTML = '<div class="track-empty">Paste a tracklist above to load tracks here.</div>';
+        return;
+    }
+    fetch("/parse_tracklist", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracklist: text }),
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            listEl.innerHTML = "";
+            if (!data.tracks.length) {
+                listEl.innerHTML = '<div class="track-empty">No tracks recognized yet.</div>';
+                return;
+            }
+            data.tracks.forEach((t, i) => {
+                const row = document.createElement("label");
+                row.className = "track-row";
+                const label = t.album ? `${t.artist} - ${t.title} (${t.album})` : `${t.artist} - ${t.title}`;
+                row.innerHTML = `<input type="checkbox" data-artist="${encodeURIComponent(t.artist)}" data-title="${encodeURIComponent(t.title)}"><span>${label}</span>`;
+                listEl.appendChild(row);
+            });
+        })
+        .catch(() => {});
+}
+
+function loadThemes() {
+    fetch("/themes").then((res) => res.json()).then((data) => {
+        const presetGroup = document.getElementById("presetGroup");
+        const savedGroup = document.getElementById("savedGroup");
+        presetGroup.innerHTML = "";
+        savedGroup.innerHTML = "";
+        data.presets.forEach((name) => {
+            const opt = document.createElement("option");
+            opt.value = "preset:" + name;
+            opt.textContent = name;
+            presetGroup.appendChild(opt);
+        });
+        if (PERSONAL_MODE) {
+            Object.keys(data.saved).forEach((name) => {
+                const opt = document.createElement("option");
+                opt.value = "saved:" + name;
+                opt.textContent = name;
+                savedGroup.appendChild(opt);
+            });
+        }
+    }).catch(() => {}).finally(restoreDraftIfAny);
+}
+loadThemes();
+
+// --- Preserve the draft across a sign-in round trip (submit is gated on
+// LOGGED_IN below) so typing a whole tracklist then hitting Generate never
+// loses work just because sign-in wasn't done yet. ---
+const DRAFT_KEY = "promoDraft";
+
+function saveDraftAndRedirectToLogin() {
+    const draft = {
+        tracklist: document.getElementById("tracklistInput").value,
+        show_name: document.querySelector('[name="show_name"]').value,
+        episode_label: document.querySelector('[name="episode_label"]').value,
+        num_standout: document.querySelector('[name="num_standout"]').value,
+        pace: document.querySelector('[name="pace"]').value,
+        theme_mode: document.getElementById("themeMode").value,
+        theme_value: document.getElementById("themeDescription") ? document.getElementById("themeDescription").value : "",
+        selectionMode, language,
+    };
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+}
+
+function restoreDraftIfAny() {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(DRAFT_KEY);
+    let draft;
+    try {
+        draft = JSON.parse(raw);
+    } catch (e) {
+        return;
+    }
+    document.getElementById("tracklistInput").value = draft.tracklist || "";
+    document.querySelector('[name="show_name"]').value = draft.show_name || "";
+    document.querySelector('[name="episode_label"]').value = draft.episode_label || "";
+    if (draft.num_standout) document.querySelector('[name="num_standout"]').value = draft.num_standout;
+    if (draft.pace) document.querySelector('[name="pace"]').value = draft.pace;
+
+    if (draft.language) {
+        language = draft.language;
+        setActive(document.getElementById("languageToggle"), language);
+        document.getElementById("languageInput").value = language;
+    }
+    if (draft.selectionMode === "manual") {
+        selectionMode = "manual";
+        setActive(document.getElementById("selectionModeToggle"), "manual");
+        document.getElementById("numStandoutGroup").style.display = "none";
+        document.getElementById("trackListGroup").style.display = "block";
+        loadTrackCheckboxes();
+    }
+    const themeModeEl = document.getElementById("themeMode");
+    if (draft.theme_mode && [...themeModeEl.options].some((o) => o.value === draft.theme_mode)) {
+        themeModeEl.value = draft.theme_mode;
+        themeModeEl.dispatchEvent(new Event("change"));
+    }
+    if (draft.theme_value) {
+        const themeDescEl = document.getElementById("themeDescription");
+        if (themeDescEl) themeDescEl.value = draft.theme_value;
+    }
+}
+
+document.getElementById("themeMode").addEventListener("change", function () {
+    document.getElementById("themeDescriptionGroup").style.display = this.value === "custom" ? "block" : "none";
+});
+
+// --- Completion sound (synthesized, no asset file needed) ---
+function playChime() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [660, 880].forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.value = freq;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            const start = ctx.currentTime + i * 0.12;
+            gain.gain.setValueAtTime(0, start);
+            gain.gain.linearRampToValueAtTime(0.2, start + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+            osc.start(start);
+            osc.stop(start + 0.55);
+        });
+    } catch (e) {}
+}
+
+// --- Browser notification (requires the user's permission) ---
+let notifyOnDone = false;
+function requestNotifyPermission() {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") { notifyOnDone = true; return; }
+    if (Notification.permission !== "denied") {
+        Notification.requestPermission().then((perm) => { notifyOnDone = perm === "granted"; });
+    }
+}
+
+document.getElementById("startForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!LOGGED_IN) {
+        saveDraftAndRedirectToLogin();
+        return;
+    }
+    requestNotifyPermission();
+
+    const btn = document.getElementById("submitBtn");
+    const previewPanel = document.getElementById("previewPanel");
+    const uploadsBox = document.getElementById("uploadsBox");
+    const downloadBox = document.getElementById("downloadBox");
+    const saveThemeBox = document.getElementById("saveThemeBox");
+    const spinner = document.getElementById("spinner");
+    const statusLine = document.getElementById("statusLine");
+
+    btn.disabled = true;
+    previewPanel.style.display = "block";
+    statusLine.style.display = "flex";
+    uploadsBox.style.display = "none";
+    document.getElementById("uploadRows").innerHTML = "";
+    activeUploadRows = {};
+    downloadBox.style.display = "none";
+    saveThemeBox.style.display = "none";
+    spinner.style.display = "block";
+    document.getElementById("statusText").textContent = "Starting...";
+
+    const formData = new FormData(this);
+    formData.set("selection_mode", selectionMode);
+    formData.set("language", language);
+
+    if (selectionMode === "manual") {
+        const picks = [];
+        document.querySelectorAll("#trackList input[type=checkbox]:checked").forEach((cb) => {
+            picks.push({ artist: decodeURIComponent(cb.dataset.artist), title: decodeURIComponent(cb.dataset.title) });
+        });
+        formData.set("manual_tracks", JSON.stringify(picks));
+    }
+
+    const rawMode = formData.get("theme_mode");
+    if (rawMode.startsWith("preset:")) {
+        formData.set("theme_mode", "preset");
+        formData.set("theme_value", rawMode.slice(7));
+    } else if (rawMode.startsWith("saved:")) {
+        formData.set("theme_mode", "saved");
+        formData.set("theme_value", rawMode.slice(6));
+    }
+
+    fetch("/start", { method: "POST", body: formData })
+        .then((res) => res.json())
+        .then((data) => {
+            currentJobId = data.job_id;
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollStatus, 2000);
+        });
+});
+
+function pollStatus() {
+    if (!currentJobId) return;
+    fetch(`/status/${currentJobId}`)
+        .then((res) => res.json())
+        .then((job) => {
+            const statusText = document.getElementById("statusText");
+            const spinner = document.getElementById("spinner");
+            const statusLine = document.getElementById("statusLine");
+            const btn = document.getElementById("submitBtn");
+            const uploadsBox = document.getElementById("uploadsBox");
+            const downloadBox = document.getElementById("downloadBox");
+
+            statusText.textContent = job.log.length ? job.log[job.log.length - 1] : job.status;
+            if (job.theme) lastTheme = job.theme;
+
+            if (job.status === "awaiting_uploads" && job.needs_upload.length) {
+                uploadsBox.style.display = "block";
+                renderUploadRows(job.needs_upload);
+            } else {
+                uploadsBox.style.display = "none";
+                Object.values(activeUploadRows).forEach((r) => r.remove());
+                activeUploadRows = {};
+            }
+
+            if (job.status === "done") {
+                clearInterval(pollInterval);
+                statusLine.style.display = "none";
+                btn.disabled = false;
+                downloadBox.style.display = "block";
+                document.getElementById("downloadLink").href = `/download/${currentJobId}`;
+                document.getElementById("previewPlayer").src = `/preview/${currentJobId}`;
+                renderPaletteAndSave();
+                playChime();
+                if (notifyOnDone) {
+                    new Notification("Promo video ready", { body: "Your radio promo video finished rendering." });
+                }
+            } else if (job.status === "failed") {
+                clearInterval(pollInterval);
+                spinner.style.display = "none";
+                btn.disabled = false;
+                alert("Failed: " + job.error);
+            }
+        })
+        .catch(() => {});
+}
+
+function renderPaletteAndSave() {
+    const swatches = document.getElementById("paletteSwatches");
+    const saveThemeBox = document.getElementById("saveThemeBox");
+    swatches.innerHTML = "";
+    if (!lastTheme) return;
+    lastTheme.palettes.forEach((p) => {
+        const el = document.createElement("div");
+        el.className = "swatch";
+        el.style.background = `linear-gradient(135deg, ${p.accent}, ${p.accent2})`;
+        swatches.appendChild(el);
+    });
+    if (PERSONAL_MODE) saveThemeBox.style.display = "block";
+}
+
+document.getElementById("saveThemeBtn").addEventListener("click", function () {
+    const name = document.getElementById("saveThemeName").value.trim();
+    const hint = document.getElementById("saveThemeHint");
+    if (!name || !lastTheme) return;
+    fetch("/themes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, theme: lastTheme }),
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.ok) {
+                hint.textContent = `Saved as "${name}" — pick it from the Theme dropdown next time.`;
+                loadThemes();
+            } else {
+                hint.textContent = "Could not save theme: " + (data.error || "unknown error");
+            }
+        });
+});
+
+function renderUploadRows(needsUpload) {
+    const uploadRows = document.getElementById("uploadRows");
+    const seenKeys = new Set();
+
+    needsUpload.forEach((u) => {
+        const key = `${u.artist}|||${u.title}`;
+        seenKeys.add(key);
+        const existing = activeUploadRows[key];
+        if (existing) {
+            existing.dataset.index = u.index;
+            return; // already rendered (maybe mid-upload) -- don't touch it
+        }
+        const row = document.createElement("div");
+        row.className = "upload-row";
+        row.dataset.index = u.index;
+        row.innerHTML = `<span class="upload-track">${u.artist} - ${u.title}</span>
+            <span class="upload-status"></span>
+            <input type="file" accept="audio/*">
+            <button type="button" class="secondary skip-btn">Skip</button>`;
+        row.querySelector("input").addEventListener("change", (e) => uploadAudio(row, e.target.files[0]));
+        row.querySelector(".skip-btn").addEventListener("click", () => skipUpload(row));
+        uploadRows.appendChild(row);
+        activeUploadRows[key] = row;
+    });
+
+    Object.keys(activeUploadRows).forEach((key) => {
+        if (!seenKeys.has(key)) {
+            activeUploadRows[key].remove();
+            delete activeUploadRows[key];
+        }
+    });
+}
+
+function uploadAudio(row, file) {
+    if (!file) return;
+    const status = row.querySelector(".upload-status");
+    row.querySelector("input").disabled = true;
+    row.querySelector(".skip-btn").disabled = true;
+    status.textContent = "Uploading…";
+    const formData = new FormData();
+    formData.append("audio_file", file);
+    fetch(`/upload/${currentJobId}/${row.dataset.index}`, { method: "POST", body: formData })
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.error) throw new Error(data.error);
+            status.textContent = "Uploaded";
+            pollStatus();
+        })
+        .catch((err) => {
+            status.textContent = "Failed — try again";
+            row.querySelector("input").disabled = false;
+            row.querySelector(".skip-btn").disabled = false;
+        });
+}
+
+function skipUpload(row) {
+    const status = row.querySelector(".upload-status");
+    row.querySelector("input").disabled = true;
+    row.querySelector(".skip-btn").disabled = true;
+    status.textContent = "Skipping…";
+    fetch(`/skip/${currentJobId}/${row.dataset.index}`, { method: "POST" })
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.error) throw new Error(data.error);
+            pollStatus();
+        })
+        .catch((err) => {
+            status.textContent = "Failed — try again";
+            row.querySelector("input").disabled = false;
+            row.querySelector(".skip-btn").disabled = false;
+        });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+node_modules
+renders
+*.mp4
+*.log
+.DS_Store
+.env
+server/analytics.jsonl
+server/admins.json
+server/user_data/
+server/themes.json
+chrome-headless-shell/

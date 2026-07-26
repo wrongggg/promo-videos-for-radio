@@ -9,3 +9,11 @@ renders/
 *.mp4
 *.log
 .DS_Store
+.venv/
+__pycache__/
+*.pyc
+.env
+server/analytics.jsonl
+server/admins.json
+server/user_data/
+server/themes.json

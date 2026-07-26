@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Promo Video Generator — Analytics</title>
+<style>
+    :root {
+        --bg: #08080c;
+        --glass: rgba(255,255,255,0.055);
+        --border: rgba(255,255,255,0.11);
+        --text: #f5f5f7;
+        --text-muted: rgba(245,245,247,0.55);
+        --accent: #ff2d92;
+        --accent2: #00e5ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        background: var(--bg); color: var(--text); margin: 0; padding: 48px 24px;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; }
+    h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.3px; }
+    .subtitle { color: var(--text-muted); margin: 0 0 28px; font-size: 14px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 32px; }
+    .card {
+        background: var(--glass); border: 1px solid var(--border); border-radius: 18px; padding: 20px;
+    }
+    .card .value { font-size: 26px; font-weight: 700; }
+    .card .label {
+        font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+        letter-spacing: 0.4px; margin-top: 6px;
+    }
+    .panel { background: var(--glass); border: 1px solid var(--border); border-radius: 18px; padding: 8px 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.4px; }
+    tr:last-child td { border-bottom: none; }
+    .yes { color: #4ade80; }
+    .no { color: var(--text-muted); }
+    .empty { color: var(--text-muted); padding: 24px 4px; font-size: 14px; }
+    h2 { font-size: 14px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 0 0 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Usage &amp; cost</h1>
+    <p class="subtitle">Local tally across / and /poplock. Cost is estimated from Anthropic API usage at Sonnet 5 rates.</p>
+
+    <div class="cards">
+        <div class="card"><div class="value">{{ stats.unique_visitors }}</div><div class="label">Unique visitors</div></div>
+        <div class="card"><div class="value">{{ stats.total_visits }}</div><div class="label">Page visits</div></div>
+        <div class="card"><div class="value">{{ stats.total_generations }}</div><div class="label">Videos generated</div></div>
+        <div class="card"><div class="value">${{ "%.2f"|format(stats.total_cost_usd) }}</div><div class="label">Total API cost</div></div>
+        <div class="card"><div class="value">${{ "%.3f"|format(stats.avg_cost_per_generation_usd) }}</div><div class="label">Avg cost / video</div></div>
+        <div class="card"><div class="value">{{ stats.videos_downloaded }}</div><div class="label">Videos downloaded</div></div>
+        <div class="card"><div class="value">{{ (stats.download_rate * 100) | round | int }}%</div><div class="label">Download rate</div></div>
+    </div>
+
+    <h2>Recent generations</h2>
+    <div class="panel">
+        {% if stats.recent_jobs %}
+        <table>
+            <thead><tr><th>When</th><th>Route</th><th>Cost</th><th>Downloaded</th></tr></thead>
+            <tbody>
+                {% for j in stats.recent_jobs %}
+                <tr>
+                    <td>{{ j.when }}</td>
+                    <td>{{ j.route }}</td>
+                    <td>${{ "%.4f"|format(j.cost_usd) }}</td>
+                    <td class="{{ 'yes' if j.downloaded else 'no' }}">{{ 'Yes' if j.downloaded else 'No' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">No generations yet.</div>
+        {% endif %}
+    </div>
+</div>
+</body>
+</html>

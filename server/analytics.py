@@ -1,0 +1,125 @@
+"""Lightweight local usage analytics: visits, generations, API cost, downloads.
+
+Stored as an append-only JSONL log (server/analytics.jsonl, gitignored) --
+no database needed for a single-machine tool. Cost is estimated from each
+Anthropic API response's `usage` block against hardcoded Claude Sonnet 5
+introductory pricing (https://platform.claude.com/docs/en/about-claude/pricing,
+in effect through Aug 31, 2026) -- update the constants below if pricing changes.
+"""
+import json
+import os
+import threading
+import time
+from datetime import datetime
+
+_DATA_DIR = os.environ.get("DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
+ANALYTICS_PATH = os.path.join(_DATA_DIR, "analytics.jsonl")
+_lock = threading.Lock()
+
+PRICE_INPUT_PER_TOKEN = 2 / 1_000_000
+PRICE_OUTPUT_PER_TOKEN = 10 / 1_000_000
+PRICE_CACHE_WRITE_PER_TOKEN = 2.5 / 1_000_000
+PRICE_CACHE_READ_PER_TOKEN = 0.2 / 1_000_000
+PRICE_PER_WEB_SEARCH = 10 / 1_000
+
+
+def _append(event: dict):
+    event["ts"] = time.time()
+    line = json.dumps(event)
+    with _lock:
+        with open(ANALYTICS_PATH, "a") as f:
+            f.write(line + "\n")
+
+
+def cost_from_usage(usage) -> float:
+    """usage: an Anthropic SDK Usage object (or plain dict) from response.usage."""
+    def get(obj, name, default=0):
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(name, default) or default
+        return getattr(obj, name, default) or default
+
+    server_tool_use = get(usage, "server_tool_use")
+    return (
+        get(usage, "input_tokens") * PRICE_INPUT_PER_TOKEN
+        + get(usage, "output_tokens") * PRICE_OUTPUT_PER_TOKEN
+        + get(usage, "cache_creation_input_tokens") * PRICE_CACHE_WRITE_PER_TOKEN
+        + get(usage, "cache_read_input_tokens") * PRICE_CACHE_READ_PER_TOKEN
+        + get(server_tool_use, "web_search_requests") * PRICE_PER_WEB_SEARCH
+    )
+
+
+def record_api_call(job_id: str | None, label: str, usage) -> float:
+    cost = cost_from_usage(usage)
+    _append({"type": "api_call", "job_id": job_id, "label": label, "cost_usd": round(cost, 6)})
+    return cost
+
+
+def record_visit(route: str, visitor_id: str):
+    _append({"type": "visit", "route": route, "visitor_id": visitor_id})
+
+
+def record_job_start(job_id: str, route: str, visitor_id: str):
+    _append({"type": "job_start", "job_id": job_id, "route": route, "visitor_id": visitor_id})
+
+
+def record_download(job_id: str, visitor_id: str):
+    _append({"type": "download", "job_id": job_id, "visitor_id": visitor_id})
+
+
+def _read_all() -> list[dict]:
+    if not os.path.exists(ANALYTICS_PATH):
+        return []
+    events = []
+    with open(ANALYTICS_PATH) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return events
+
+
+def summary() -> dict:
+    events = _read_all()
+    visits = [e for e in events if e.get("type") == "visit"]
+    job_starts = [e for e in events if e.get("type") == "job_start"]
+    api_calls = [e for e in events if e.get("type") == "api_call"]
+    downloads = [e for e in events if e.get("type") == "download"]
+
+    unique_visitors = {e["visitor_id"] for e in visits if e.get("visitor_id")}
+    total_generations = len(job_starts)
+    total_cost = sum(e.get("cost_usd", 0) for e in api_calls)
+    downloaded_jobs = {e["job_id"] for e in downloads if e.get("job_id")}
+
+    cost_by_job: dict[str, float] = {}
+    for e in api_calls:
+        jid = e.get("job_id")
+        if jid:
+            cost_by_job[jid] = cost_by_job.get(jid, 0) + e.get("cost_usd", 0)
+
+    recent_jobs = []
+    for j in job_starts[-25:][::-1]:
+        jid = j["job_id"]
+        recent_jobs.append({
+            "job_id": jid,
+            "when": datetime.fromtimestamp(j["ts"]).strftime("%Y-%m-%d %H:%M"),
+            "route": j.get("route"),
+            "cost_usd": round(cost_by_job.get(jid, 0), 4),
+            "downloaded": jid in downloaded_jobs,
+        })
+
+    return {
+        "unique_visitors": len(unique_visitors),
+        "total_visits": len(visits),
+        "total_generations": total_generations,
+        "total_cost_usd": round(total_cost, 4),
+        "avg_cost_per_generation_usd": round(total_cost / total_generations, 4) if total_generations else 0,
+        "videos_downloaded": len(downloaded_jobs),
+        "download_rate": round(len(downloaded_jobs) / total_generations, 2) if total_generations else 0,
+        "recent_jobs": recent_jobs,
+    }

@@ -1,0 +1,10 @@
+flask
+anthropic
+yt-dlp
+requests
+python-dotenv
+static-ffmpeg
+numpy
+pycryptodomex
+Authlib
+gunicorn
