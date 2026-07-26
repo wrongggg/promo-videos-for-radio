@@ -68,6 +68,12 @@ def record_download(job_id: str, visitor_id: str):
     _append({"type": "download", "job_id": job_id, "visitor_id": visitor_id})
 
 
+def record_job_done(job_id: str, status: str):
+    """status: "done" or "failed" -- paired with the job_start event's
+    timestamp to compute run time."""
+    _append({"type": "job_done", "job_id": job_id, "job_status": status})
+
+
 def _read_all() -> list[dict]:
     if not os.path.exists(ANALYTICS_PATH):
         return []
@@ -84,12 +90,19 @@ def _read_all() -> list[dict]:
     return events
 
 
+def _format_duration(seconds: float) -> str:
+    seconds = round(seconds)
+    minutes, secs = divmod(seconds, 60)
+    return f"{minutes}m {secs:02d}s" if minutes else f"{secs}s"
+
+
 def summary() -> dict:
     events = _read_all()
     visits = [e for e in events if e.get("type") == "visit"]
     job_starts = [e for e in events if e.get("type") == "job_start"]
     api_calls = [e for e in events if e.get("type") == "api_call"]
     downloads = [e for e in events if e.get("type") == "download"]
+    job_dones = [e for e in events if e.get("type") == "job_done"]
 
     unique_visitors = {e["visitor_id"] for e in visits if e.get("visitor_id")}
     total_generations = len(job_starts)
@@ -102,15 +115,36 @@ def summary() -> dict:
         if jid:
             cost_by_job[jid] = cost_by_job.get(jid, 0) + e.get("cost_usd", 0)
 
+    start_ts_by_job = {j["job_id"]: j["ts"] for j in job_starts}
+    # last job_done per job_id (in case of odd double-writes) wins
+    done_by_job: dict[str, dict] = {}
+    for e in job_dones:
+        jid = e.get("job_id")
+        if jid:
+            done_by_job[jid] = e
+
+    duration_by_job: dict[str, float] = {}
+    for jid, done in done_by_job.items():
+        start_ts = start_ts_by_job.get(jid)
+        if start_ts is not None:
+            duration_by_job[jid] = max(0.0, done["ts"] - start_ts)
+
+    finished_durations = list(duration_by_job.values())
+    avg_duration = sum(finished_durations) / len(finished_durations) if finished_durations else 0
+
     recent_jobs = []
     for j in job_starts[-25:][::-1]:
         jid = j["job_id"]
+        done = done_by_job.get(jid)
+        duration = duration_by_job.get(jid)
         recent_jobs.append({
             "job_id": jid,
             "when": datetime.fromtimestamp(j["ts"]).strftime("%Y-%m-%d %H:%M"),
             "route": j.get("route"),
             "cost_usd": round(cost_by_job.get(jid, 0), 4),
             "downloaded": jid in downloaded_jobs,
+            "status": done.get("job_status") if done else "in progress",
+            "duration": _format_duration(duration) if duration is not None else "—",
         })
 
     return {
@@ -121,5 +155,6 @@ def summary() -> dict:
         "avg_cost_per_generation_usd": round(total_cost / total_generations, 4) if total_generations else 0,
         "videos_downloaded": len(downloaded_jobs),
         "download_rate": round(len(downloaded_jobs) / total_generations, 2) if total_generations else 0,
+        "avg_duration": _format_duration(avg_duration) if finished_durations else "—",
         "recent_jobs": recent_jobs,
     }

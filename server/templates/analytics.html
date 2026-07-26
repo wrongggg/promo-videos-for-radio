@@ -38,6 +38,7 @@
     tr:last-child td { border-bottom: none; }
     .yes { color: #4ade80; }
     .no { color: var(--text-muted); }
+    .bad { color: #ff6b6b; }
     .empty { color: var(--text-muted); padding: 24px 4px; font-size: 14px; }
     h2 { font-size: 14px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 0 0 12px; }
 </style>
@@ -55,18 +56,21 @@
         <div class="card"><div class="value">${{ "%.3f"|format(stats.avg_cost_per_generation_usd) }}</div><div class="label">Avg cost / video</div></div>
         <div class="card"><div class="value">{{ stats.videos_downloaded }}</div><div class="label">Videos downloaded</div></div>
         <div class="card"><div class="value">{{ (stats.download_rate * 100) | round | int }}%</div><div class="label">Download rate</div></div>
+        <div class="card"><div class="value">{{ stats.avg_duration }}</div><div class="label">Avg run time</div></div>
     </div>
 
     <h2>Recent generations</h2>
     <div class="panel">
         {% if stats.recent_jobs %}
         <table>
-            <thead><tr><th>When</th><th>Route</th><th>Cost</th><th>Downloaded</th></tr></thead>
+            <thead><tr><th>When</th><th>Route</th><th>Status</th><th>Run time</th><th>Cost</th><th>Downloaded</th></tr></thead>
             <tbody>
                 {% for j in stats.recent_jobs %}
                 <tr>
                     <td>{{ j.when }}</td>
                     <td>{{ j.route }}</td>
+                    <td class="{{ 'yes' if j.status == 'done' else ('no' if j.status == 'in progress' else 'bad') }}">{{ j.status }}</td>
+                    <td>{{ j.duration }}</td>
                     <td>${{ "%.4f"|format(j.cost_usd) }}</td>
                     <td class="{{ 'yes' if j.downloaded else 'no' }}">{{ 'Yes' if j.downloaded else 'No' }}</td>
                 </tr>

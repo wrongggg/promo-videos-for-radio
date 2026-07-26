@@ -358,6 +358,7 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
         job["error"] = str(e)
         _log(job, f"ERROR: {e}")
         traceback.print_exc()
+        analytics.record_job_done(job_id, "failed")
 
 
 def _start_render(job_id):
@@ -385,11 +386,13 @@ def _run_render_stage(job_id):
         job["status"] = "done"
         job["output_path"] = os.path.join(job["job_dir"], "output.mp4")
         _log(job, "Done!")
+        analytics.record_job_done(job_id, "done")
     except Exception as e:
         job["status"] = "failed"
         job["error"] = str(e)
         _log(job, f"ERROR: {e}")
         traceback.print_exc()
+        analytics.record_job_done(job_id, "failed")
 
 
 @app.route("/login")
@@ -616,6 +619,7 @@ def skip_upload(job_id, track_index):
         job["status"] = "failed"
         job["error"] = "No tracks left after skipping uploads"
         _log(job, "ERROR: no tracks left to render")
+        analytics.record_job_done(job_id, "failed")
         return jsonify({"ok": True, "remaining": [], "status": job["status"]})
 
     # If the skipped track was the closing one, the new closing track's audio
