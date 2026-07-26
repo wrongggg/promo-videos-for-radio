@@ -134,7 +134,7 @@ def _save_theme_to_disk(name, theme):
     return themes
 
 
-def _resolve_theme(theme_mode, theme_value, tracks, job_id=None):
+def _resolve_theme(theme_mode, theme_value, tracks, job_id=None, model=curator.MODEL_SIMPLE):
     """Returns a full theme dict: {"palettes": [...], "motion": "...", "frame": "..."}."""
     if theme_mode == "preset" and theme_value in curator.PRESET_THEMES:
         return curator.PRESET_THEMES[theme_value]
@@ -144,9 +144,9 @@ def _resolve_theme(theme_mode, theme_value, tracks, job_id=None):
             return saved[theme_value]
         return curator.DEFAULT_THEME
     if theme_mode == "custom" and theme_value and theme_value.strip():
-        return curator.theme_from_description(theme_value.strip(), job_id=job_id)
+        return curator.theme_from_description(theme_value.strip(), job_id=job_id, model=model)
     # auto (default)
-    return curator.suggest_theme(tracks, job_id=job_id)
+    return curator.suggest_theme(tracks, job_id=job_id, model=model)
 
 
 def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, cookie_file=None):
@@ -203,13 +203,13 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
     return resolved
 
 
-def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, cookie_file=None, use_search=True):
+def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
     """picks: list of {artist, title, album}. Unlike auto mode, there's no backup
     pool to draw from -- every pick is attempted once, in order, and only true
     dead-ends (no video, no image, no audio found anywhere) get dropped."""
     tracks_for_trivia = [Track(artist=p["artist"], title=p["title"], album=p.get("album")) for p in picks]
     _log(job, f"Checking for notable trivia on {len(picks)} selected tracks...")
-    trivia_map = curator.trivia_for_tracks(tracks_for_trivia, language=language, job_id=job_id, personal=personal, use_search=use_search)
+    trivia_map = curator.trivia_for_tracks(tracks_for_trivia, language=language, job_id=job_id, personal=personal, use_search=use_search, model=model)
 
     resolved = []
     media_index = 0
@@ -265,7 +265,7 @@ def _extend_closing_audio(job, last_entry, job_dir, scene_duration, cookie_file=
         _log(job, f"  could not extend closing audio ({e}) — outro may be quiet")
 
 
-def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, cookie_file=None, use_search=True):
+def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
     job = JOBS[job_id]
     job["cookie_file"] = cookie_file
     job_dir = os.path.join(RENDERS_DIR, job_id)
@@ -283,7 +283,7 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
 
         job["status"] = "theming"
         _log(job, "Choosing a visual theme...")
-        theme = _resolve_theme(theme_mode, theme_value, tracks, job_id=job_id)
+        theme = _resolve_theme(theme_mode, theme_value, tracks, job_id=job_id, model=model)
         job["theme"] = theme
 
         if selection_mode == "manual":
@@ -297,11 +297,11 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
                 raise ValueError("No tracks were selected")
             job["status"] = "curating"
             job["status"] = "fetching_media"
-            resolved = _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=job_id, personal=personal, cookie_file=cookie_file, use_search=use_search)
+            resolved = _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=job_id, personal=personal, cookie_file=cookie_file, use_search=use_search, model=model)
         else:
             job["status"] = "curating"
             _log(job, "Ranking standout tracks" + (" (web research)..." if use_search else "..."))
-            ranked = curator.curate_ranked(tracks, n=num_standout, language=language, job_id=job_id, personal=personal, use_search=use_search)
+            ranked = curator.curate_ranked(tracks, n=num_standout, language=language, job_id=job_id, personal=personal, use_search=use_search, model=model)
             _log(job, "Ranked candidates: " + ", ".join(f"{r['artist']} - {r['title']}" for r in ranked))
 
             job["status"] = "fetching_media"
@@ -521,9 +521,14 @@ def start():
     # Pop Lock personalization keys off the show name itself, admin only --
     # a colleague typing "Pop Lock" as their own show name doesn't get it.
     personal = is_admin_user and show_name.strip().lower() in ("pop lock", "poplock")
-    # Web search is a real cost driver (~$0.01/search on top of tokens) --
-    # keep it to admin-triggered runs only.
-    use_search = is_admin_user
+    # Colleagues always get "simple" (cheap model, no search). Admin can pick
+    # "simple" too, to preview exactly what colleagues experience, or
+    # "advanced" for Opus + web research.
+    quality_mode = request.form.get("quality_mode", "simple")
+    if not is_admin_user or quality_mode not in ("simple", "advanced"):
+        quality_mode = "simple"
+    use_search = quality_mode == "advanced"
+    model = curator.MODEL_ADVANCED if quality_mode == "advanced" else curator.MODEL_SIMPLE
     manual_picks = []
     if selection_mode == "manual":
         try:
@@ -540,7 +545,7 @@ def start():
 
     thread = threading.Thread(
         target=_run_fetch_stage,
-        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, cookie_file, use_search),
+        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, cookie_file, use_search, model),
         daemon=True,
     )
     thread.start()

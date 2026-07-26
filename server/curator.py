@@ -7,7 +7,10 @@ import anthropic
 import analytics
 from track import Track
 
-MODEL = "claude-sonnet-5"
+# "Simple" (default, used for everyone but the admin's own advanced runs) is
+# priced to be cheap at real usage volume; "Advanced" trades cost for quality.
+MODEL_SIMPLE = "claude-sonnet-5"
+MODEL_ADVANCED = "claude-opus-4-8"
 
 LANGUAGE_NAMES = {"en": "English", "he": "Hebrew"}
 
@@ -213,7 +216,7 @@ RANKED_SCHEMA = {
 }
 
 
-def curate_ranked(tracks: list[Track], n: int = 5, previous_shows: list | None = None, language: str = "en", job_id: str | None = None, personal: bool = False, use_search: bool = True) -> list[dict]:
+def curate_ranked(tracks: list[Track], n: int = 5, previous_shows: list | None = None, language: str = "en", job_id: str | None = None, personal: bool = False, use_search: bool = True, model: str = MODEL_SIMPLE) -> list[dict]:
     """Returns a ranked list of candidate tracks (best first), longer than n when the
     tracklist allows it, so the caller can pull backups to satisfy constraints (e.g.
     ensuring enough picks have YouTube video) without a second API call. use_search
@@ -233,7 +236,7 @@ def curate_ranked(tracks: list[Track], n: int = 5, previous_shows: list | None =
     # does mid-run (hits its usage cap, comes back empty, etc.) — without this the
     # model sometimes narrates around a tool hiccup instead of emitting pure JSON.
     kwargs = dict(
-        model=MODEL,
+        model=model,
         max_tokens=8192,
         thinking={"type": "adaptive"},
         output_config={"format": {"type": "json_schema", "schema": RANKED_SCHEMA}},
@@ -316,7 +319,7 @@ TRIVIA_SCHEMA = {
 }
 
 
-def trivia_for_tracks(tracks: list[Track], language: str = "en", job_id: str | None = None, personal: bool = False, use_search: bool = True) -> dict:
+def trivia_for_tracks(tracks: list[Track], language: str = "en", job_id: str | None = None, personal: bool = False, use_search: bool = True, model: str = MODEL_SIMPLE) -> dict:
     """Given tracks the user picked manually (no ranking/selection needed), find any
     genuinely notable trivia per track. Best-effort: returns {} on any failure rather
     than blocking the pipeline over a nice-to-have. Keyed by (artist_lower, title_lower).
@@ -330,7 +333,7 @@ def trivia_for_tracks(tracks: list[Track], language: str = "en", job_id: str | N
         show_context = POPLOCK_SHOW_CONTEXT if personal else ""
         research_instruction = TRIVIA_RESEARCH_INSTRUCTION_WITH_SEARCH if use_search else TRIVIA_RESEARCH_INSTRUCTION_NO_SEARCH
         kwargs = dict(
-            model=MODEL,
+            model=model,
             max_tokens=6144,
             thinking={"type": "adaptive"},
             output_config={"format": {"type": "json_schema", "schema": TRIVIA_SCHEMA}},
@@ -387,10 +390,10 @@ THEME_SCHEMA = {
 }
 
 
-def _generate_theme(prompt: str, job_id: str | None = None) -> dict | None:
+def _generate_theme(prompt: str, job_id: str | None = None, model: str = MODEL_SIMPLE) -> dict | None:
     client = anthropic.Anthropic()
     response = client.messages.create(
-        model=MODEL,
+        model=model,
         max_tokens=1024,
         thinking={"type": "adaptive"},
         output_config={"format": {"type": "json_schema", "schema": THEME_SCHEMA}},
@@ -401,21 +404,21 @@ def _generate_theme(prompt: str, job_id: str | None = None) -> dict | None:
     return _valid_theme(json.loads(text))
 
 
-def suggest_theme(tracks: list[Track], n: int = 4, job_id: str | None = None) -> dict:
+def suggest_theme(tracks: list[Track], n: int = 4, job_id: str | None = None, model: str = MODEL_SIMPLE) -> dict:
     """Auto-generate a full theme (palette rotation + motion + frame) matching the
     tracklist's genre/mood."""
     try:
         tracklist_text = "\n".join(t.label() for t in tracks)
         prompt = THEME_FROM_TRACKLIST_PROMPT.format(tracklist=tracklist_text, n=n)
-        return _generate_theme(prompt, job_id=job_id) or DEFAULT_THEME
+        return _generate_theme(prompt, job_id=job_id, model=model) or DEFAULT_THEME
     except Exception:
         return DEFAULT_THEME
 
 
-def theme_from_description(description: str, n: int = 4, job_id: str | None = None) -> dict:
+def theme_from_description(description: str, n: int = 4, job_id: str | None = None, model: str = MODEL_SIMPLE) -> dict:
     """Generate a full theme from a free-text description."""
     prompt = THEME_FROM_DESCRIPTION_PROMPT.format(description=description, n=n)
-    theme = _generate_theme(prompt, job_id=job_id)
+    theme = _generate_theme(prompt, job_id=job_id, model=model)
     if not theme:
         raise ValueError("Could not derive a valid theme from the model's response")
     return theme

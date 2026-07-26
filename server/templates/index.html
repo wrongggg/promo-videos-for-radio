@@ -270,6 +270,17 @@
                 <input type="hidden" name="language" id="languageInput" value="en">
             </div>
 
+            {% if personal_mode %}
+            <div class="form-group">
+                <label title="Simple = exactly what colleagues get (cheap model, no web search). Advanced = Opus + web research, higher quality and cost.">Quality</label>
+                <div class="segmented" id="qualityToggle">
+                    <button type="button" data-value="simple" class="active">Simple</button>
+                    <button type="button" data-value="advanced">Advanced</button>
+                </div>
+                <input type="hidden" name="quality_mode" id="qualityInput" value="simple">
+            </div>
+            {% endif %}
+
             <button type="submit" class="primary" id="submitBtn">Generate Promo Video</button>
         </form>
     </div>
@@ -328,6 +339,15 @@ document.getElementById("languageToggle").addEventListener("click", (e) => {
     setActive(e.currentTarget, language);
     document.getElementById("languageInput").value = language;
 });
+
+if (PERSONAL_MODE) {
+    document.getElementById("qualityToggle").addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        setActive(e.currentTarget, btn.dataset.value);
+        document.getElementById("qualityInput").value = btn.dataset.value;
+    });
+}
 
 let trackLoadTimer = null;
 document.getElementById("tracklistInput").addEventListener("input", () => {
