@@ -2,9 +2,9 @@
 
 Stored as an append-only JSONL log (server/analytics.jsonl, gitignored) --
 no database needed for a single-machine tool. Cost is estimated from each
-Anthropic API response's `usage` block against hardcoded Claude Sonnet 5
-introductory pricing (https://platform.claude.com/docs/en/about-claude/pricing,
-in effect through Aug 31, 2026) -- update the constants below if pricing changes.
+Anthropic API response's `usage` block against per-model introductory pricing
+(https://platform.claude.com/docs/en/about-claude/pricing, in effect through
+Aug 31, 2026) -- update PRICING below if pricing changes or a new model is added.
 """
 import json
 import os
@@ -16,10 +16,12 @@ _DATA_DIR = os.environ.get("DATA_DIR") or os.path.dirname(os.path.abspath(__file
 ANALYTICS_PATH = os.path.join(_DATA_DIR, "analytics.jsonl")
 _lock = threading.Lock()
 
-PRICE_INPUT_PER_TOKEN = 2 / 1_000_000
-PRICE_OUTPUT_PER_TOKEN = 10 / 1_000_000
-PRICE_CACHE_WRITE_PER_TOKEN = 2.5 / 1_000_000
-PRICE_CACHE_READ_PER_TOKEN = 0.2 / 1_000_000
+# Per-MTok, matching curator.MODEL_SIMPLE / MODEL_ADVANCED.
+PRICING = {
+    "claude-sonnet-5": {"input": 2, "output": 10, "cache_write": 2.5, "cache_read": 0.2},
+    "claude-opus-4-8": {"input": 5, "output": 25, "cache_write": 6.25, "cache_read": 0.5},
+}
+DEFAULT_PRICING = PRICING["claude-sonnet-5"]
 PRICE_PER_WEB_SEARCH = 10 / 1_000
 
 
@@ -31,7 +33,7 @@ def _append(event: dict):
             f.write(line + "\n")
 
 
-def cost_from_usage(usage) -> float:
+def cost_from_usage(usage, model: str | None = None) -> float:
     """usage: an Anthropic SDK Usage object (or plain dict) from response.usage."""
     def get(obj, name, default=0):
         if obj is None:
@@ -40,19 +42,20 @@ def cost_from_usage(usage) -> float:
             return obj.get(name, default) or default
         return getattr(obj, name, default) or default
 
+    prices = PRICING.get(model, DEFAULT_PRICING)
     server_tool_use = get(usage, "server_tool_use")
     return (
-        get(usage, "input_tokens") * PRICE_INPUT_PER_TOKEN
-        + get(usage, "output_tokens") * PRICE_OUTPUT_PER_TOKEN
-        + get(usage, "cache_creation_input_tokens") * PRICE_CACHE_WRITE_PER_TOKEN
-        + get(usage, "cache_read_input_tokens") * PRICE_CACHE_READ_PER_TOKEN
+        get(usage, "input_tokens") * prices["input"] / 1_000_000
+        + get(usage, "output_tokens") * prices["output"] / 1_000_000
+        + get(usage, "cache_creation_input_tokens") * prices["cache_write"] / 1_000_000
+        + get(usage, "cache_read_input_tokens") * prices["cache_read"] / 1_000_000
         + get(server_tool_use, "web_search_requests") * PRICE_PER_WEB_SEARCH
     )
 
 
-def record_api_call(job_id: str | None, label: str, usage) -> float:
-    cost = cost_from_usage(usage)
-    _append({"type": "api_call", "job_id": job_id, "label": label, "cost_usd": round(cost, 6)})
+def record_api_call(job_id: str | None, label: str, usage, model: str | None = None) -> float:
+    cost = cost_from_usage(usage, model)
+    _append({"type": "api_call", "job_id": job_id, "label": label, "cost_usd": round(cost, 6), "model": model})
     return cost
 
 

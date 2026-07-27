@@ -253,7 +253,7 @@ def curate_ranked(tracks: list[Track], n: int = 5, previous_shows: list | None =
     if use_search:
         kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}]
     response = client.messages.create(**kwargs)
-    analytics.record_api_call(job_id, "curate_ranked", response.usage)
+    analytics.record_api_call(job_id, "curate_ranked", response.usage, model=model)
 
     text = "".join(block.text for block in response.content if block.type == "text")
     if not text.strip():
@@ -350,7 +350,7 @@ def trivia_for_tracks(tracks: list[Track], language: str = "en", job_id: str | N
         if use_search:
             kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 6}]
         response = client.messages.create(**kwargs)
-        analytics.record_api_call(job_id, "trivia_for_tracks", response.usage)
+        analytics.record_api_call(job_id, "trivia_for_tracks", response.usage, model=model)
         text = "".join(block.text for block in response.content if block.type == "text")
         if not text.strip():
             return {}
@@ -399,7 +399,7 @@ def _generate_theme(prompt: str, job_id: str | None = None, model: str = MODEL_S
         output_config={"format": {"type": "json_schema", "schema": THEME_SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
     )
-    analytics.record_api_call(job_id, "generate_theme", response.usage)
+    analytics.record_api_call(job_id, "generate_theme", response.usage, model=model)
     text = "".join(block.text for block in response.content if block.type == "text")
     return _valid_theme(json.loads(text))
 

@@ -6,13 +6,13 @@
 <title>Promo Video Generator — Analytics</title>
 <style>
     :root {
-        --bg: #08080c;
-        --glass: rgba(255,255,255,0.055);
-        --border: rgba(255,255,255,0.11);
-        --text: #f5f5f7;
-        --text-muted: rgba(245,245,247,0.55);
-        --accent: #ff2d92;
-        --accent2: #00e5ff;
+        --bg: #f5f5f7;
+        --glass: rgba(255,255,255,0.6);
+        --border: rgba(0,0,0,0.09);
+        --text: #1c1c1e;
+        --text-muted: rgba(28,28,30,0.55);
+        --accent: #d6336c;
+        --accent2: #7c3aed;
     }
     * { box-sizing: border-box; }
     body {
@@ -46,7 +46,7 @@
 <body>
 <div class="wrap">
     <h1>Usage &amp; cost</h1>
-    <p class="subtitle">Local tally across / and /poplock. Cost is estimated from Anthropic API usage at Sonnet 5 rates.</p>
+    <p class="subtitle">Local tally of app usage. Cost is estimated from actual Anthropic API usage at the rate for whichever model ran each call.</p>
 
     <div class="cards">
         <div class="card"><div class="value">{{ stats.unique_visitors }}</div><div class="label">Unique visitors</div></div>
