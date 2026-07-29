@@ -219,20 +219,18 @@
                 </div>
             </div>
 
+            {% if personal_mode %}
             <div class="form-group">
                 <label>Track selection</label>
-                {% if personal_mode %}
                 <div class="segmented" id="selectionModeToggle">
                     <button type="button" data-value="auto">Auto (AI picks)</button>
                     <button type="button" data-value="manual" class="active">I'll pick</button>
                 </div>
-                {% else %}
-                <p class="hint" style="margin:0;">Pick up to {{ max_manual_tracks }} tracks to feature below.</p>
-                {% endif %}
             </div>
+            {% endif %}
 
             <div class="form-group" id="trackListGroup">
-                <label>Pick tracks to feature</label>
+                <label>{% if personal_mode %}Pick tracks to feature{% else %}Pick up to {{ max_manual_tracks }} tracks to feature{% endif %}</label>
                 <div class="track-list" id="trackList"><div class="track-empty">Paste a tracklist above to load tracks here.</div></div>
             </div>
 
