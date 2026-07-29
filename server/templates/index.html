@@ -221,19 +221,23 @@
 
             <div class="form-group">
                 <label>Track selection</label>
+                {% if personal_mode %}
                 <div class="segmented" id="selectionModeToggle">
-                    <button type="button" data-value="auto" class="active">Auto</button>
-                    <button type="button" data-value="manual">I'll pick</button>
+                    <button type="button" data-value="auto">Auto (AI picks)</button>
+                    <button type="button" data-value="manual" class="active">I'll pick</button>
                 </div>
+                {% else %}
+                <p class="hint" style="margin:0;">Pick up to {{ max_manual_tracks }} tracks to feature below.</p>
+                {% endif %}
             </div>
 
-            <div class="form-group" id="trackListGroup" style="display:none;">
+            <div class="form-group" id="trackListGroup">
                 <label>Pick tracks to feature</label>
                 <div class="track-list" id="trackList"><div class="track-empty">Paste a tracklist above to load tracks here.</div></div>
             </div>
 
             <div class="row3">
-                <div class="form-group" id="numStandoutGroup">
+                <div class="form-group" id="numStandoutGroup" style="display:none;">
                     <label title="Number of standout tracks">Tracks</label>
                     <input type="number" name="num_standout" value="5" min="2" max="15">
                 </div>
@@ -311,10 +315,13 @@
 <script>
 const PERSONAL_MODE = {{ "true" if personal_mode else "false" }};
 const LOGGED_IN = {{ "true" if username else "false" }};
+const MAX_MANUAL_TRACKS = {{ max_manual_tracks }};
 let pollInterval = null;
 let currentJobId = null;
 let lastTheme = null;
-let selectionMode = "auto";
+// Manual selection is the default for everyone -- AI (Auto) curation is an
+// admin-only option, toggled on below only when PERSONAL_MODE.
+let selectionMode = "manual";
 let language = "en";
 let activeUploadRows = {};
 
@@ -322,14 +329,24 @@ function setActive(container, value) {
     container.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.value === value));
 }
 
-document.getElementById("selectionModeToggle").addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    selectionMode = btn.dataset.value;
-    setActive(e.currentTarget, selectionMode);
-    document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
-    document.getElementById("trackListGroup").style.display = selectionMode === "manual" ? "block" : "none";
-    if (selectionMode === "manual") loadTrackCheckboxes();
+if (PERSONAL_MODE) {
+    document.getElementById("selectionModeToggle").addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        selectionMode = btn.dataset.value;
+        setActive(e.currentTarget, selectionMode);
+        document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
+        document.getElementById("trackListGroup").style.display = selectionMode === "manual" ? "block" : "none";
+        if (selectionMode === "manual") loadTrackCheckboxes();
+    });
+}
+
+document.getElementById("trackList").addEventListener("change", (e) => {
+    if (PERSONAL_MODE || e.target.type !== "checkbox") return;
+    const checked = document.querySelectorAll("#trackList input[type=checkbox]:checked");
+    if (checked.length > MAX_MANUAL_TRACKS) {
+        e.target.checked = false;
+    }
 });
 
 document.getElementById("languageToggle").addEventListener("click", (e) => {
@@ -450,13 +467,13 @@ function restoreDraftIfAny() {
         setActive(document.getElementById("languageToggle"), language);
         document.getElementById("languageInput").value = language;
     }
-    if (draft.selectionMode === "manual") {
-        selectionMode = "manual";
-        setActive(document.getElementById("selectionModeToggle"), "manual");
-        document.getElementById("numStandoutGroup").style.display = "none";
-        document.getElementById("trackListGroup").style.display = "block";
-        loadTrackCheckboxes();
+    if (PERSONAL_MODE && draft.selectionMode) {
+        selectionMode = draft.selectionMode;
+        setActive(document.getElementById("selectionModeToggle"), selectionMode);
+        document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
+        document.getElementById("trackListGroup").style.display = selectionMode === "manual" ? "block" : "none";
     }
+    if (selectionMode === "manual") loadTrackCheckboxes();
     const themeModeEl = document.getElementById("themeMode");
     if (draft.theme_mode && [...themeModeEl.options].some((o) => o.value === draft.theme_mode)) {
         themeModeEl.value = draft.theme_mode;

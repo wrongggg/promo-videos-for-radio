@@ -35,6 +35,7 @@ DEFAULT_SHOW_NAME = "Pop Lock"
 VIDEO_RATIO_TARGET = 0.6
 MAX_EXTRA_FETCH_ATTEMPTS = 8
 PACE_SCENE_DURATION = {"chill": 11, "normal": 8, "fast": 6, "hyper": 4.5}
+MAX_MANUAL_TRACKS_NON_ADMIN = 7
 
 
 def _load_or_create_secret_key() -> str:
@@ -464,6 +465,7 @@ def index():
     return render_template(
         "index.html", default_show_name=DEFAULT_SHOW_NAME, username=current_username(),
         presets=list(curator.PRESET_THEMES.keys()), personal_mode=users.is_admin(current_username()),
+        max_manual_tracks=MAX_MANUAL_TRACKS_NON_ADMIN,
     )
 
 
@@ -518,6 +520,10 @@ def start():
     # hidden in the UI, since form fields can be submitted directly.
     if theme_mode in ("custom", "saved") and not is_admin_user:
         theme_mode = "auto"
+    # AI track curation is admin only -- everyone else picks their own tracks,
+    # capped so a colleague can't kick off a 15-track curation run.
+    if not is_admin_user:
+        selection_mode = "manual"
     # Pop Lock personalization keys off the show name itself, admin only --
     # a colleague typing "Pop Lock" as their own show name doesn't get it.
     personal = is_admin_user and show_name.strip().lower() in ("pop lock", "poplock")
@@ -535,6 +541,8 @@ def start():
             manual_picks = json.loads(request.form.get("manual_tracks", "[]"))
         except Exception:
             manual_picks = []
+        if not is_admin_user:
+            manual_picks = manual_picks[:MAX_MANUAL_TRACKS_NON_ADMIN]
 
     cookie_file = users.cookie_path(username) if users.has_cookies(username) else None
 
