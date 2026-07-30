@@ -13,8 +13,13 @@ class Track:
     def from_string(cls, track_string: str) -> "Track":
         track_string = track_string.strip().strip("\"'")
         # Accept hyphen, en dash, and em dash as the artist/title separator —
-        # copy-paste and autocorrect often turn "-" into "–" or "—".
-        sep = re.compile(r"\s[-–—]\s")
+        # copy-paste and autocorrect often turn "-" into "–" or "—". Whitespace
+        # is only required on at least one side (not exactly one space each),
+        # so "Artist- Title" / "Artist  - Title" / "Artist -Title" all still
+        # split correctly -- while a tight, unspaced hyphen inside a name
+        # ("T-Pain", "So-Called") is left alone since it has no space on
+        # either side.
+        sep = re.compile(r"\s+[-–—]\s*|\s*[-–—]\s+")
         if sep.search(track_string):
             parts = sep.split(track_string)
             artist = parts[0].strip()
