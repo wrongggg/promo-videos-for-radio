@@ -351,7 +351,7 @@ def text_css(style: dict) -> str:
     if panel:
         panel_css = (
             f"background: {panel['bg']}; padding: {panel['pad']}; "
-            f"border-radius: {panel['radius']}px; max-width: 900px;"
+            f"border-radius: {panel['radius']}px; max-width: 900px; opacity: 0;"
         )
     else:
         panel_css = ""

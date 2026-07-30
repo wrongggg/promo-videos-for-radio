@@ -58,6 +58,8 @@ class Candidate:
     audio_seconds: Optional[float] = None  # length of that preview
     artwork_url: Optional[str] = None      # release/album art, largest available
     artist_image_url: Optional[str] = None
+    album: str = ""                  # release the track appears on
+    year: str = ""                   # release year, 4 digits
     attribution_url: Optional[str] = None  # link back to the track on the service
     license_note: str = ""
     raw: dict = field(default_factory=dict)
@@ -65,6 +67,17 @@ class Candidate:
     def label(self) -> str:
         v = f" ({self.version})" if self.version else ""
         return f"{self.artist} - {self.title}{v}"
+
+    def release_note(self) -> str:
+        """A short factual line about the release, for scenes where the model
+        found no trivia worth stating. Drawn straight from catalog metadata, so
+        it is always true -- unlike asking a model to fill the gap."""
+        album = (self.album or "").strip()
+        # Singles are usually filed under "<Title> - Single"; repeating the
+        # track name back at the viewer says nothing.
+        if album.lower().rstrip(" -").endswith("single") or not album:
+            return f"Released {self.year}" if self.year else ""
+        return f"From {album}" + (f" ({self.year})" if self.year else "")
 
 
 # --------------------------------------------------------------------------
@@ -169,7 +182,20 @@ def extract_version_keywords(*parts: str) -> set:
 def artist_matches(requested: str, candidate: str) -> bool:
     """Guards against the failure mode where a search for an obscure track
     returns a completely different artist with a vaguely similar name --
-    e.g. "Batu" resolving to "Bkabytruth & Bau Marlo"."""
+    e.g. "Batu" resolving to "Bkabytruth & Bau Marlo".
+
+    Collaborations are matched per-artist. A tracklist may credit
+    "Head High & Cassy" while the catalog credits only "Head High", or lists
+    the pair in the other order, or puts one of them in a "feat." -- so any one
+    side matching is enough. Requiring the full combined string would reject
+    almost every collab."""
+    parts = [p.strip() for p in re.split(r"\s+&\s+|\s+\+\s+", requested or "") if p.strip()]
+    if len(parts) > 1:
+        return any(_artist_part_matches(p, candidate) for p in parts)
+    return _artist_part_matches(requested, candidate)
+
+
+def _artist_part_matches(requested: str, candidate: str) -> bool:
     req_words = [w for w in _words(requested, 2) if w not in _ARTIST_STOPWORDS]
     cand_norm = normalize(candidate)
     if not req_words:
@@ -282,6 +308,8 @@ def search_itunes(track: Track, limit: int = 15) -> list[Candidate]:
             audio_url=r.get("previewUrl"),
             audio_seconds=30.0,
             artwork_url=upscale_itunes_art(r.get("artworkUrl100") or ""),
+            album=r.get("collectionName") or "",
+            year=(r.get("releaseDate") or "")[:4],
             attribution_url=r.get("trackViewUrl"),
             license_note=ITUNES_LICENSE,
             raw=r,
@@ -323,6 +351,8 @@ def search_deezer(track: Track, limit: int = 15) -> list[Candidate]:
             audio_seconds=30.0,
             artwork_url=album.get("cover_xl") or album.get("cover_big"),
             artist_image_url=artist.get("picture_xl") or artist.get("picture_big"),
+            album=album.get("title") or "",
+            year=(r.get("release_date") or album.get("release_date") or "")[:4],
             attribution_url=r.get("link"),
             license_note=DEEZER_LICENSE,
             raw=r,

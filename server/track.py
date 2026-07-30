@@ -3,6 +3,26 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# A slash between artist names is how tracklists write a collaboration --
+# "Head High/Cassy" means Head High & Cassy. Catalogs credit these with "&",
+# "and", "feat." or sometimes just one of the names, so normalizing to "&"
+# searches and displays far better than a raw slash.
+#
+# The exception is a name that genuinely contains a slash, AC/DC being the
+# obvious one. Those have short parts and no spaces, so a slash only counts as
+# a separator when at least one side is 4+ characters or contains a space --
+# which keeps AC/DC intact while splitting Vakula/LG and Head High/Cassy.
+def normalize_artist(artist: str) -> str:
+    if "/" not in (artist or ""):
+        return artist
+    parts = [p.strip() for p in artist.split("/") if p.strip()]
+    if len(parts) < 2:
+        return artist
+    if not any(len(p) >= 4 or " " in p for p in parts):
+        return artist
+    return " & ".join(parts)
+
+
 @dataclass
 class Track:
     artist: str
@@ -25,7 +45,7 @@ class Track:
             artist = parts[0].strip()
             remainder = " - ".join(parts[1:])
         else:
-            return cls(artist=track_string, title="")
+            return cls(artist=normalize_artist(track_string), title="")
 
         album_paren = re.search(r"\((.*?)\)", remainder)
         album_bracket = re.search(r"\[(from|on)?\s*(.*?)\]", remainder)
@@ -44,7 +64,7 @@ class Track:
             title = remainder.strip()
             album = None
 
-        return cls(artist=artist, title=title, album=album)
+        return cls(artist=normalize_artist(artist), title=title, album=album)
 
     def label(self) -> str:
         return f"{self.artist} - {self.title}"

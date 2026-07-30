@@ -117,13 +117,11 @@ html, body {
   font-size: 30px; font-weight: 600; line-height: 1.9; text-align: center; color: rgba(255,255,255,0.9);
   max-width: 880px; margin-bottom: 44px;
 }
-.cta-pill {
-  font-size: 30px; font-weight: 600; letter-spacing: 4px; text-transform: uppercase;
-  padding: 20px 54px; border-radius: 999px; color: #fff;
-  background: rgba(255,255,255,0.06);
-  border: 1.5px solid rgba(255,255,255,0.7);
-  backdrop-filter: blur(6px);
-  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+.cta-text {
+  font-size: 30px; font-weight: 600; letter-spacing: 6px; text-transform: uppercase;
+  color: #fff; padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.45);
+  text-shadow: 0 2px 12px rgba(0,0,0,0.55);
 }
 /* Below the text (.scene is z-index 5), above the artwork and synth. A
    vignette or grain is a lens effect on the imagery; sitting it on top of the
@@ -231,7 +229,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         <div id="orb-b-{index}" class="orb orb-b" style="background: {pal['orb2']};"></div>
         {hero_html}
         <div class="meta-container"{rtl}>
-          <div class="meta-inner">
+          <div id="meta-{index}" class="meta-inner">
             <h1 id="title-{index}" class="track-title" style="font-size: {title_size}px;">{_esc(display_title)}</h1>
             <p id="artist-{index}" class="artist-name">{_esc(track["artist"])}</p>
             {trivia_html}
@@ -251,11 +249,27 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     orb_b_cycle = max(duration / 2.3, 1.5) * mo["speed_mult"]
     orb_ax, orb_ay = round(70 * mo["translate_mult"]), round(-40 * mo["translate_mult"])
     orb_bx, orb_by = round(-60 * mo["translate_mult"]), round(45 * mo["translate_mult"])
-    text_sel = f'"#title-{index}, #artist-{index}' + (f', #trivia-{index}"' if trivia else '"')
+    # A style with a card animates the card as one object. Staggering the lines
+    # individually inside it leaves the card sitting on screen empty for the
+    # first fraction of a second, which reads as a bug -- the box has to arrive
+    # with its contents. Styles without a card keep the line-by-line stagger.
+    has_panel = bool(style.get("panel"))
+    if has_panel:
+        text_sel = f'"#meta-{index}"'
+        entrance_js = (
+            f'tl.fromTo("#meta-{index}", {entrance["from"]}, '
+            f'Object.assign({entrance["to"]}), {start + 0.25})'
+        )
+    else:
+        text_sel = f'"#title-{index}, #artist-{index}' + (f', #trivia-{index}"' if trivia else '"')
+        entrance_js = (
+            f'tl.fromTo("#title-{index}", {entrance["from"]}, Object.assign({entrance["to"]}), {start + 0.25})\n'
+            f'        .fromTo("#artist-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.45})'
+            + (f'\n        .fromTo("#trivia-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else '')
+        )
+
     scene_js = f"""
-      tl.fromTo("#title-{index}", {entrance['from']}, Object.assign({entrance['to']}), {start + 0.25})
-        .fromTo("#artist-{index}", {entrance['from']}, Object.assign({{}}, {entrance['to']}, {{ duration: 1.1 }}), {start + 0.45})
-        {f'.fromTo("#trivia-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else ''}
+      {entrance_js}
         .fromTo("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.2 }}, {start})
         .to("#orb-a-{index}", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#orb-b-{index}", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
@@ -368,7 +382,7 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
         </div>
         <div class="outro-meta">
           {also_html}
-          <div id="outro-cta" class="cta-pill"{rtl}>{_esc(strings['cta'])}</div>
+          <div id="outro-cta" class="cta-text"{rtl}>{_esc(strings['cta'])}</div>
         </div>
       </div>
     """

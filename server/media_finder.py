@@ -47,6 +47,7 @@ class ResolvedMedia:
     artist_image: Optional[str] = None
     needs_manual_audio: bool = False
     matched_label: str = ""
+    release_note: str = ""
     sources: list[dict] = field(default_factory=list)
 
     def credit(self, cand: Candidate, kind: str) -> None:
@@ -68,6 +69,7 @@ class ResolvedMedia:
             "artist_image": self.artist_image,
             "needs_manual_audio": self.needs_manual_audio,
             "matched_label": self.matched_label,
+            "release_note": self.release_note,
             "sources": self.sources,
         }
 
@@ -167,6 +169,7 @@ def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds:
 
     result.audio = trimmed
     result.matched_label = cand.label()
+    result.release_note = cand.release_note()
     result.credit(cand, "audio")
 
     # The audio provider usually carries usable artwork too -- take it now and
@@ -187,6 +190,8 @@ def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedi
         return
 
     for cand in providers.find_image_candidates(track):
+        if not result.release_note:
+            result.release_note = cand.release_note()
         if cand.artwork_url and not result.artwork:
             art = providers.download(cand.artwork_url, os.path.join(out_dir, f"track{index}_art.jpg"))
             if art:
