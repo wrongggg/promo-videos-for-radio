@@ -445,6 +445,7 @@ function loadTrackCheckboxes() {
         .catch(() => {});
 }
 
+const DRAFT_KEY = "promoDraft";
 const themeModeInput = document.getElementById("themeMode");
 
 function selectThemeCard(mode) {
@@ -490,12 +491,10 @@ function loadThemes() {
         });
     }).catch(() => {}).finally(restoreDraftIfAny);
 }
-loadThemes();
 
 // --- Draft restore. Sign-in is gone, so there's no redirect to survive any
 // more, but keeping the restore path means a stray reload doesn't lose a
 // half-typed tracklist. ---
-const DRAFT_KEY = "promoDraft";
 
 function saveDraft() {
     const draft = {
@@ -787,6 +786,13 @@ function skipUpload(row) {
             row.querySelector(".skip-btn").disabled = false;
         });
 }
+
+// Init runs last, once every function and constant above exists. Calling it
+// earlier is what broke Generate: loadThemes reaches restoreDraftIfAny
+// synchronously when there are no saved themes, and touching DRAFT_KEY before
+// its declaration threw, aborting the rest of the script -- including the
+// submit handler, so the form fell back to a native GET.
+loadThemes();
 </script>
 </body>
 </html>
