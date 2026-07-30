@@ -72,6 +72,29 @@ def _normalize(series: np.ndarray) -> np.ndarray:
     return np.clip(series / ceiling, 0.0, 1.0)
 
 
+def _envelope(series: np.ndarray, fps: int,
+              attack: float = 0.06, release: float = 0.45) -> np.ndarray:
+    """Asymmetric one-pole follower: rises quickly, falls slowly.
+
+    Raw band energy moves 0.06-0.17 between adjacent frames (and can jump by
+    0.9), so driving a transform straight off it reads as flicker rather than
+    as motion. Fast attack keeps a hit feeling immediate; slow release turns it
+    into a swell that decays over roughly half a second instead of snapping
+    back on the next frame."""
+    if series.size == 0:
+        return series
+    a_coef = 1.0 - np.exp(-1.0 / max(1e-6, attack * fps))
+    r_coef = 1.0 - np.exp(-1.0 / max(1e-6, release * fps))
+
+    out = np.empty_like(series)
+    acc = float(series[0])
+    for i, v in enumerate(series):
+        coef = a_coef if v > acc else r_coef
+        acc += (float(v) - acc) * coef
+        out[i] = acc
+    return out
+
+
 def _stft_frames(pcm: np.ndarray, hop: int) -> tuple[np.ndarray, np.ndarray]:
     """Magnitude spectrogram, one column per rendered frame."""
     n_frames = max(1, int(np.ceil(len(pcm) / hop)))
@@ -222,7 +245,11 @@ def analyze(audio_path: str, fps: int = 30, duration: Optional[float] = None) ->
     for name, (lo, hi) in BANDS.items():
         sel = (freqs >= lo) & (freqs < hi)
         band = mags[sel].mean(axis=0) if sel.any() else np.zeros(n_frames)
-        out[name] = [round(float(v), 4) for v in _normalize(band)]
+        norm = _normalize(band)
+        out[name] = [round(float(v), 4) for v in norm]
+        # Smoothed twin of each band. Visual transforms should read these, not
+        # the raw series -- see _envelope.
+        out[name + "_env"] = [round(float(v), 4) for v in _envelope(norm, fps)]
 
     # Overall loudness, per frame, from the raw samples rather than the
     # spectrogram -- cheaper and less smeared.
@@ -231,9 +258,12 @@ def analyze(audio_path: str, fps: int = 30, duration: Optional[float] = None) ->
         rms = np.sqrt((pcm[:usable].reshape(-1, hop) ** 2).mean(axis=1) + 1e-12)
         if len(rms) < n_frames:
             rms = np.pad(rms, (0, n_frames - len(rms)), mode="edge")
-        out["level"] = [round(float(v), 4) for v in _normalize(rms[:n_frames])]
+        lvl = _normalize(rms[:n_frames])
+        out["level"] = [round(float(v), 4) for v in lvl]
+        out["level_env"] = [round(float(v), 4) for v in _envelope(lvl, fps)]
     else:
         out["level"] = [0.0] * n_frames
+        out["level_env"] = [0.0] * n_frames
 
     flux = _spectral_flux(mags)
     onsets = _detect_onsets(flux, fps)
@@ -246,6 +276,14 @@ def analyze(audio_path: str, fps: int = 30, duration: Optional[float] = None) ->
     # the detected onsets are exact; the grid is advisory, so it ships with a
     # confidence value rather than pretending otherwise.
     out["beat_confidence"] = confidence
+
+    # How much the low end actually swings over the clip. This -- not tempo
+    # confidence -- is what decides whether a track should visibly pulse: a
+    # four-to-the-floor cut has a big spread, a sparse folk recording barely
+    # moves. Tempo confidence turned out to rank a fingerpicked guitar above a
+    # house track, so it is the wrong signal for this decision.
+    be = np.array(out["bass_env"]) if out.get("bass_env") else np.zeros(1)
+    out["pulse_strength"] = round(float(np.percentile(be, 90) - np.percentile(be, 10)), 3)
     return out
 
 

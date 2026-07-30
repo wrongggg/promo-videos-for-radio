@@ -132,6 +132,20 @@ def _hex_to_rgb01(hex_color: str) -> tuple[float, float, float]:
     return (round(min(r * boost, 1.6), 3), round(min(g * boost, 1.6), 3), round(min(b * boost, 1.6), 3))
 
 
+# A track only earns a visible pulse if its low end actually swings. Measured
+# as the 10th-to-90th-percentile spread of the smoothed bass envelope, which
+# separates a four-to-the-floor cut from a sparse acoustic recording. Tempo
+# confidence is NOT used here -- it ranked a fingerpicked guitar above a house
+# track, so it is the wrong signal for this decision.
+PULSE_THRESHOLD = 0.33
+
+
+def _is_reactive(analysis: Optional[dict]) -> bool:
+    if not analysis:
+        return False
+    return (analysis.get("pulse_strength") or 0.0) >= PULSE_THRESHOLD
+
+
 def canvas_html() -> str:
     """The single shared WebGL canvas. One context for the entire video --
     a per-scene canvas would blow past the browser's context limit on a
@@ -168,16 +182,15 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
             continue
         payload[str(s["index"])] = {
             "start": s["start"],
-            "bass": a["bass"],
-            "level": a["level"],
-            "treble": a["treble"],
-            "onsets": a["onsets"],
+            "bass_env": a["bass_env"],
+            "level_env": a["level_env"],
             "fps": a["fps"],
         }
 
     scene_meta = [
         {"i": s["index"], "start": round(s["start"], 3),
-         "dur": round(s["duration"], 3), "art": bool(s.get("has_art"))}
+         "dur": round(s["duration"], 3), "art": bool(s.get("has_art")),
+         "reactive": _is_reactive(s.get("analysis"))}
         for s in scenes
     ]
 
@@ -243,21 +256,28 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     return null;
   }}
 
-  // Recent-onset impulse: 1.0 exactly on a hit, decaying over ~250ms. Drives
-  // the flash/kick accents without needing a live signal.
-  function onsetPulse(a, tInScene) {{
-    if (!a || !a.onsets || !a.onsets.length) return 0;
-    var f = tInScene * a.fps;
-    var best = 0;
-    for (var i = 0; i < a.onsets.length; i++) {{
-      var d = f - a.onsets[i];
-      if (d < 0) break;
-      if (d < a.fps * 0.25) {{
-        var v = 1 - (d / (a.fps * 0.25));
-        if (v > best) best = v;
-      }}
-    }}
-    return best;
+  // Camera moves, cycled per scene so consecutive tracks never repeat one.
+  // This is the primary motion: a continuous function of scene progress with
+  // no audio input at all, which is what keeps the video calm.
+  var MOVES = [
+    {{ s0: 1.04, s1: 1.17, x0:   0, x1:   0, y0:   0, y1:   0 }},  // slow push in
+    {{ s0: 1.18, s1: 1.05, x0:   0, x1:   0, y0:   0, y1:   0 }},  // slow pull back
+    {{ s0: 1.08, s1: 1.19, x0: -22, x1:  16, y0:   0, y1:   0 }},  // push, drift right
+    {{ s0: 1.17, s1: 1.06, x0:   0, x1:   0, y0:  16, y1: -14 }},  // pull, drift up
+  ];
+
+  function smoothstep(x) {{
+    x = x < 0 ? 0 : (x > 1 ? 1 : x);
+    return x * x * (3 - 2 * x);
+  }}
+
+  // Short fade at each end of a scene so artwork never pops in or out.
+  var FADE = 0.45;
+  function edgeFade(tin, dur) {{
+    if (dur <= FADE * 2) return 1;
+    if (tin < FADE) return tin / FADE;
+    if (tin > dur - FADE) return (dur - tin) / FADE;
+    return 1;
   }}
 
   window.__drawVisuals = function (t) {{
@@ -265,10 +285,10 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     var a = scene ? AUDIO[String(scene.i)] : null;
     var tin = scene ? (t - scene.start) : 0;
 
-    var bass = a ? sample(a.bass, tin, a.fps) : 0;
-    var level = a ? sample(a.level, tin, a.fps) : 0;
-    var treble = a ? sample(a.treble, tin, a.fps) : 0;
-    var pulse = a ? onsetPulse(a, tin) : 0;
+    // Only the smoothed envelopes are read here. The raw bands move up to 0.9
+    // between adjacent frames, which reads as flicker rather than motion.
+    var levelEnv = a ? sample(a.level_env, tin, a.fps) : 0;
+    var bassEnv = a ? sample(a.bass_env, tin, a.fps) : 0;
 
     if (hydra && h) {{
       // Absolute time -- never accumulated. This is what makes a re-rendered
@@ -276,15 +296,14 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       h.time = t;
       try {{ hydra.tick(1000 / FPS); }} catch (e) {{}}
       // The synth carries the frame only when there is no artwork. Behind
-      // artwork it is texture, not subject: at much above ~0.25 it competes
-      // with the cover and pushes the title/artist text under its contrast
-      // floor. Capped rather than clamped at 1 for the same reason.
-      var base = scene && scene.art ? 0.16 : 0.80;
-      var ceiling = scene && scene.art ? 0.30 : 1.0;
-      canvas.style.opacity = String(Math.min(ceiling, base + level * 0.12 + pulse * 0.05));
+      // artwork it is texture, not subject -- much above ~0.25 and it competes
+      // with the cover and pushes the title under its contrast floor. Its
+      // opacity drifts on the smoothed level only, never on a raw band.
+      var base = scene && scene.art ? 0.15 : 0.78;
+      var span = scene && scene.art ? 0.08 : 0.18;
+      canvas.style.opacity = (base + levelEnv * span).toFixed(4);
     }}
 
-    // Artwork: a slow Ken Burns push plus a bass "breath" and an onset kick.
     for (var k = 0; k < SCENES.length; k++) {{
       var s = SCENES[k];
       var el = document.getElementById("art-" + s.i);
@@ -298,19 +317,26 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
         // a frame-seeking renderer must be able to rely on.
         el.style.opacity = "0";
         el.style.transform = "scale(1)";
-        el.style.filter = "none";
         continue;
       }}
 
-      var p = s.dur > 0 ? (t - s.start) / s.dur : 0;
-      var drift = 1.06 + p * 0.10;                 // Ken Burns
-      var breath = 1 + bass * 0.045 + pulse * 0.02; // reacts to the track
-      var pan = (p - 0.5) * 26;
-      el.style.opacity = String(Math.min(1, 0.62 + level * 0.30));
+      var m = MOVES[s.i % MOVES.length];
+      var e = smoothstep(s.dur > 0 ? (t - s.start) / s.dur : 0);
+      var scale = m.s0 + (m.s1 - m.s0) * e;
+      var x = m.x0 + (m.x1 - m.x0) * e;
+      var y = m.y0 + (m.y1 - m.y0) * e;
+
+      // Reactivity is opt-in per track and deliberately tiny -- a breath on
+      // top of the camera move, not a bounce. Tracks without a real low-end
+      // pulse get pure camera motion (see `reactive` in runtime_js).
+      if (s.reactive) scale *= 1 + bassEnv * 0.018;
+
+      el.style.opacity = (0.88 * edgeFade(tin, s.dur)).toFixed(4);
       el.style.transform =
-        "scale(" + (drift * breath).toFixed(4) + ") translate(" +
-        pan.toFixed(2) + "px, " + (-pan * 0.4).toFixed(2) + "px)";
-      el.style.filter = "saturate(" + (1 + treble * 0.35).toFixed(3) + ")";
+        "scale(" + scale.toFixed(4) + ") translate(" +
+        x.toFixed(2) + "px, " + y.toFixed(2) + "px)";
+      // No audio-driven filter. Treble moved ~0.17 per frame, so driving
+      // saturation from it strobed the colour.
     }}
   }};
 
