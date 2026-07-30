@@ -571,3 +571,56 @@ def render_video(project_dir: str, output_rel_path: str, quality: str = "standar
     if result.returncode != 0:
         raise RuntimeError(f"hyperframes render failed:\n{result.stdout}\n{result.stderr}")
     return os.path.join(project_dir, output_rel_path)
+
+
+# The wordmark burned into free-tier videos. A committed PNG rather than an
+# ffmpeg `drawtext` call: drawtext needs libfreetype, which this project's
+# ffmpeg builds don't consistently have, and a raster asset looks identical in
+# dev and in the container. Regenerate with tools/make_watermark.py.
+WATERMARK_PATH = os.path.join(PROJECT_DIR, "assets", "brand", "watermark.png")
+# Distance from the bottom edge, in output pixels. Clear of the 1080x1920
+# frame's safe area but inside the crop most players/socials apply.
+WATERMARK_MARGIN_BOTTOM = 96
+
+
+def watermark_video(src_path: str, dst_path: str) -> str:
+    """Writes a watermarked copy of src_path to dst_path, bottom-centre.
+
+    Deliberately a second pass over a finished render rather than an element in
+    the composition: rendering twice would cost a second full ~50s capture,
+    whereas this re-encode is a few seconds. It also means the clean master
+    already exists the moment someone pays -- upgrading hands over a file that
+    is already on disk instead of triggering a re-render.
+
+    Audio is stream-copied; only video is re-encoded.
+    """
+    if not os.path.exists(WATERMARK_PATH):
+        raise RuntimeError(f"watermark asset missing: {WATERMARK_PATH} (run tools/make_watermark.py)")
+
+    cmd = [
+        "ffmpeg", "-v", "error", "-y",
+        "-i", src_path,
+        "-i", WATERMARK_PATH,
+        "-filter_complex",
+        f"[0:v][1:v]overlay=(W-w)/2:H-h-{WATERMARK_MARGIN_BOTTOM}:format=auto",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        # Copy audio untouched -- re-encoding it would cost quality for nothing.
+        # `-c:a copy` on a file with no audio track fails, so only map/copy
+        # audio when the source actually has some.
+        *(["-c:a", "copy"] if _has_audio(src_path) else ["-an"]),
+        dst_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"watermarking failed:\n{result.stdout}\n{result.stderr}")
+    return dst_path
+
+
+def _has_audio(path: str) -> bool:
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a",
+         "-show_entries", "stream=index", "-of", "csv=p=0", path],
+        capture_output=True, text=True,
+    )
+    return bool(result.stdout.strip())

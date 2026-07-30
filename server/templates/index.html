@@ -119,21 +119,21 @@
         /* segmented control */
 {{ theme_preview_css|safe }}
 {{ theme_layout_css|safe }}
-        .logo-preview {
-            display: flex; align-items: center; gap: 10px; margin-top: 10px;
-            padding: 8px 12px; border-radius: 10px;
-            background: #14141a; border: 1px solid var(--border-soft);
+        /* The dark tile and the inversion have to sit on different elements:
+           a CSS filter applies to the element's own background too, so putting
+           both on the <img> turned the whole chip into a white block. */
+        .logo-chip {
+            display: inline-flex; align-items: center; justify-content: center;
+            height: 17px; padding: 0 4px; margin-right: 7px; border-radius: 3px;
+            background: #14141a;
         }
-        .logo-preview img {
-            height: 26px; max-width: 120px; object-fit: contain;
-            /* Matches what the renderer does to the logo, so the chip shows
-               what will actually appear rather than the raw file. */
+        .logo-chip img {
+            height: 11px; max-width: 40px; object-fit: contain; display: block;
+            /* Same inversion the renderer applies, so the chip previews what
+               will appear rather than the raw file. */
             filter: brightness(0) invert(1);
         }
-        .logo-preview span {
-            font-size: 11px; color: rgba(255,255,255,0.6);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
+        #logoToggle button { display: inline-flex; align-items: center; justify-content: center; }
         .theme-grid {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
             gap: 10px;
@@ -357,18 +357,16 @@
                 <div class="form-group">
                     <label>Logo</label>
                     <div class="segmented" id="logoToggle">
-                        {% if station_mode %}<button type="button" data-value="default" class="active">KZ Radio</button>{% endif %}
-                        <button type="button" data-value="upload">Upload</button>
+                        <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>
+                            <span class="logo-chip" id="logoChipWrap" hidden><img id="logoChip" alt=""></span>
+                            <span>Show</span>
+                        </button>
                         <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
                     </div>
-                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}default{% else %}none{% endif %}">
-                    <div id="logoUploadGroup" style="display:none; margin-top:10px;">
+                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}show{% else %}none{% endif %}">
+                    <div id="logoUploadGroup" style="display:none; margin-top:8px;">
                         <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
-                        <p class="hint">PNG with a transparent background works best. Max 2&nbsp;MB.</p>
-                    </div>
-                    <div class="logo-preview" id="logoPreview" style="display:none;">
-                        <img id="logoPreviewImg" alt="" />
-                        <span id="logoPreviewName">KZ Radio</span>
+                        <p class="hint">Square or wide PNG, transparent background. Max 2&nbsp;MB.</p>
                     </div>
                 </div>
             </div>
@@ -443,29 +441,31 @@ if (PERSONAL_MODE) {
 }
 
 const STATION_LOGO_URL = "{{ station_logo_url }}";
+const STATION_MODE = {{ "true" if station_mode else "false" }};
 
 function refreshLogoPreview() {
-    const mode = document.getElementById("useLogoInput").value;
-    const box = document.getElementById("logoPreview");
-    const img = document.getElementById("logoPreviewImg");
-    const name = document.getElementById("logoPreviewName");
+    const on = document.getElementById("useLogoInput").value === "show";
+    const chip = document.getElementById("logoChip");
+    const chipWrap = document.getElementById("logoChipWrap");
     const file = document.getElementById("logoInput").files[0];
 
-    if (mode === "default") {
-        img.src = STATION_LOGO_URL;
-        name.textContent = "KZ Radio";
-        box.style.display = "flex";
-    } else if (mode === "upload" && file) {
-        // Revoke the previous blob URL so picking several files in a row
-        // doesn't leak one per attempt.
-        if (img.dataset.blob) URL.revokeObjectURL(img.dataset.blob);
+    // Upload is offered whenever Show is on. A station session gets the station
+    // mark by default and can still override it with their own file; everyone
+    // else has only the upload, so the same rule serves both.
+    document.getElementById("logoUploadGroup").style.display = on ? "block" : "none";
+
+    if (!on) { chipWrap.hidden = true; return; }
+    if (file) {
+        if (chip.dataset.blob) URL.revokeObjectURL(chip.dataset.blob);
         const url = URL.createObjectURL(file);
-        img.dataset.blob = url;
-        img.src = url;
-        name.textContent = file.name;
-        box.style.display = "flex";
+        chip.dataset.blob = url;
+        chip.src = url;
+        chipWrap.hidden = false;
+    } else if (STATION_MODE) {
+        chip.src = STATION_LOGO_URL;
+        chipWrap.hidden = false;
     } else {
-        box.style.display = "none";
+        chipWrap.hidden = true;
     }
 }
 
@@ -474,8 +474,6 @@ document.getElementById("logoToggle").addEventListener("click", (e) => {
     if (!btn) return;
     setActive(e.currentTarget, btn.dataset.value);
     document.getElementById("useLogoInput").value = btn.dataset.value;
-    document.getElementById("logoUploadGroup").style.display =
-        btn.dataset.value === "upload" ? "block" : "none";
     refreshLogoPreview();
 });
 
