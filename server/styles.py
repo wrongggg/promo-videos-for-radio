@@ -613,6 +613,13 @@ PREVIEW_THUMB_WIDTH = 320
 
 
 def _preview_sources() -> list[str]:
+    """The two cover files, `cover-a`/`cover-b` preferred.
+
+    Those two names are the committed, already-downscaled pair that ships with
+    the repo, so production has covers without anyone remembering to upload
+    anything. Any other images in the folder are still picked up (drop in a
+    replacement and it works), but the canonical names win so the result does
+    not depend on how a generated filename happens to sort."""
     try:
         names = sorted(
             n for n in os.listdir(PREVIEW_IMAGE_DIR)
@@ -620,7 +627,15 @@ def _preview_sources() -> list[str]:
         )
     except OSError:
         return []
-    return [os.path.join(PREVIEW_IMAGE_DIR, n) for n in names[:2]]
+    canonical = [n for n in names if os.path.splitext(n)[0].lower() in ("cover-a", "cover-b")]
+    chosen = canonical if len(canonical) == 2 else names
+    return [os.path.join(PREVIEW_IMAGE_DIR, n) for n in chosen[:2]]
+
+
+# Anything at or under this is already tile-sized and is served as-is. It also
+# keeps production off ffmpeg entirely for the committed pair -- if the resize
+# failed there, the tiles would silently drop back to the generated art.
+_PREVIEW_PASSTHROUGH_BYTES = 400 * 1024
 
 
 def _ensure_thumb(src: str) -> str | None:
@@ -628,6 +643,12 @@ def _ensure_thumb(src: str) -> str | None:
 
     Best-effort: if ffmpeg isn't usable the caller falls back to the generated
     artwork rather than serving a 8MB PNG into the picker."""
+    try:
+        if os.path.getsize(src) <= _PREVIEW_PASSTHROUGH_BYTES:
+            return src
+    except OSError:
+        return None
+
     stem = os.path.splitext(os.path.basename(src))[0]
     safe = "".join(c if c.isalnum() else "-" for c in stem)[:60]
     dest = os.path.join(_PREVIEW_THUMB_DIR, f"{safe}.jpg")
@@ -654,7 +675,8 @@ def preview_image(variant: int) -> str | None:
     thumb = _ensure_thumb(sources[variant])
     if not thumb:
         return None
-    return f"/static/preview/thumbs/{os.path.basename(thumb)}"
+    rel = os.path.relpath(thumb, os.path.join(os.path.dirname(PREVIEW_IMAGE_DIR)))
+    return "/static/" + rel.replace(os.sep, "/")
 
 
 def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:

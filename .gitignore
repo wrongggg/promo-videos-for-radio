@@ -23,6 +23,10 @@ assets/
 
 # Generated theme example renders + contact sheet (see theme-examples/)
 theme-examples/
-# Drop-in preview covers (cover-a.*, cover-b.*) -- generated art, not source
+# Preview covers. The downscaled cover-a/cover-b pair IS committed -- production
+# has no other way to get them, and at ~47KB together they cost nothing. The
+# full-size originals and the generated thumbs cache stay out.
 server/static/preview/*
 !server/static/preview/README.md
+!server/static/preview/cover-a.jpg
+!server/static/preview/cover-b.jpg

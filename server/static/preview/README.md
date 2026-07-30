@@ -1,13 +1,16 @@
 # Preview covers
 
-Drop two square (1:1) images here and the theme picker tiles use them instead
-of the generated stand-in. No code change needed.
+`cover-a.jpg` and `cover-b.jpg` are committed and are what the theme picker
+tiles show. They are already downscaled (320x320, ~47KB the pair) — production
+has no other way to get them, so they live in the repo rather than being
+gitignored like the rest of this folder.
 
-    cover-a.jpg   (or .png / .webp / .jpeg)
-    cover-b.jpg
+To change them, replace those two files with square images. Anything at or
+under 400KB is served straight through; anything larger is downscaled once via
+ffmpeg and cached in `thumbs/` (gitignored).
 
 Two different images, because the hover preview animates a hand-over from one
-to the other — using the same file twice makes the transition invisible.
+to the other — the same file twice makes the transition invisible.
 
 They are cropped centre to 9:16 in the tile, exactly as the renderer crops real
 album art, so keep anything important away from the left and right edges.
