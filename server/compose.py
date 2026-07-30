@@ -103,20 +103,33 @@ html, body {
   font-size: 26px; font-weight: 600; letter-spacing: 4px; text-transform: uppercase;
   opacity: 0; margin-top: 10px; color: rgba(255,255,255,0.7); text-shadow: 0 3px 14px rgba(0,0,0,0.8);
 }
+.outro-meta {
+  position: relative; z-index: 10; width: 100%;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  margin-top: auto; margin-bottom: 130px;
+}
 .outro-title {
   font-size: 72px; font-weight: 900; text-transform: uppercase; letter-spacing: 4px;
-  text-align: center; margin-bottom: 32px; text-shadow: 0 4px 24px rgba(0,0,0,0.7);
+  text-align: center; margin-bottom: 32px; color: #fff;
+  text-shadow: 0 4px 24px rgba(0,0,0,0.7);
 }
 .also-featuring-list {
   font-size: 30px; font-weight: 600; line-height: 1.9; text-align: center; color: rgba(255,255,255,0.9);
   max-width: 880px; margin-bottom: 44px;
 }
 .cta-pill {
-  font-size: 38px; font-weight: 900; letter-spacing: 3px; text-transform: uppercase;
-  padding: 28px 64px; border-radius: 70px; color: #050508;
-  border: 3px solid rgba(255,255,255,0.85);
+  font-size: 30px; font-weight: 600; letter-spacing: 4px; text-transform: uppercase;
+  padding: 20px 54px; border-radius: 999px; color: #fff;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.7);
+  backdrop-filter: blur(6px);
+  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
 }
-.frame-overlay { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 50; pointer-events: none; }
+/* Below the text (.scene is z-index 5), above the artwork and synth. A
+   vignette or grain is a lens effect on the imagery; sitting it on top of the
+   type darkened the very thing it needs to keep legible, and the layout check
+   correctly flagged the titles as occluded. */
+.frame-overlay { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 4; pointer-events: none; }
 .frame-grain {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   opacity: 0.05; mix-blend-mode: overlay;
@@ -340,7 +353,7 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
                 artists.append(t["artist"])
         items = " &nbsp;•&nbsp; ".join(_esc(a) for a in artists[:8])
         also_html = f"""
-          <h1 id="outro-title" class="outro-title" style="color: {pal['accent']};"{rtl}>{_esc(strings['also_featuring'])}</h1>
+          <h1 id="outro-title" class="outro-title"{rtl}>{_esc(strings['also_featuring'])}</h1>
           <p id="also-featuring" class="also-featuring-list">{items}</p>
         """
     logo_html = f'<img id="outro-logo" class="outro-logo" src="{_esc(LOGO_PATH)}" alt="logo" />' if LOGO_PATH else ""
@@ -353,9 +366,9 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
           <div id="outro-show" class="outro-show">{_esc(show_name)}</div>
           <div id="outro-episode" class="outro-episode">{_esc(episode_label)}</div>
         </div>
-        <div class="meta-container" style="margin-bottom: 130px;">
+        <div class="outro-meta">
           {also_html}
-          <div id="outro-cta" class="cta-pill" style="background: linear-gradient(90deg, {pal['accent']}, {pal['accent2']}); box-shadow: 0 0 0 10px {pal['accent']}33, 0 12px 50px {pal['accent']}99;"{rtl}>{_esc(strings['cta'])}</div>
+          <div id="outro-cta" class="cta-pill"{rtl}>{_esc(strings['cta'])}</div>
         </div>
       </div>
     """
@@ -363,8 +376,6 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
     orb_b_cycle = max(duration / 2.2, 1.5) * mo["speed_mult"]
     orb_ax, orb_ay = round(50 * mo["translate_mult"]), round(-30 * mo["translate_mult"])
     orb_bx, orb_by = round(-45 * mo["translate_mult"]), round(30 * mo["translate_mult"])
-    pulse_start_offset = 1.1 + 0.8 + 0.15  # gap after the entrance tween so scale never overlaps
-    pulse_span = max(duration - pulse_start_offset, 0.7)
     scene_js = f"""
       tl.fromTo("#outro-orb-a, #outro-orb-b", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.4 }}, {start})
         .to("#outro-orb-a", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
@@ -373,9 +384,7 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
         .fromTo("#outro-show", {{ opacity: 0, y: 24 }}, {{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, {start + 0.3})
         .fromTo("#outro-episode", {{ opacity: 0, y: 16 }}, {{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.45})
         .fromTo("#outro-title", {{ opacity: 0, y: 40 }}, {{ opacity: 1, y: 0, duration: 1, ease: "power3.out" }}, {start + 0.65})
-        .fromTo("#also-featuring", {{ opacity: 0, y: 30 }}, {{ opacity: 1, y: 0, duration: 1.1, ease: "power3.out" }}, {start + 0.95})
-        .fromTo("#outro-cta", {{ opacity: 0, scale: 0.7 }}, {{ opacity: 1, scale: 1, duration: 0.8, ease: "back.out(1.8)" }}, {start + 1.3})
-        .to("#outro-cta", {{ scale: 1.1, duration: 0.7, yoyo: true, repeat: {_loop_repeat(pulse_span, 0.7)}, ease: "sine.inOut", overwrite: "auto" }}, {start + pulse_start_offset + 0.2});
+        .fromTo("#also-featuring", {{ opacity: 0, y: 30 }}, {{ opacity: 1, y: 0, duration: 1.1, ease: "power3.out" }}, {start + 0.95});
     """
     return scene_html, scene_js
 

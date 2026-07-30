@@ -54,11 +54,11 @@
 
         .layout {
             position: relative; z-index: 1;
-            max-width: 1680px; margin: 0 auto; padding: 48px 24px;
+            max-width: 1780px; margin: 0 auto; padding: 48px 28px;
             display: grid; grid-template-columns: 1fr; gap: 24px;
         }
         @media (min-width: 900px) {
-            .layout { grid-template-columns: minmax(0, 480px) 1fr; align-items: start; }
+            .layout { grid-template-columns: minmax(0, 640px) 1fr; align-items: start; }
         }
 
         .panel {
@@ -168,8 +168,21 @@
         .track-empty { color: var(--text-muted); font-size: 13px; padding: 10px; }
 
         /* --- right panel: status / preview --- */
-        .preview-panel { display: none; min-height: 200px; }
-        .status-line { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; color: var(--accent2); }
+        .preview-panel { display: block; min-height: 200px; position: sticky; top: 48px; }
+        .status-line { display: none; }
+        .video-placeholder {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 10px; width: 100%; max-width: 420px; aspect-ratio: 9 / 16; margin: 0 auto;
+            border-radius: 20px; border: 1px dashed var(--border);
+            background: repeating-linear-gradient(
+                45deg, rgba(0,0,0,0.035), rgba(0,0,0,0.035) 12px,
+                rgba(0,0,0,0.055) 12px, rgba(0,0,0,0.055) 24px);
+            color: var(--text-muted); text-align: center; padding: 24px;
+        }
+        .video-placeholder .ph-icon { font-size: 30px; opacity: 0.5; }
+        .video-placeholder .ph-title { font-size: 14px; font-weight: 600; }
+        .video-placeholder .ph-sub { font-size: 12px; max-width: 240px; line-height: 1.5; }
+        .status-line.on { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; color: var(--accent2); }
         .spinner {
             width: 16px; height: 16px; border: 3px solid rgba(124,58,237,0.2); border-radius: 50%;
             border-top-color: var(--accent2); animation: spin 0.8s linear infinite; flex: none;
@@ -334,6 +347,12 @@
     </div>
 
     <div class="panel preview-panel" id="previewPanel">
+        <div class="video-placeholder" id="videoPlaceholder">
+            <div class="ph-icon">🎬</div>
+            <div class="ph-title">Your video will appear here</div>
+            <div class="ph-sub">Paste a tracklist, pick a theme, and hit Generate. Rendering takes about a minute.</div>
+        </div>
+
         <div class="status-line" id="statusLine"><div class="spinner" id="spinner"></div><span id="statusText">Working...</span></div>
 
         <div class="uploads-box" id="uploadsBox">
@@ -595,7 +614,8 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
 
     btn.disabled = true;
     previewPanel.style.display = "block";
-    statusLine.style.display = "flex";
+    document.getElementById("videoPlaceholder").style.display = "none";
+    statusLine.classList.add("on");
     uploadsBox.style.display = "none";
     document.getElementById("uploadRows").innerHTML = "";
     activeUploadRows = {};
@@ -660,7 +680,7 @@ function pollStatus() {
 
             if (job.status === "done") {
                 clearInterval(pollInterval);
-                statusLine.style.display = "none";
+                statusLine.classList.remove("on");
                 btn.disabled = false;
                 downloadBox.style.display = "block";
                 document.getElementById("downloadLink").href = `/download/${currentJobId}`;
