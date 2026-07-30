@@ -124,7 +124,7 @@ def _resolve_theme(theme_mode, theme_value, tracks, job_id=None, model=curator.M
     return curator.suggest_theme(tracks, job_id=job_id, model=model)
 
 
-def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=False, cookie_file=None):
+def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=False, cookie_file=None, show_info=False):
     """Fetch media for ranked candidates (best first), enforcing: at least
     VIDEO_RATIO_TARGET of the final picks have video, and extra candidates are
     pulled in to satisfy that when the top picks don't have enough video."""
@@ -150,7 +150,8 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
         _log(job, f"  video={'yes' if result['video'] else 'no'} audio={'yes' if result['audio'] else 'no'} image={'yes' if result['image'] else 'no'}")
 
         entry = {
-            "track": {"artist": cand["artist"], "title": cand["title"], "reason": cand.get("reason", "")},
+            "track": {"artist": cand["artist"], "title": cand["title"],
+                      "reason": (cand.get("reason", "") or result.get("release_note", "")) if show_info else ""},
             "media": result,
             "has_video": has_video,
             "media_index": this_index,
@@ -178,13 +179,20 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
     return resolved
 
 
-def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
+def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False):
     """picks: list of {artist, title, album}. Unlike auto mode, there's no backup
     pool to draw from -- every pick is attempted once, in order, and only true
     dead-ends (no video, no image, no audio found anywhere) get dropped."""
-    tracks_for_trivia = [Track(artist=p["artist"], title=p["title"], album=p.get("album")) for p in picks]
-    _log(job, f"Checking for notable trivia on {len(picks)} selected tracks...")
-    trivia_map = curator.trivia_for_tracks(tracks_for_trivia, language=language, job_id=job_id, personal=personal, use_search=use_search, model=model)
+    # The description line is operator-only. Without web search the model is
+    # told to stay silent rather than guess, so most tracks got nothing anyway,
+    # and a line a subscriber can't review before it ships is a quality risk on
+    # someone else's promo. Skipping the call outright also drops an Anthropic
+    # request per job for every non-operator run.
+    trivia_map = {}
+    if show_info:
+        tracks_for_trivia = [Track(artist=p["artist"], title=p["title"], album=p.get("album")) for p in picks]
+        _log(job, f"Checking for notable trivia on {len(picks)} selected tracks...")
+        trivia_map = curator.trivia_for_tracks(tracks_for_trivia, language=language, job_id=job_id, personal=personal, use_search=use_search, model=model)
 
     resolved = []
     media_index = 0
@@ -201,7 +209,12 @@ def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=
             _log(job, f"  couldn't find anything for {p['artist']} - {p['title']} — skipping it")
             continue
 
-        reason = trivia_map.get((p["artist"].lower(), p["title"].lower()), "")
+        # Fall back to the factual release line from catalog metadata when the
+        # model had nothing verifiable to say.
+        reason = ""
+        if show_info:
+            reason = (trivia_map.get((p["artist"].lower(), p["title"].lower()), "")
+                      or result.get("release_note", ""))
         resolved.append({
             "track": {"artist": p["artist"], "title": p["title"], "reason": reason},
             "media": result,
@@ -236,7 +249,7 @@ def _extend_closing_audio(job, last_entry, job_dir, scene_duration, allow_youtub
         _log(job, f"  could not extend closing audio ({e}) — outro may be quiet")
 
 
-def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
+def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False):
     job = JOBS[job_id]
     job["cookie_file"] = cookie_file
     job["allow_youtube"] = allow_youtube
@@ -267,7 +280,7 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
                 raise ValueError("No tracks were selected")
             job["status"] = "curating"
             job["status"] = "fetching_media"
-            resolved = _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=job_id, personal=personal, allow_youtube=allow_youtube, cookie_file=cookie_file, use_search=use_search, model=model)
+            resolved = _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=job_id, personal=personal, allow_youtube=allow_youtube, cookie_file=cookie_file, use_search=use_search, model=model, show_info=show_info)
         else:
             job["status"] = "curating"
             _log(job, "Ranking standout tracks" + (" (web research)..." if use_search else "..."))
@@ -275,7 +288,7 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
             _log(job, "Ranked candidates: " + ", ".join(f"{r['artist']} - {r['title']}" for r in ranked))
 
             job["status"] = "fetching_media"
-            resolved = _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
+            resolved = _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file, show_info=show_info)
 
         if not resolved:
             raise ValueError("Could not resolve media for any standout track")
@@ -505,6 +518,8 @@ def start():
 
     # The YouTube source is operator-only: downloading from YouTube breaks its
     # terms of service, so it must never run for anyone else's job.
+    # Track description lines stay an operator feature for now.
+    show_info = is_admin_user
     allow_youtube = is_admin_user
     cookie_file = YOUTUBE_COOKIE_FILE if (allow_youtube and YOUTUBE_COOKIE_FILE) else None
 
@@ -516,7 +531,7 @@ def start():
 
     thread = threading.Thread(
         target=_run_fetch_stage,
-        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model),
+        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model, show_info),
         daemon=True,
     )
     thread.start()

@@ -279,9 +279,9 @@
             </div>
             {% endif %}
 
-            <div class="form-group" id="trackListGroup">
+            <div class="form-group" id="trackListGroup" style="display:none;">
                 <label>{% if personal_mode %}Pick tracks to feature{% else %}Pick up to {{ max_manual_tracks }} tracks to feature{% endif %}</label>
-                <div class="track-list" id="trackList"><div class="track-empty">Paste a tracklist above to load tracks here.</div></div>
+                <div class="track-list" id="trackList"></div>
             </div>
 
             <div class="row3">
@@ -411,8 +411,7 @@ if (PERSONAL_MODE) {
         selectionMode = btn.dataset.value;
         setActive(e.currentTarget, selectionMode);
         document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
-        document.getElementById("trackListGroup").style.display = selectionMode === "manual" ? "block" : "none";
-        if (selectionMode === "manual") loadTrackCheckboxes();
+        if (selectionMode === "manual") { loadTrackCheckboxes(); } else { setTrackPickerVisible(false); }
     });
 }
 
@@ -448,11 +447,19 @@ document.getElementById("tracklistInput").addEventListener("input", () => {
     trackLoadTimer = setTimeout(loadTrackCheckboxes, 500);
 });
 
+function setTrackPickerVisible(on) {
+    const group = document.getElementById("trackListGroup");
+    // In auto mode the operator isn't picking tracks at all, so the group stays
+    // hidden regardless of whether a tracklist has been parsed.
+    group.style.display = (on && selectionMode === "manual") ? "block" : "none";
+}
+
 function loadTrackCheckboxes() {
     const text = document.getElementById("tracklistInput").value;
     const listEl = document.getElementById("trackList");
     if (!text.trim()) {
-        listEl.innerHTML = '<div class="track-empty">Paste a tracklist above to load tracks here.</div>';
+        listEl.innerHTML = "";
+        setTrackPickerVisible(false);
         return;
     }
     fetch("/parse_tracklist", {
@@ -463,9 +470,10 @@ function loadTrackCheckboxes() {
         .then((data) => {
             listEl.innerHTML = "";
             if (!data.tracks.length) {
-                listEl.innerHTML = '<div class="track-empty">No tracks recognized yet.</div>';
+                setTrackPickerVisible(false);
                 return;
             }
+            setTrackPickerVisible(true);
             data.tracks.forEach((t, i) => {
                 const row = document.createElement("label");
                 row.className = "track-row";
