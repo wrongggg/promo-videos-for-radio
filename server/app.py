@@ -585,7 +585,7 @@ def start():
     allow_youtube = is_admin_user
     cookie_file = YOUTUBE_COOKIE_FILE if (allow_youtube and YOUTUBE_COOKIE_FILE) else None
 
-    owner = access.visitor_id()
+    owner = access.owner_id()
     job_id = str(uuid.uuid4())
     # The KZ Radio mark is the operator's own branding -- it must never end up
     # on a stranger's promo. Everyone else gets their upload, or no logo.
@@ -614,7 +614,15 @@ def start():
 
 
 def _owns_job(job) -> bool:
-    return job is not None and job.get("owner") == access.visitor_id()
+    """Ownership keys off the bare browser id, not the analytics label.
+
+    The stored value is split on ':' so jobs created before this fix -- whose
+    owner was recorded as "anon:<id>" or "operator:<id>" -- still match after a
+    deploy, instead of every in-flight job 403ing."""
+    if job is None:
+        return False
+    stored = (job.get("owner") or "").split(":", 1)[-1]
+    return stored == access.owner_id()
 
 
 @app.route("/status/<job_id>")

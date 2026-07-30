@@ -872,7 +872,10 @@ function skipUpload(row) {
             pollStatus();
         })
         .catch((err) => {
-            status.textContent = "Failed — try again";
+            // Show what the server actually said. A generic "Failed" hid a
+            // 403 "not your job" behind the same text as a network blip,
+            // which made a real bug look like a flaky click.
+            status.textContent = err.message ? `Failed — ${err.message}` : "Failed — try again";
             row.querySelector("input").disabled = false;
             row.querySelector(".skip-btn").disabled = false;
         });
