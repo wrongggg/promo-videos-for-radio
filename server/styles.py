@@ -596,22 +596,65 @@ def thumbnail_css() -> str:
     return "\n".join(out)
 
 
-# Optional real cover images. Drop 1:1 files in as
-# server/static/preview/cover-a.<ext> and cover-b.<ext> and the tiles use them
-# instead of the generated stand-in below -- no code change needed. See
+# Optional real cover images. Drop any two square files into
+# server/static/preview and the tiles use them instead of the generated
+# stand-in -- filenames don't matter, they're taken in sorted order. See
 # PREVIEW_IMAGE_BRIEF for what to generate.
 PREVIEW_IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  "static", "preview")
+_PREVIEW_THUMB_DIR = os.path.join(PREVIEW_IMAGE_DIR, "thumbs")
 _PREVIEW_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+# The tile is ~112px wide, so a 2048px source is three orders of magnitude more
+# pixels than it can show. Generated art tends to arrive that size (the first
+# pair were 8MB and 6MB PNGs), and every card references both images -- so they
+# get downscaled once and cached, rather than shipping ~14MB into a picker.
+PREVIEW_THUMB_WIDTH = 320
+
+
+def _preview_sources() -> list[str]:
+    try:
+        names = sorted(
+            n for n in os.listdir(PREVIEW_IMAGE_DIR)
+            if os.path.splitext(n)[1].lower() in _PREVIEW_EXTS
+        )
+    except OSError:
+        return []
+    return [os.path.join(PREVIEW_IMAGE_DIR, n) for n in names[:2]]
+
+
+def _ensure_thumb(src: str) -> str | None:
+    """Downscaled copy of `src`, generated once and reused.
+
+    Best-effort: if ffmpeg isn't usable the caller falls back to the generated
+    artwork rather than serving a 8MB PNG into the picker."""
+    stem = os.path.splitext(os.path.basename(src))[0]
+    safe = "".join(c if c.isalnum() else "-" for c in stem)[:60]
+    dest = os.path.join(_PREVIEW_THUMB_DIR, f"{safe}.jpg")
+    if os.path.exists(dest) and os.path.getmtime(dest) >= os.path.getmtime(src):
+        return dest
+    try:
+        import subprocess
+        os.makedirs(_PREVIEW_THUMB_DIR, exist_ok=True)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", src, "-vf", f"scale={PREVIEW_THUMB_WIDTH}:-1",
+             "-q:v", "4", dest],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
+        )
+        return dest if os.path.exists(dest) else None
+    except Exception:
+        return None
 
 
 def preview_image(variant: int) -> str | None:
     """Web path of a real preview cover, or None if none has been added."""
-    stem = "cover-a" if variant == 0 else "cover-b"
-    for ext in _PREVIEW_EXTS:
-        if os.path.exists(os.path.join(PREVIEW_IMAGE_DIR, stem + ext)):
-            return f"/static/preview/{stem}{ext}"
-    return None
+    sources = _preview_sources()
+    if len(sources) <= variant:
+        return None
+    thumb = _ensure_thumb(sources[variant])
+    if not thumb:
+        return None
+    return f"/static/preview/thumbs/{os.path.basename(thumb)}"
 
 
 def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
@@ -712,9 +755,6 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
 
     parts = [
         f'<rect width="{W}" height="{H}" fill="#0a0a0f"/>',
-        # The synth patch sits behind the artwork and dimmed, matching the real
-        # frame where it runs at ~0.15 under the cover rather than full strength.
-        f'<g opacity="0.5">{_patch_thumb(st["patch"], a1, a2)}</g>',
         # Two covers: .tp-a on screen, .tp-b arriving. thumbnail_css keeps
         # .tp-b hidden until the card is previewing.
         # A real cover image if one has been added, otherwise the generated
@@ -722,6 +762,14 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
         # the same way the renderer crops artwork to 9:16.
         f'<g class="tp-cover tp-a" opacity="0.92">{_cover_layer(0, a1, a2, accent, key, W, H)}</g>',
         f'<g class="tp-cover tp-b" opacity="0.92">{_cover_layer(1, a1, a2, accent, key, W, H)}</g>',
+        # The synth patch, screened over the cover rather than hidden behind it.
+        # In the render the canvas sits under artwork at ~0.88, so it does show
+        # through -- but at 112px "shows through faintly" reads as "not there",
+        # and every tile looked identical once real covers arrived. Screening it
+        # on top at low opacity keeps the picker scannable and still reflects
+        # which patch each theme runs.
+        f'<g opacity="0.42" style="mix-blend-mode: screen">'
+        f'{_patch_thumb(st["patch"], a1, a2)}</g>',
         f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
     ]
 
