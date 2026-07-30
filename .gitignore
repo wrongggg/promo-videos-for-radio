@@ -23,3 +23,6 @@ assets/
 
 # Generated theme example renders + contact sheet (see theme-examples/)
 theme-examples/
+# Drop-in preview covers (cover-a.*, cover-b.*) -- generated art, not source
+server/static/preview/*
+!server/static/preview/README.md

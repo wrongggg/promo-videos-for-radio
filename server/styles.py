@@ -29,6 +29,7 @@ Two rules hold across every style, both deliberate:
     DM Sans, Lora, Anton and Libre Baskerville are NOT resolvable and must not
     be used without a matching @font-face.
 """
+import os
 
 # 'Noto Sans' and 'Noto Sans JP' sit in every stack because they are the only
 # two broad-coverage families the renderer will supply itself -- everything the
@@ -595,46 +596,74 @@ def thumbnail_css() -> str:
     return "\n".join(out)
 
 
-def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
-    """A stand-in artist image.
+# Optional real cover images. Drop 1:1 files in as
+# server/static/preview/cover-a.<ext> and cover-b.<ext> and the tiles use them
+# instead of the generated stand-in below -- no code change needed. See
+# PREVIEW_IMAGE_BRIEF for what to generate.
+PREVIEW_IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "static", "preview")
+_PREVIEW_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
-    Deliberately generated rather than fetched. A stock photo would add a
-    network dependency to the picker, raise licensing questions for a paid
-    product, and -- worst -- show a stranger's face where the real promo shows
-    that track's actual artist photo or cover art. So this aims for the *read*
-    of a moody press shot: soft bokeh, a figure silhouette, grain and a
-    vignette, all from the theme's own palette.
+
+def preview_image(variant: int) -> str | None:
+    """Web path of a real preview cover, or None if none has been added."""
+    stem = "cover-a" if variant == 0 else "cover-b"
+    for ext in _PREVIEW_EXTS:
+        if os.path.exists(os.path.join(PREVIEW_IMAGE_DIR, stem + ext)):
+            return f"/static/preview/{stem}{ext}"
+    return None
+
+
+def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
+    """A stand-in album cover.
+
+    Used only until real cover images are dropped into static/preview -- see
+    preview_image(). Deliberately abstract: overlapping washes of colour with
+    grain and a vignette, the shapes a sleeve tends to use. No figure: a
+    silhouette read as a stock portrait rather than as album art, which is the
+    opposite of what a cover looks like.
 
     Two variants so a hand-over swaps to a different image, not to itself."""
     W, H = 120, 213
     v = "A" if variant == 0 else "B"
     if variant == 0:
-        figure = (
-            f'<ellipse cx="58" cy="96" rx="21" ry="25" fill="#05050a" opacity="0.72"/>'
-            f'<path d="M22 213 Q30 138 58 130 Q86 138 94 213 Z" fill="#05050a" opacity="0.72"/>'
-        )
-        bokeh = (
-            f'<circle cx="30" cy="52" r="26" fill="{a1}" opacity="0.5"/>'
-            f'<circle cx="96" cy="40" r="17" fill="{accent}" opacity="0.42"/>'
-            f'<circle cx="88" cy="150" r="30" fill="{a2}" opacity="0.3"/>'
+        forms = (
+            f'<circle cx="60" cy="88" r="44" fill="{accent}" opacity="0.85"/>'
+            f'<circle cx="60" cy="88" r="44" fill="url(#cvA{key})" opacity="0.45"/>'
+            f'<path d="M0 132 Q60 104 120 138 L120 213 L0 213 Z" fill="{a2}" opacity="0.55"/>'
         )
     else:
-        figure = (
-            f'<ellipse cx="70" cy="82" rx="19" ry="23" fill="#05050a" opacity="0.7"/>'
-            f'<path d="M36 213 Q44 122 70 115 Q98 124 106 213 Z" fill="#05050a" opacity="0.7"/>'
-        )
-        bokeh = (
-            f'<circle cx="92" cy="60" r="24" fill="{a2}" opacity="0.5"/>'
-            f'<circle cx="26" cy="112" r="20" fill="{accent}" opacity="0.4"/>'
-            f'<circle cx="40" cy="30" r="15" fill="{a1}" opacity="0.35"/>'
+        forms = (
+            f'<path d="M0 0 L120 0 L120 118 L0 62 Z" fill="{a2}" opacity="0.9"/>'
+            f'<circle cx="74" cy="132" r="42" fill="{accent}" opacity="0.75"/>'
+            f'<rect x="0" y="150" width="120" height="10" fill="{a1}" opacity="0.8"/>'
         )
     return (
         f'<rect width="{W}" height="{H}" fill="url(#cv{v}{key})"/>'
-        f'<g filter="url(#blur{key})">{bokeh}</g>'
-        f'{figure}'
+        f'<g filter="url(#blur{key})">{forms}</g>'
         f'<rect width="{W}" height="{H}" fill="url(#vig{key})"/>'
-        f'<rect width="{W}" height="{H}" filter="url(#grain{key})" opacity="0.16"/>'
+        f'<rect width="{W}" height="{H}" filter="url(#grain{key})" opacity="0.14"/>'
     )
+
+
+# Hand this to an image model. Square, because real covers are square and the
+# renderer crops them to 9:16 -- so anything vital must sit centre, and the
+# lower third has to stay calm or the overlaid title stops being legible.
+PREVIEW_IMAGE_BRIEF = """\
+Square 1:1 abstract album cover artwork. No text, no lettering, no logos, no
+faces or people. Keep the lower third visually calm and darker so overlaid
+white type stays readable; put the interesting detail in the upper two thirds.
+Print-quality, 35mm grain, slight chromatic aberration, rich but not neon.
+"""
+
+
+def _cover_layer(variant, a1, a2, accent, key, W, H) -> str:
+    src = preview_image(variant)
+    if src:
+        return (f'<image href="{src}" x="0" y="0" width="{W}" height="{H}" '
+                f'preserveAspectRatio="xMidYMid slice"/>'
+                f'<rect width="{W}" height="{H}" fill="url(#vig{key})"/>')
+    return _cover_art(variant, a1, a2, accent, key)
 
 
 def thumbnail_svg(key: str, palette: dict | None = None) -> str:
@@ -688,8 +717,11 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
         f'<g opacity="0.5">{_patch_thumb(st["patch"], a1, a2)}</g>',
         # Two covers: .tp-a on screen, .tp-b arriving. thumbnail_css keeps
         # .tp-b hidden until the card is previewing.
-        f'<g class="tp-cover tp-a" opacity="0.92">{_cover_art(0, a1, a2, accent, key)}</g>',
-        f'<g class="tp-cover tp-b" opacity="0.92">{_cover_art(1, a1, a2, accent, key)}</g>',
+        # A real cover image if one has been added, otherwise the generated
+        # stand-in. preserveAspectRatio slice crops a square file to the tile
+        # the same way the renderer crops artwork to 9:16.
+        f'<g class="tp-cover tp-a" opacity="0.92">{_cover_layer(0, a1, a2, accent, key, W, H)}</g>',
+        f'<g class="tp-cover tp-b" opacity="0.92">{_cover_layer(1, a1, a2, accent, key, W, H)}</g>',
         f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
     ]
 
