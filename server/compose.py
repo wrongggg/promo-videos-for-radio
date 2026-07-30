@@ -51,6 +51,10 @@ html, body {
   object-fit: cover; z-index: 0; opacity: 0.55; transform-origin: center center;
 }
 
+/* Transforms don't apply to inline boxes, so per-character spans have to be
+   inline-block. will-change keeps the staggered transforms on the compositor. */
+.track-title .ch { display: inline-block; will-change: transform, opacity; }
+.track-title .ch.sp { white-space: pre; }
 .scrim { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
 .orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0; z-index: 2; }
 .orb-a { width: 620px; height: 620px; top: 10%; left: 6%; }
@@ -158,6 +162,36 @@ def _looks_hebrew(text: str) -> bool:
     return any("֐" <= ch <= "׿" for ch in (text or ""))
 
 
+# Scripts whose glyphs join or reorder. Wrapping each character in its own
+# <span> breaks Arabic cursive joining outright and mangles Devanagari and Thai
+# clusters, so per-character animations fall back to animating the whole title
+# for these -- a spinning letter is not worth illegible type.
+_NO_SPLIT_RANGES = (
+    ("\u0600", "\u06ff"),  # Arabic
+    ("\u0750", "\u077f"),  # Arabic Supplement
+    ("\u0900", "\u097f"),  # Devanagari
+    ("\u0e00", "\u0e7f"),  # Thai
+)
+
+
+def _can_split_chars(text: str) -> bool:
+    return not any(lo <= ch <= hi for ch in (text or "") for lo, hi in _NO_SPLIT_RANGES)
+
+
+def _split_chars(text: str) -> str:
+    """Wrap each character in a span so GSAP can stagger them.
+
+    Spaces become their own span holding a non-breaking space, so word gaps
+    survive and the browser can still line-break between them."""
+    out = []
+    for ch in text:
+        if ch == " ":
+            out.append('<span class="ch sp">&nbsp;</span>')
+        else:
+            out.append(f'<span class="ch">{html.escape(ch, quote=True)}</span>')
+    return "".join(out)
+
+
 def _loop_repeat(span: float, cycle: float) -> int:
     """Finite repeat count so a yoyo tween of length `cycle` visibly fills `span`
     seconds. The deterministic frame-seeking renderer forbids repeat: -1."""
@@ -213,6 +247,9 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     hero_html = hero[0] if hero else ""
     display_title = track["title"] + (f" ({track['album']})" if track.get("album") else "")
     title_size = styles.title_size(style, display_title)
+    entrance = styles.ENTRANCES[style["entrance"]]
+    split_title = bool(entrance.get("chars")) and _can_split_chars(display_title)
+    title_markup = _split_chars(display_title) if split_title else _esc(display_title)
     trivia = track.get("reason", "").strip()
     trivia_html = f'<p id="trivia-{index}" class="trivia-tag">{_esc(trivia)}</p>' if trivia else ""
     scene_html = f"""
@@ -223,7 +260,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         {hero_html}
         <div class="meta-container"{rtl}>
           <div id="meta-{index}" class="meta-inner">
-            <h1 id="title-{index}" class="track-title" style="font-size: {title_size}px;">{_esc(display_title)}</h1>
+            <h1 id="title-{index}" class="track-title" style="font-size: {title_size}px;">{title_markup}</h1>
             <p id="artist-{index}" class="artist-name">{_esc(track["artist"])}</p>
             {trivia_html}
             <div class="progress-container">
@@ -234,9 +271,6 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
       </div>
     """
 
-    # One entrance for the whole promo, chosen by the theme. Cycling a
-    # different animation every scene made consecutive tracks feel unrelated.
-    entrance = styles.ENTRANCES[style["entrance"]]
     exit_start = start + duration - 0.55
     orb_a_cycle = max(duration / 2, 1.5) * mo["speed_mult"]
     orb_b_cycle = max(duration / 2.3, 1.5) * mo["speed_mult"]
@@ -247,7 +281,24 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     # first fraction of a second, which reads as a bug -- the box has to arrive
     # with its contents. Styles without a card keep the line-by-line stagger.
     has_panel = bool(style.get("panel"))
-    if has_panel:
+    if split_title:
+        # Characters animate; the rest of the block follows normally. The panel
+        # (if any) still comes in as one object so it never shows up empty.
+        text_sel = (f'"#meta-{index}"' if has_panel
+                    else f'"#title-{index}, #artist-{index}'
+                         + (f', #trivia-{index}"' if trivia else '"'))
+        panel_in = (f'tl.fromTo("#meta-{index}", {{ opacity: 0 }}, '
+                    f'{{ opacity: 1, duration: 0.3 }}, {start + 0.2})\n        .'
+                    if has_panel else 'tl.')
+        entrance_js = (
+            f'{panel_in}fromTo("#title-{index} .ch", {entrance["from"]}, '
+            f'Object.assign({entrance["to"]}), {start + 0.25})\n'
+            f'        .fromTo("#artist-{index}", {{ opacity: 0, y: 20 }}, '
+            f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.55})'
+            + (f'\n        .fromTo("#trivia-{index}", {{ opacity: 0, y: 14 }}, '
+               f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.7})' if trivia else '')
+        )
+    elif has_panel:
         text_sel = f'"#meta-{index}"'
         entrance_js = (
             f'tl.fromTo("#meta-{index}", {entrance["from"]}, '
@@ -478,6 +529,7 @@ def build_composition_html(
         visual_scenes, total_duration,
         patch=style["patch"],
         accent_hex=palette[0]["accent"],
+        transition=style.get("transition", "fade"),
     )
 
     return f"""<!doctype html>

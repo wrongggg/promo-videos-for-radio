@@ -117,18 +117,22 @@ def _save_theme_to_disk(name, theme):
 
 
 def _resolve_theme(theme_mode, theme_value, tracks, job_id=None, model=curator.MODEL_SIMPLE):
-    """Returns a full theme dict: {"palettes": [...], "motion": "...", "frame": "..."}."""
+    """Returns a full theme dict: {"palettes": [...], "motion", "frame", "style"}.
+
+    There is no "auto" mode any more. It spent an Anthropic call per job to pick
+    a theme, and if that call failed or returned invalid JSON it fell back to
+    the default silently -- so "Auto" could quietly mean "Classic with a stock
+    palette" with nothing in the UI to say so. A picked theme is predictable and
+    free, and the picker shows exactly what you get."""
     if theme_mode == "preset" and theme_value in curator.PRESET_THEMES:
         return curator.PRESET_THEMES[theme_value]
     if theme_mode == "saved":
         saved = _load_saved_themes()
         if theme_value in saved:
             return saved[theme_value]
-        return curator.DEFAULT_THEME
     if theme_mode == "custom" and theme_value and theme_value.strip():
         return curator.theme_from_description(theme_value.strip(), job_id=job_id, model=model)
-    # auto (default)
-    return curator.suggest_theme(tracks, job_id=job_id, model=model)
+    return curator.PRESET_THEMES[curator.DEFAULT_PRESET]
 
 
 def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=False, cookie_file=None, show_info=False):

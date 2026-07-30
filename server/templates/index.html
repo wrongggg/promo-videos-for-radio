@@ -301,13 +301,8 @@
             <div class="form-group">
                 <label>Theme</label>
                 <div class="theme-grid" id="themeGrid">
-                    <button type="button" class="theme-card selected" data-mode="auto" title="Pick a look automatically from the music">
-                        <span class="theme-thumb theme-thumb-auto">AUTO</span>
-                        <span class="theme-name">Auto</span>
-                        <span class="theme-blurb">Chosen from the music</span>
-                    </button>
                     {% for t in theme_choices %}
-                    <button type="button" class="theme-card" data-mode="preset:{{ t.key }}" title="{{ t.blurb }}">
+                    <button type="button" class="theme-card{% if loop.first %} selected{% endif %}" data-mode="preset:{{ t.key }}" title="{{ t.blurb }}">
                         <span class="theme-thumb">{{ t.thumb|safe }}</span>
                         <span class="theme-name">{{ t.label }}</span>
                         <span class="theme-blurb">{{ t.blurb }}</span>
@@ -321,7 +316,7 @@
                     </button>
                     {% endif %}
                 </div>
-                <input type="hidden" id="themeMode" name="theme_mode" value="auto">
+                <input type="hidden" id="themeMode" name="theme_mode" value="preset:classic">
                 {% if personal_mode %}
                 <select id="savedThemes" style="margin-top:10px; display:none;">
                     <option value="">Saved themes...</option>

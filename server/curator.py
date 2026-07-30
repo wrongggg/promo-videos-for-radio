@@ -70,38 +70,6 @@ STYLE_MENU = "\n".join(
     f'- "{k}": {v["blurb"]}' for k, v in styles.STYLES.items()
 )
 
-THEME_FROM_TRACKLIST_PROMPT = """Here is a radio show tracklist:
-{tracklist}
-
-Based on the genre/mood of this music, invent a cohesive visual theme for a 9:16 promo
-video: dark, high-contrast, neon-adjacent backgrounds work best on video footage (avoid
-pale/light backgrounds — text and footage need to stay legible).
-
-Propose {n} scene palettes to rotate through, each shaped like:
-{{"bg1": "#hex", "bg2": "#hex", "accent": "#hex", "accent2": "#hex", "orb1": "#hex", "orb2": "#hex"}}
-bg1/bg2 form a dark radial-gradient background (bg1 center, bg2 edge — bg2 should be
-near-black). accent/accent2 drive the progress bar and the generative backdrop -- NOT text
-(all text is white or black), so they can be fully saturated.
-orb1/orb2 are glow-blob colors, can be brighter/saturated.
-
-Also choose:
-- "motion": one of "calm", "normal", "energetic" -- how much the background glow-blobs drift
-  and how strong the video/image zoom push is. Match the music's energy (e.g. ambient/downtempo
-  -> calm, high-energy dance/punk -> energetic).
-- "frame": one of "clean", "film-grain", "vignette-heavy", "glow-frame" -- an overall visual
-  treatment. film-grain suits lo-fi/analog/rock genres, vignette-heavy suits moody/cinematic
-  genres, glow-frame suits electronic/neon genres, clean suits anything minimal or unsure.
-
-- "style": one of the named looks below. This picks the typography, where the text
-  sits, how it animates and what generative pattern runs behind it -- it matters more
-  to the finished video than the palette does, so choose it on the music:
-{style_menu}
-
-Respond with ONLY a JSON object shaped like:
-{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "...", "style": "..."}}
-No other text.
-"""
-
 THEME_FROM_DESCRIPTION_PROMPT = """A user wants a custom visual theme for a 9:16 promo video
 overlaid on video footage, described in their own words as:
 "{description}"
@@ -143,6 +111,9 @@ FRAME_KEYS = ("clean", "film-grain", "vignette-heavy", "glow-frame")
 
 DEFAULT_THEME = {"palettes": DEFAULT_PALETTE, "motion": "normal", "frame": "clean",
                  "style": styles.DEFAULT_STYLE}
+# Fallback when a saved/custom theme can't be resolved. A real preset rather
+# than DEFAULT_THEME so the result is a look someone actually designed.
+DEFAULT_PRESET = "classic"
 
 # The five themes the user picks between. Each pairs a visual style (type,
 # layout, animation, synth patch -- see styles.py) with a palette tuned to it,
@@ -187,6 +158,50 @@ PRESET_THEMES = {
             {"bg1": "#0a1f2a", "bg2": "#010507", "accent": "#8fd4e8", "accent2": "#c9e9f2", "orb1": "#2a6b85", "orb2": "#5ca3bd"},
             {"bg1": "#141a2a", "bg2": "#030509", "accent": "#a8b8e0", "accent2": "#d6def0", "orb1": "#3a4a7a", "orb2": "#6b7aa8"},
             {"bg1": "#1a1420", "bg2": "#050308", "accent": "#c4a8d4", "accent2": "#e2d3ea", "orb1": "#5a3f6b", "orb2": "#8a6da0"},
+        ],
+    },
+    "terminal": {
+        "style": "terminal", "motion": "normal", "frame": "film-grain",
+        "palettes": [
+            {"bg1": "#0a1a0f", "bg2": "#010402", "accent": "#4ade80", "accent2": "#a7f3d0", "orb1": "#166534", "orb2": "#3f8f5f"},
+            {"bg1": "#0f1a1a", "bg2": "#010404", "accent": "#5eead4", "accent2": "#ccfbf1", "orb1": "#115e59", "orb2": "#3f8f8a"},
+        ],
+    },
+    "carousel": {
+        "style": "carousel", "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#1a1030", "bg2": "#04020a", "accent": "#a78bfa", "accent2": "#f0abfc", "orb1": "#5b3fa8", "orb2": "#9d5fc4"},
+            {"bg1": "#0a1c30", "bg2": "#01050a", "accent": "#60a5fa", "accent2": "#a5f3fc", "orb1": "#2c5f9e", "orb2": "#4f9fc4"},
+            {"bg1": "#301020", "bg2": "#0a0206", "accent": "#fb7185", "accent2": "#fecdd3", "orb1": "#9e2c48", "orb2": "#c45f78"},
+        ],
+    },
+    "kinetic": {
+        "style": "kinetic", "motion": "energetic", "frame": "glow-frame",
+        "palettes": [
+            {"bg1": "#2a0a2a", "bg2": "#08020a", "accent": "#f0abfc", "accent2": "#fde047", "orb1": "#c026d3", "orb2": "#eab308"},
+            {"bg1": "#0a2a2a", "bg2": "#02080a", "accent": "#22d3ee", "accent2": "#fb923c", "orb1": "#0e7490", "orb2": "#ea580c"},
+        ],
+    },
+    "flipboard": {
+        "style": "flipboard", "motion": "energetic", "frame": "vignette-heavy",
+        "palettes": [
+            {"bg1": "#141414", "bg2": "#000000", "accent": "#fbbf24", "accent2": "#ffffff", "orb1": "#57534e", "orb2": "#8a8a8a"},
+            {"bg1": "#101a24", "bg2": "#010305", "accent": "#38bdf8", "accent2": "#ffffff", "orb1": "#1e4e6e", "orb2": "#5c7a8a"},
+        ],
+    },
+    "confetti": {
+        "style": "confetti", "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#2e0a3d", "bg2": "#0a0210", "accent": "#fb7185", "accent2": "#fde047", "orb1": "#e11d8f", "orb2": "#facc15"},
+            {"bg1": "#0a2e3d", "bg2": "#020a10", "accent": "#34d399", "accent2": "#a78bfa", "orb1": "#0d9488", "orb2": "#8b5cf6"},
+            {"bg1": "#3d2a0a", "bg2": "#100a02", "accent": "#fb923c", "accent2": "#4ade80", "orb1": "#ea580c", "orb2": "#22c55e"},
+        ],
+    },
+    "tidal": {
+        "style": "tidal", "motion": "calm", "frame": "vignette-heavy",
+        "palettes": [
+            {"bg1": "#0a1e2e", "bg2": "#010508", "accent": "#7dd3fc", "accent2": "#e0f2fe", "orb1": "#0c4a6e", "orb2": "#3d7f9e"},
+            {"bg1": "#0f1a2e", "bg2": "#020408", "accent": "#93c5fd", "accent2": "#dbeafe", "orb1": "#1e3a8a", "orb2": "#4f6fa8"},
         ],
     },
 }
@@ -440,15 +455,6 @@ def _generate_theme(prompt: str, job_id: str | None = None, model: str = MODEL_S
     return _valid_theme(json.loads(text))
 
 
-def suggest_theme(tracks: list[Track], n: int = 4, job_id: str | None = None, model: str = MODEL_SIMPLE) -> dict:
-    """Auto-generate a full theme (palette rotation + motion + frame) matching the
-    tracklist's genre/mood."""
-    try:
-        tracklist_text = "\n".join(t.label() for t in tracks)
-        prompt = THEME_FROM_TRACKLIST_PROMPT.format(tracklist=tracklist_text, n=n, style_menu=STYLE_MENU)
-        return _generate_theme(prompt, job_id=job_id, model=model) or DEFAULT_THEME
-    except Exception:
-        return DEFAULT_THEME
 
 
 def theme_from_description(description: str, n: int = 4, job_id: str | None = None, model: str = MODEL_SIMPLE) -> dict:
@@ -473,5 +479,4 @@ if __name__ == "__main__":
     ]
     picks = curate_ranked(sample, n=4)
     print(json.dumps(picks, indent=2))
-    theme = suggest_theme(sample)
-    print(json.dumps(theme, indent=2))
+    print(json.dumps(PRESET_THEMES[DEFAULT_PRESET], indent=2))

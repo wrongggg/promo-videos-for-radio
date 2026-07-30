@@ -119,7 +119,8 @@ def art_html(index: int, start: float, duration: float, src: str) -> str:
 
 
 def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
-               patch: str = "haze", accent_hex: str = "#8844ff") -> str:
+               patch: str = "haze", accent_hex: str = "#8844ff",
+               transition: str = "fade") -> str:
     """`scenes`: [{index, start, duration, analysis, has_art}] where `analysis`
     is the dict from audio_analysis.analyze (or None).
 
@@ -127,6 +128,7 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     visual style rather than from its motion preset -- what runs behind the
     text is part of the look, not a side effect of how fast the orbs drift."""
     patch_key = patch if patch in styles.PATCHES else "haze"
+    trans = styles.TRANSITIONS.get(transition, styles.TRANSITIONS["fade"])
     r, g, b = _hex_to_rgb01(accent_hex)
 
     # Only the per-frame series the driver actually reads get serialized --
@@ -160,6 +162,7 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
   var FPS    = {fps};
   var TOTAL  = {round(total_duration, 3)};
   var ACCENT = {{ r: {r}, g: {g}, b: {b} }};
+  var TRANS  = {{ kind: "{trans["kind"]}", secs: {trans["secs"]} }};
 
   var canvas = document.getElementById("hydra-bg");
   var hydra = null, h = null;
@@ -228,13 +231,55 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     return x * x * (3 - 2 * x);
   }}
 
-  // Short fade at each end of a scene so artwork never pops in or out.
-  var FADE = 0.45;
-  function edgeFade(tin, dur) {{
-    if (dur <= FADE * 2) return 1;
-    if (tin < FADE) return tin / FADE;
-    if (tin > dur - FADE) return (dur - tin) / FADE;
-    return 1;
+  // Artwork hand-over. An element stays on screen for TRANS.secs past its own
+  // window so the outgoing and incoming covers overlap, and both are driven
+  // from the same timeline time -- no CSS transitions, nothing stateful, so a
+  // re-rendered frame is identical.
+  //
+  // Returns null when the element should not be drawn at all.
+  function transitionState(t, s) {{
+    var T = TRANS.secs;
+    var enterEnd = s.start + T;
+    var leaveEnd = s.start + s.dur + T;
+
+    if (t < s.start || t >= leaveEnd) return null;
+
+    // "swap" has no overlap: a hard cut on the scene boundary.
+    if (T <= 0) {{
+      if (t >= s.start + s.dur) return null;
+      return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0 }};
+    }}
+
+    if (t < enterEnd) {{
+      var p = smoothstep((t - s.start) / T);          // 0 -> 1 arriving
+      return applyTransition(p, true);
+    }}
+    if (t >= s.start + s.dur) {{
+      var q = smoothstep((t - s.start - s.dur) / T);  // 0 -> 1 departing
+      return applyTransition(q, false);
+    }}
+    return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0 }};
+  }}
+
+  function applyTransition(p, entering) {{
+    var k = TRANS.kind;
+    if (k === "slide") {{
+      return entering
+        ? {{ op: p, dx: (1 - p) * 620, dy: 0, scale: 1, rot: 0 }}
+        : {{ op: 1 - p, dx: -p * 620, dy: 0, scale: 1, rot: 0 }};
+    }}
+    if (k === "zoom") {{
+      return entering
+        ? {{ op: p, dx: 0, dy: 0, scale: 1 + (1 - p) * 0.45, rot: 0 }}
+        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.25, rot: 0 }};
+    }}
+    if (k === "spin") {{
+      return entering
+        ? {{ op: p, dx: 0, dy: 0, scale: 0.72 + p * 0.28, rot: (1 - p) * -14 }}
+        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.18, rot: p * 12 }};
+    }}
+    return entering ? {{ op: p, dx: 0, dy: 0, scale: 1, rot: 0 }}
+                    : {{ op: 1 - p, dx: 0, dy: 0, scale: 1, rot: 0 }};
   }}
 
   window.__drawVisuals = function (t) {{
@@ -265,8 +310,8 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       var s = SCENES[k];
       var el = document.getElementById("art-" + s.i);
       if (!el) continue;
-      var inside = t >= s.start && t < s.start + s.dur;
-      if (!inside) {{
+      var st = transitionState(t, s);
+      if (st === null) {{
         // Reset everything, not just opacity. Leaving a stale transform on a
         // hidden element means the DOM carries a trace of whichever frame was
         // rendered last -- invisible, but it makes the output a function of
@@ -274,24 +319,28 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
         // a frame-seeking renderer must be able to rely on.
         el.style.opacity = "0";
         el.style.transform = "scale(1)";
+        el.style.zIndex = "1";
         continue;
       }}
 
       var m = MOVES[s.i % MOVES.length];
       var e = smoothstep(s.dur > 0 ? (t - s.start) / s.dur : 0);
-      var scale = m.s0 + (m.s1 - m.s0) * e;
-      var x = m.x0 + (m.x1 - m.x0) * e;
-      var y = m.y0 + (m.y1 - m.y0) * e;
+      var scale = (m.s0 + (m.s1 - m.s0) * e) * st.scale;
+      var x = m.x0 + (m.x1 - m.x0) * e + st.dx;
+      var y = m.y0 + (m.y1 - m.y0) * e + st.dy;
 
       // Reactivity is opt-in per track and deliberately tiny -- a breath on
       // top of the camera move, not a bounce. Tracks without a real low-end
       // pulse get pure camera motion (see `reactive` in runtime_js).
       if (s.reactive) scale *= 1 + bassEnv * 0.018;
 
-      el.style.opacity = (0.88 * edgeFade(tin, s.dur)).toFixed(4);
+      // The arriving cover sits above the departing one.
+      el.style.zIndex = (t < s.start + TRANS.secs) ? "2" : "1";
+      el.style.opacity = (0.88 * st.op).toFixed(4);
       el.style.transform =
         "scale(" + scale.toFixed(4) + ") translate(" +
-        x.toFixed(2) + "px, " + y.toFixed(2) + "px)";
+        x.toFixed(2) + "px, " + y.toFixed(2) + "px)" +
+        (st.rot ? " rotate(" + st.rot.toFixed(2) + "deg)" : "");
       // No audio-driven filter. Treble moved ~0.17 per frame, so driving
       // saturation from it strobed the colour.
     }}

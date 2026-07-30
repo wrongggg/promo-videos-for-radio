@@ -51,6 +51,15 @@ INK = "#0b0b0d"
 
 # GSAP entrance/exit pairs. Each style picks one, so a promo is consistent
 # throughout instead of cycling a different animation every scene.
+#
+# `chars: True` animates the title one character at a time (typing, spinning,
+# scattering). compose.py splits the title into <span class="ch"> for those and
+# points the tween at the spans instead of the block.
+#
+# Every value animated here is a transform or opacity. Layout properties --
+# letterSpacing, width, font-size, character count -- snap to whole device
+# pixels, so under seek-by-frame capture their ease-out tails stutter instead
+# of gliding. The linter rejects them outright.
 ENTRANCES = {
     "rise": {
         "from": "{ y: 90, opacity: 0 }",
@@ -73,14 +82,69 @@ ENTRANCES = {
         "exit": "{ opacity: 0, scale: 0.94, duration: 0.35, ease: 'power2.in' }",
     },
     "drift": {
-        # Transforms only. letterSpacing reads as the obvious way to get an
-        # "airy" entrance, but it is a layout property that snaps to whole
-        # device pixels, so under seek-by-frame capture the ease-out tail
-        # stutters instead of gliding.
         "from": "{ y: 44, opacity: 0, scale: 1.05 }",
         "to": "{ y: 0, opacity: 1, scale: 1, duration: 1.7, ease: 'power2.out' }",
         "exit": "{ opacity: 0, scale: 1.03, duration: 0.85, ease: 'power1.in' }",
     },
+
+    # --- per-character ---
+    "type": {
+        # A hard cut per character with no ease, which is what makes it read as
+        # typing rather than fading. Opacity only, so nothing reflows.
+        "from": "{ opacity: 0 }",
+        "to": "{ opacity: 1, duration: 0.01, ease: 'none', stagger: 0.045 }",
+        "exit": "{ opacity: 0, duration: 0.4, ease: 'power1.in' }",
+        "chars": True,
+    },
+    "spin": {
+        "from": "{ opacity: 0, rotation: -90, scale: 0.4 }",
+        "to": "{ opacity: 1, rotation: 0, scale: 1, duration: 0.55, ease: 'back.out(2)', stagger: 0.03 }",
+        "exit": "{ opacity: 0, rotation: 25, duration: 0.4, ease: 'power2.in' }",
+        "chars": True,
+    },
+    "flip": {
+        "from": "{ opacity: 0, rotationX: -90, y: 20 }",
+        "to": "{ opacity: 1, rotationX: 0, y: 0, duration: 0.5, ease: 'power3.out', stagger: 0.035 }",
+        "exit": "{ opacity: 0, rotationX: 45, duration: 0.4, ease: 'power2.in' }",
+        "chars": True,
+    },
+    "scatter": {
+        # Offsets come from the character index, not Math.random -- the
+        # composition has to render identically on every pass.
+        #
+        # GSAP takes function-based values per *property*; handing it a function
+        # as the whole fromVars object silently does nothing, which is exactly
+        # how this first shipped (the letters just appeared in place).
+        "from": ("{ opacity: 0, scale: 0.7,"
+                 " x: function (i) { return ((i * 37) % 17 - 8) * 11; },"
+                 " y: function (i) { return ((i * 61) % 13 - 6) * 14; },"
+                 " rotation: function (i) { return ((i * 29) % 11 - 5) * 7; } }"),
+        "to": "{ opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: 0.7, ease: 'power3.out', stagger: 0.02 }",
+        "exit": "{ opacity: 0, scale: 0.9, duration: 0.4, ease: 'power2.in' }",
+        "chars": True,
+    },
+    "wave": {
+        "from": "{ opacity: 0, y: 52 }",
+        "to": "{ opacity: 1, y: 0, duration: 0.75, ease: 'elastic.out(1, 0.6)', stagger: 0.028 }",
+        "exit": "{ opacity: 0, y: -26, duration: 0.4, ease: 'power2.in' }",
+        "chars": True,
+    },
+    "stamp": {
+        "from": "{ opacity: 0, scale: 2.4, rotation: -8 }",
+        "to": "{ opacity: 1, scale: 1, rotation: 0, duration: 0.32, ease: 'power4.out' }",
+        "exit": "{ opacity: 0, scale: 1.1, duration: 0.3, ease: 'power2.in' }",
+    },
+}
+
+# How one track's artwork hands over to the next. Handled by the visuals
+# runtime (visuals.py), which overlaps the outgoing and incoming images for
+# `secs` and drives both from the same baked timeline.
+TRANSITIONS = {
+    "fade":  {"secs": 0.55, "kind": "fade"},
+    "slide": {"secs": 0.55, "kind": "slide"},
+    "zoom":  {"secs": 0.55, "kind": "zoom"},
+    "swap":  {"secs": 0.0,  "kind": "swap"},   # hard cut, no overlap
+    "spin":  {"secs": 0.6,  "kind": "spin"},
 }
 
 # Hydra patches. `A` is the accent as an rgb triple; `h.time` is set absolutely
@@ -159,7 +223,7 @@ STYLES = {
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "center", "anchor": "bottom", "bottom_gap": 230,
-        "entrance": "rise", "patch": "haze", "scrim": "soft",
+        "entrance": "rise", "transition": "fade", "patch": "haze", "scrim": "soft",
     },
     "poppy": {
         "label": "Poppy",
@@ -174,7 +238,7 @@ STYLES = {
         # "bright" -- a hard white block against a saturated backdrop.
         "panel": {"bg": "rgba(255,255,255,0.95)", "pad": "52px 58px", "radius": 28},
         "align": "left", "anchor": "bottom", "bottom_gap": 200,
-        "entrance": "snap", "patch": "kaleid", "scrim": "light",
+        "entrance": "snap", "transition": "zoom", "patch": "kaleid", "scrim": "light",
     },
     "xl": {
         "label": "XL",
@@ -185,7 +249,7 @@ STYLES = {
         "trivia": {"size": 32, "weight": 500},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 190,
-        "entrance": "snap", "patch": "bars", "scrim": "heavy",
+        "entrance": "snap", "transition": "swap", "patch": "bars", "scrim": "heavy",
     },
     "editorial": {
         "label": "Liner Notes",
@@ -196,7 +260,7 @@ STYLES = {
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 240,
-        "entrance": "slide", "patch": "grain", "scrim": "heavy",
+        "entrance": "slide", "transition": "fade", "patch": "grain", "scrim": "heavy",
     },
     "ambient": {
         "label": "Slow Ambient",
@@ -207,7 +271,74 @@ STYLES = {
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "center", "anchor": "center", "bottom_gap": 0,
-        "entrance": "drift", "patch": "flow", "scrim": "soft",
+        "entrance": "drift", "transition": "fade", "patch": "flow", "scrim": "soft",
+    },
+    "terminal": {
+        "label": "Terminal",
+        "blurb": "Titles type themselves out character by character in mono, over scrolling bars. Deliberately machine-like.",
+        "font": "mono",
+        "title": {"max_size": 84, "weight": 600, "case": "uppercase", "spacing": 0, "line": 1.12},
+        "artist": {"size": 28, "weight": 500, "case": "uppercase", "spacing": 4},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE, "panel": None,
+        "align": "left", "anchor": "bottom", "bottom_gap": 250,
+        "entrance": "type", "transition": "swap", "patch": "bars", "scrim": "heavy",
+    },
+    "carousel": {
+        "label": "Carousel",
+        "blurb": "Artwork slides across like a deck of covers while titles push in from the side. Restless and modern.",
+        "font": "grotesque",
+        "title": {"max_size": 98, "weight": 800, "case": "none", "spacing": -1, "line": 1.05},
+        "artist": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 6},
+        "trivia": {"size": 30, "weight": 400},
+        "color": WHITE, "panel": None,
+        "align": "left", "anchor": "bottom", "bottom_gap": 225,
+        "entrance": "slide", "transition": "slide", "patch": "flow", "scrim": "soft",
+    },
+    "kinetic": {
+        "label": "Kinetic",
+        "blurb": "Every letter spins into place and the covers spin with them. The loudest option here.",
+        "font": "display",
+        "title": {"max_size": 86, "weight": 400, "case": "uppercase", "spacing": 0, "line": 1.04},
+        "artist": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 6},
+        "trivia": {"size": 29, "weight": 500},
+        "color": WHITE, "panel": None,
+        "align": "center", "anchor": "bottom", "bottom_gap": 235,
+        "entrance": "spin", "transition": "spin", "patch": "kaleid", "scrim": "heavy",
+    },
+    "flipboard": {
+        "label": "Flipboard",
+        "blurb": "Letters flip over like an airport board, covers cut hard between tracks. Crisp and rhythmic.",
+        "font": "condensed",
+        "title": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.92},
+        "artist": {"size": 36, "weight": 400, "case": "uppercase", "spacing": 8},
+        "trivia": {"size": 30, "weight": 500},
+        "color": WHITE, "panel": None,
+        "align": "left", "anchor": "bottom", "bottom_gap": 210,
+        "entrance": "flip", "transition": "swap", "patch": "bars", "scrim": "heavy",
+    },
+    "confetti": {
+        "label": "Confetti",
+        "blurb": "Letters fly in from all directions and settle; artwork zooms through. Playful and chaotic.",
+        "font": "grotesque",
+        "title": {"max_size": 92, "weight": 900, "case": "none", "spacing": -1, "line": 1.04},
+        "artist": {"size": 30, "weight": 700, "case": "uppercase", "spacing": 5},
+        "trivia": {"size": 29, "weight": 500},
+        "color": INK,
+        "panel": {"bg": "rgba(255,255,255,0.95)", "pad": "50px 56px", "radius": 22},
+        "align": "left", "anchor": "bottom", "bottom_gap": 205,
+        "entrance": "scatter", "transition": "zoom", "patch": "kaleid", "scrim": "light",
+    },
+    "tidal": {
+        "label": "Tidal",
+        "blurb": "Letters rise on an elastic swell, one after another, over slow haze. Big but unhurried.",
+        "font": "serif",
+        "title": {"max_size": 104, "weight": 400, "case": "none", "spacing": 0, "line": 1.1},
+        "artist": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 9},
+        "trivia": {"size": 30, "weight": 400},
+        "color": WHITE, "panel": None,
+        "align": "center", "anchor": "bottom", "bottom_gap": 240,
+        "entrance": "wave", "transition": "fade", "patch": "haze", "scrim": "soft",
     },
 }
 
