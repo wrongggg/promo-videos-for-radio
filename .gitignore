@@ -20,3 +20,6 @@ server/themes.json
 
 # Written at render time by visuals.install_vendor() from server/static/vendor/
 assets/
+
+# Generated theme example renders + contact sheet (see theme-examples/)
+theme-examples/
