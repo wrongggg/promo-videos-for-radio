@@ -403,6 +403,103 @@ def _patch_thumb(patch: str, a1: str, a2: str) -> str:
     )
 
 
+# --- animated hover preview -------------------------------------------------
+#
+# The picker preview animates the generated SVG rather than embedding video.
+# Real clips would be ~20MB each, would need re-rendering whenever a style
+# changes, and would show whatever tracklist happened to be used to record them
+# instead of the user's. Animating the same SVG that draws the static thumbnail
+# keeps the preview honest: it is generated from the style definition, so it
+# cannot drift from what renders.
+#
+# The loop shows two covers and one hand-over, using that style's real
+# transition kind and entrance family.
+PREVIEW_SECS = 3.0
+
+# Cover hand-over, per transition kind. The window is 45%-62% of the loop.
+_COVER_KEYFRAMES = {
+    "fade": ("0%,45% { opacity: 1; transform: none; }"
+             " 62%,100% { opacity: 0; transform: none; }",
+             "0%,45% { opacity: 0; }"
+             " 62%,100% { opacity: 1; }"),
+    "slide": ("0%,45% { opacity: 1; transform: translateX(0); }"
+              " 62%,100% { opacity: 1; transform: translateX(-100%); }",
+              "0%,45% { opacity: 1; transform: translateX(100%); }"
+              " 62%,100% { opacity: 1; transform: translateX(0); }"),
+    "zoom": ("0%,45% { opacity: 1; transform: scale(1); }"
+             " 62%,100% { opacity: 0; transform: scale(0.8); }",
+             "0%,45% { opacity: 0; transform: scale(1.4); }"
+             " 62%,100% { opacity: 1; transform: scale(1); }"),
+    "spin": ("0%,45% { opacity: 1; transform: rotate(0deg) scale(1); }"
+             " 62%,100% { opacity: 0; transform: rotate(12deg) scale(0.85); }",
+             "0%,45% { opacity: 0; transform: rotate(-14deg) scale(0.72); }"
+             " 62%,100% { opacity: 1; transform: rotate(0deg) scale(1); }"),
+    # A hard cut: no interpolation, so the steps() timing does the work.
+    "swap": ("0%,52% { opacity: 1; } 52.01%,100% { opacity: 0; }",
+             "0%,52% { opacity: 0; } 52.01%,100% { opacity: 1; }"),
+}
+
+# How the text bars arrive. Char-based entrances get a per-bar delay so the
+# preview reads as a stagger rather than a single move.
+_TEXT_KEYFRAMES = {
+    "rise":    "from { opacity: 0; transform: translateY(14px); }",
+    "fade":    "from { opacity: 0; }",
+    "slide":   "from { opacity: 0; transform: translateX(-26px); }",
+    "snap":    "from { opacity: 0; transform: scale(1.35); }",
+    "drift":   "from { opacity: 0; transform: translateY(9px) scale(1.05); }",
+    "type":    "from { opacity: 0; transform: scaleX(0); }",
+    "spin":    "from { opacity: 0; transform: rotate(-70deg) scale(0.4); }",
+    "flip":    "from { opacity: 0; transform: scaleY(0.1); }",
+    "scatter": "from { opacity: 0; transform: translate(-14px, 12px) rotate(-18deg); }",
+    "wave":    "from { opacity: 0; transform: translateY(20px); }",
+    "stamp":   "from { opacity: 0; transform: scale(2.2) rotate(-8deg); }",
+}
+
+_STAGGERED = {"type", "spin", "flip", "scatter", "wave"}
+
+
+def thumbnail_css() -> str:
+    """Hover-preview CSS for every style, emitted once into the page.
+
+    Animations are only attached on hover, so nothing runs until the user points
+    at a card -- eleven looping previews playing at once would be noise, and on
+    a long list it would burn battery for no reason."""
+    out = [
+        # Transforms on SVG children need a box to resolve percentages and a
+        # sane origin, or translateX(100%) means something unexpected.
+        ".theme-thumb svg .tp-cover, .theme-thumb svg .tp-bar {"
+        " transform-box: fill-box; transform-origin: center; }",
+        ".theme-thumb svg .tp-b { opacity: 0; }",
+    ]
+    for key, st in STYLES.items():
+        kind = TRANSITIONS.get(st.get("transition", "fade"), TRANSITIONS["fade"])["kind"]
+        a_kf, b_kf = _COVER_KEYFRAMES.get(kind, _COVER_KEYFRAMES["fade"])
+        ent = st["entrance"]
+        t_kf = _TEXT_KEYFRAMES.get(ent, _TEXT_KEYFRAMES["fade"])
+        ease = "steps(1, end)" if kind == "swap" else "cubic-bezier(.4,0,.2,1)"
+        t_ease = "steps(1, end)" if ent == "type" else "cubic-bezier(.2,.7,.3,1)"
+
+        out.append(f"@keyframes tpa-{key} {{ {a_kf} }}")
+        out.append(f"@keyframes tpb-{key} {{ {b_kf} }}")
+        out.append(f"@keyframes tpt-{key} {{ {t_kf} }}")
+        # Two triggers, not just :hover -- a `.previewing` class means the
+        # preview also works for keyboard focus or a tap on touch (where there
+        # is no hover at all), and makes the behaviour testable.
+        base = f'.theme-card[data-mode="preset:{key}"]'
+        sel = f'{base}:hover .theme-thumb svg, {base}.previewing .theme-thumb svg'
+        out.append(
+            f"{sel} .tp-a {{ animation: tpa-{key} {PREVIEW_SECS}s {ease} infinite; }}"
+            f"{sel} .tp-b {{ animation: tpb-{key} {PREVIEW_SECS}s {ease} infinite; }}"
+            f"{sel} .tp-bar {{ animation: tpt-{key} 0.5s {t_ease} both; }}"
+        )
+        if ent in _STAGGERED:
+            for n in range(1, 4):
+                delay = f"animation-delay: {0.07 * n:.2f}s;"
+                out.append(f"{base}:hover .theme-thumb svg .tp-bar{n} {{ {delay} }}"
+                           f"{base}.previewing .theme-thumb svg .tp-bar{n} {{ {delay} }}")
+    return "\n".join(out)
+
+
 def thumbnail_svg(key: str, palette: dict | None = None) -> str:
     """A 120x213 (9:16) inline SVG preview of one style.
 
@@ -426,17 +523,22 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
     bar_w = 96 if left else 88
     body_y = H // 2 - 18 if s["anchor"] == "center" else H - 34 - t_h * 2 - a_h
 
-    def bar(bx, by, bw, bh, fill, op=1.0, r=1):
+    def bar(bx, by, bw, bh, fill, op=1.0, r=1, cls=""):
+        extra = f' class="tp-bar {cls}"' if cls else ""
         return (f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" rx="{r}" '
-                f'fill="{fill}" opacity="{op}"/>')
+                f'fill="{fill}" opacity="{op}"{extra}/>')
 
     panel = s.get("panel")
     ink = s["color"] == INK
     text_fill = "#0b0b0d" if ink else "#ffffff"
 
+    # Two stacked "covers". Statically only .tp-a shows (.tp-b is opacity 0 in
+    # thumbnail_css); on hover they cross over using the style's real
+    # transition, which is the whole point of the preview.
     parts = [
         f'<rect width="{W}" height="{H}" fill="#0a0a0f"/>',
-        _patch_thumb(s["patch"], a1, a2),
+        f'<g class="tp-cover tp-a">{_patch_thumb(s["patch"], a1, a2)}</g>',
+        f'<g class="tp-cover tp-b">{_patch_thumb(s["patch"], a2, a1)}</g>',
         # scrim
         f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
     ]
@@ -450,9 +552,9 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
 
     tx = 14 if left else (W - bar_w) // 2
     parts += [
-        bar(tx, body_y, bar_w, t_h, text_fill, 0.95),
-        bar(tx, body_y + t_h + 5, round(bar_w * 0.66), t_h, text_fill, 0.95),
-        bar(tx, body_y + t_h * 2 + 14, round(bar_w * 0.42), a_h, text_fill, 0.7),
+        bar(tx, body_y, bar_w, t_h, text_fill, 0.95, cls="tp-bar1"),
+        bar(tx, body_y + t_h + 5, round(bar_w * 0.66), t_h, text_fill, 0.95, cls="tp-bar2"),
+        bar(tx, body_y + t_h * 2 + 14, round(bar_w * 0.42), a_h, text_fill, 0.7, cls="tp-bar3"),
     ]
 
     grad = (

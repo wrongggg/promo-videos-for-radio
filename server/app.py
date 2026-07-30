@@ -465,6 +465,7 @@ def index():
     return render_template(
         "index.html", default_show_name=DEFAULT_SHOW_NAME,
         language_choices=languages.choices(),
+        theme_preview_css=styles.thumbnail_css(),
         theme_choices=styles.choices({
             k: (t["palettes"] or [{}])[0] for k, t in curator.PRESET_THEMES.items()
         }),
