@@ -762,13 +762,14 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
         # the same way the renderer crops artwork to 9:16.
         f'<g class="tp-cover tp-a" opacity="0.92">{_cover_layer(0, a1, a2, accent, key, W, H)}</g>',
         f'<g class="tp-cover tp-b" opacity="0.92">{_cover_layer(1, a1, a2, accent, key, W, H)}</g>',
-        # The synth patch, screened over the cover rather than hidden behind it.
-        # In the render the canvas sits under artwork at ~0.88, so it does show
-        # through -- but at 112px "shows through faintly" reads as "not there",
-        # and every tile looked identical once real covers arrived. Screening it
-        # on top at low opacity keeps the picker scannable and still reflects
-        # which patch each theme runs.
-        f'<g opacity="0.42" style="mix-blend-mode: screen">'
+        # The synth patch, screened lightly over the cover. Behind the cover it
+        # was invisible at tile size; at 0.42 it drowned the artwork instead,
+        # which is the opposite error -- the covers are dark, and screening a
+        # bright patch over a dark image simply replaces it. 0.2 tints the tile
+        # with each theme's patch while leaving the cover clearly the subject,
+        # which is also how the rendered frame reads. The tiles stay easy to
+        # tell apart on typography, layout and scrim regardless.
+        f'<g opacity="0.2" style="mix-blend-mode: screen">'
         f'{_patch_thumb(st["patch"], a1, a2)}</g>',
         f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
     ]
