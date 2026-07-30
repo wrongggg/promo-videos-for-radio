@@ -26,9 +26,13 @@ import tempfile
 
 BRAND_NAME = "ROTATION"
 
+# Lives under server/static/ rather than assets/ -- assets/ is gitignored (it's
+# populated at render time by visuals.install_vendor), and the wordmark has to
+# ship with the repo or a deployed container has nothing to watermark with.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONT_PATH = os.path.join(ROOT, "assets", "brand", "bebas-neue.woff2")
-OUT_PATH = os.path.join(ROOT, "assets", "brand", "watermark.png")
+BRAND_DIR = os.path.join(ROOT, "server", "static", "brand")
+FONT_PATH = os.path.join(BRAND_DIR, "bebas-neue.woff2")
+OUT_PATH = os.path.join(BRAND_DIR, "watermark.png")
 
 # Sized for a 1080x1920 frame at 1:1 -- compose.watermark_video overlays it
 # without scaling, so these are literal output pixels. The canvas is padded
