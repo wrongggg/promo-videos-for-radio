@@ -17,6 +17,7 @@ import audio_analysis
 import compose
 import curator
 import media_finder
+import styles
 import visuals
 from track import Track, parse_tracklist
 
@@ -412,7 +413,9 @@ def index():
     # personalization is separate -- it keys off the show name (see /start).
     return render_template(
         "index.html", default_show_name=DEFAULT_SHOW_NAME,
-        presets=list(curator.PRESET_THEMES.keys()),
+        theme_choices=styles.choices({
+            k: (t["palettes"] or [{}])[0] for k, t in curator.PRESET_THEMES.items()
+        }),
         personal_mode=access.is_operator(),
         max_manual_tracks=MAX_MANUAL_TRACKS_NON_ADMIN,
     )

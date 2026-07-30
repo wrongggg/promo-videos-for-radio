@@ -5,6 +5,7 @@ import re
 import anthropic
 
 import analytics
+import styles
 from track import Track
 
 # "Simple" (default, used for everyone but the admin's own advanced runs) is
@@ -62,6 +63,13 @@ RESEARCH_INSTRUCTION_NO_SEARCH = (
     "confident about, or leave \"reason\" empty rather than guessing."
 )
 
+
+# The style menu handed to the model, generated from styles.py so a new or
+# renamed style shows up in the prompt automatically.
+STYLE_MENU = "\n".join(
+    f'- "{k}": {v["blurb"]}' for k, v in styles.STYLES.items()
+)
+
 THEME_FROM_TRACKLIST_PROMPT = """Here is a radio show tracklist:
 {tracklist}
 
@@ -72,7 +80,8 @@ pale/light backgrounds — text and footage need to stay legible).
 Propose {n} scene palettes to rotate through, each shaped like:
 {{"bg1": "#hex", "bg2": "#hex", "accent": "#hex", "accent2": "#hex", "orb1": "#hex", "orb2": "#hex"}}
 bg1/bg2 form a dark radial-gradient background (bg1 center, bg2 edge — bg2 should be
-near-black). accent/accent2 are for text and a progress bar (need contrast against bg1/bg2).
+near-black). accent/accent2 drive the progress bar and the generative backdrop -- NOT text
+(all text is white or black), so they can be fully saturated.
 orb1/orb2 are glow-blob colors, can be brighter/saturated.
 
 Also choose:
@@ -83,8 +92,13 @@ Also choose:
   treatment. film-grain suits lo-fi/analog/rock genres, vignette-heavy suits moody/cinematic
   genres, glow-frame suits electronic/neon genres, clean suits anything minimal or unsure.
 
+- "style": one of the named looks below. This picks the typography, where the text
+  sits, how it animates and what generative pattern runs behind it -- it matters more
+  to the finished video than the palette does, so choose it on the music:
+{style_menu}
+
 Respond with ONLY a JSON object shaped like:
-{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "..."}}
+{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "...", "style": "..."}}
 No other text.
 """
 
@@ -97,7 +111,8 @@ backgrounds — text and footage need to stay legible). Propose {n} scene palett
 through, each shaped like:
 {{"bg1": "#hex", "bg2": "#hex", "accent": "#hex", "accent2": "#hex", "orb1": "#hex", "orb2": "#hex"}}
 bg1/bg2 form a dark radial-gradient background (bg1 center, bg2 edge — bg2 should be
-near-black). accent/accent2 are for text and a progress bar (need contrast against bg1/bg2).
+near-black). accent/accent2 drive the progress bar and the generative backdrop -- NOT text
+(all text is white or black), so they can be fully saturated.
 orb1/orb2 are glow-blob colors, can be brighter/saturated.
 
 Also choose, matching the description's mood:
@@ -106,8 +121,13 @@ Also choose, matching the description's mood:
 - "frame": one of "clean", "film-grain", "vignette-heavy", "glow-frame" -- an overall visual
   treatment.
 
+- "style": one of the named looks below. This picks the typography, where the text
+  sits, how it animates and what generative pattern runs behind it -- it matters more
+  to the finished video than the palette does, so choose it on the music:
+{style_menu}
+
 Respond with ONLY a JSON object shaped like:
-{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "..."}}
+{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "...", "style": "..."}}
 No other text.
 """
 
@@ -121,39 +141,53 @@ DEFAULT_PALETTE = [
 MOTION_KEYS = ("calm", "normal", "energetic")
 FRAME_KEYS = ("clean", "film-grain", "vignette-heavy", "glow-frame")
 
-DEFAULT_THEME = {"palettes": DEFAULT_PALETTE, "motion": "normal", "frame": "clean"}
+DEFAULT_THEME = {"palettes": DEFAULT_PALETTE, "motion": "normal", "frame": "clean",
+                 "style": styles.DEFAULT_STYLE}
 
+# The five themes the user picks between. Each pairs a visual style (type,
+# layout, animation, synth patch -- see styles.py) with a palette tuned to it,
+# so choosing "XL" changes the whole look rather than just the colours. Keyed by
+# style key; the human label and blurb live in styles.py so the picker and the
+# renderer can never disagree about what a theme is.
 PRESET_THEMES = {
-    "Neon Nights": {"palettes": DEFAULT_PALETTE, "motion": "energetic", "frame": "glow-frame"},
-    "Warm Analog": {
+    "classic": {
+        "style": "classic", "motion": "normal", "frame": "clean",
         "palettes": [
-            {"bg1": "#3a1c0a", "bg2": "#0d0602", "accent": "#ffb703", "accent2": "#fb5607", "orb1": "#ffb703", "orb2": "#fb5607"},
-            {"bg1": "#2e1500", "bg2": "#0a0400", "accent": "#f77f00", "accent2": "#d62828", "orb1": "#f77f00", "orb2": "#d62828"},
-            {"bg1": "#3d2b1f", "bg2": "#0f0a06", "accent": "#e09f3e", "accent2": "#9e2a2b", "orb1": "#e09f3e", "orb2": "#9e2a2b"},
+            {"bg1": "#141a2e", "bg2": "#04060d", "accent": "#7aa2ff", "accent2": "#a8c0ff", "orb1": "#3d5a99", "orb2": "#6d7fa8"},
+            {"bg1": "#1a1725", "bg2": "#05040a", "accent": "#9d8cff", "accent2": "#c3b8ff", "orb1": "#4a3f7a", "orb2": "#7a6da8"},
+            {"bg1": "#101e22", "bg2": "#030809", "accent": "#6fd3c7", "accent2": "#a5e5dd", "orb1": "#2f6b64", "orb2": "#5c9a93"},
         ],
-        "motion": "normal", "frame": "film-grain",
     },
-    "Cool Blue Steel": {
+    "poppy": {
+        "style": "poppy", "motion": "energetic", "frame": "clean",
         "palettes": [
-            {"bg1": "#0a1a2c", "bg2": "#020609", "accent": "#4cc9f0", "accent2": "#4361ee", "orb1": "#4cc9f0", "orb2": "#4361ee"},
-            {"bg1": "#0d2436", "bg2": "#01080c", "accent": "#48cae4", "accent2": "#0077b6", "orb1": "#48cae4", "orb2": "#0077b6"},
-            {"bg1": "#101a2e", "bg2": "#03060c", "accent": "#90e0ef", "accent2": "#023e8a", "orb1": "#90e0ef", "orb2": "#023e8a"},
+            {"bg1": "#2b0a3d", "bg2": "#0a0210", "accent": "#ff2e88", "accent2": "#ffd166", "orb1": "#ff2e88", "orb2": "#ffd166"},
+            {"bg1": "#062a3d", "bg2": "#01080d", "accent": "#00e5ff", "accent2": "#ff6b9d", "orb1": "#00e5ff", "orb2": "#ff6b9d"},
+            {"bg1": "#3d1400", "bg2": "#0d0400", "accent": "#ff9f1c", "accent2": "#ffe066", "orb1": "#ff9f1c", "orb2": "#ff5e5b"},
         ],
-        "motion": "calm", "frame": "clean",
     },
-    "Mono Noir": {
+    "xl": {
+        "style": "xl", "motion": "energetic", "frame": "vignette-heavy",
         "palettes": [
-            {"bg1": "#1c1c1c", "bg2": "#000000", "accent": "#f2f2f2", "accent2": "#8d8d8d", "orb1": "#4d4d4d", "orb2": "#8d8d8d"},
-            {"bg1": "#181818", "bg2": "#000000", "accent": "#e5e5e5", "accent2": "#5c5c5c", "orb1": "#3a3a3a", "orb2": "#6e6e6e"},
+            {"bg1": "#1a1a1a", "bg2": "#000000", "accent": "#ffffff", "accent2": "#bdbdbd", "orb1": "#4a4a4a", "orb2": "#8a8a8a"},
+            {"bg1": "#2a0d0d", "bg2": "#080202", "accent": "#ff3b30", "accent2": "#ffffff", "orb1": "#a01c16", "orb2": "#5c5c5c"},
+            {"bg1": "#0d1a2a", "bg2": "#020508", "accent": "#4dabf7", "accent2": "#ffffff", "orb1": "#1c5aa0", "orb2": "#5c5c5c"},
         ],
-        "motion": "calm", "frame": "vignette-heavy",
     },
-    "Sunset Funk": {
+    "editorial": {
+        "style": "editorial", "motion": "calm", "frame": "film-grain",
         "palettes": [
-            {"bg1": "#3d0a4f", "bg2": "#0d0212", "accent": "#ff5e78", "accent2": "#ffb703", "orb1": "#ff5e78", "orb2": "#ffb703"},
-            {"bg1": "#4a0e3d", "bg2": "#0f0210", "accent": "#ff9f1c", "accent2": "#e01e37", "orb1": "#ff9f1c", "orb2": "#e01e37"},
+            {"bg1": "#1c1a17", "bg2": "#050403", "accent": "#d8cfc0", "accent2": "#8a8378", "orb1": "#3d382f", "orb2": "#6b6459"},
+            {"bg1": "#17191c", "bg2": "#030405", "accent": "#c8cdd4", "accent2": "#7c838c", "orb1": "#32373d", "orb2": "#5c636b"},
         ],
-        "motion": "energetic", "frame": "clean",
+    },
+    "ambient": {
+        "style": "ambient", "motion": "calm", "frame": "vignette-heavy",
+        "palettes": [
+            {"bg1": "#0a1f2a", "bg2": "#010507", "accent": "#8fd4e8", "accent2": "#c9e9f2", "orb1": "#2a6b85", "orb2": "#5ca3bd"},
+            {"bg1": "#141a2a", "bg2": "#030509", "accent": "#a8b8e0", "accent2": "#d6def0", "orb1": "#3a4a7a", "orb2": "#6b7aa8"},
+            {"bg1": "#1a1420", "bg2": "#050308", "accent": "#c4a8d4", "accent2": "#e2d3ea", "orb1": "#5a3f6b", "orb2": "#8a6da0"},
+        ],
     },
 }
 
@@ -182,7 +216,8 @@ def _valid_theme(data) -> dict | None:
         return None
     motion = data.get("motion") if data.get("motion") in MOTION_KEYS else "normal"
     frame = data.get("frame") if data.get("frame") in FRAME_KEYS else "clean"
-    return {"palettes": palettes, "motion": motion, "frame": frame}
+    style = data.get("style") if data.get("style") in styles.STYLE_KEYS else styles.DEFAULT_STYLE
+    return {"palettes": palettes, "motion": motion, "frame": frame, "style": style}
 
 
 def curate(tracks: list[Track], n: int = 5, previous_shows: list | None = None) -> list[dict]:
@@ -384,8 +419,9 @@ THEME_SCHEMA = {
         },
         "motion": {"type": "string", "enum": list(MOTION_KEYS)},
         "frame": {"type": "string", "enum": list(FRAME_KEYS)},
+        "style": {"type": "string", "enum": list(styles.STYLE_KEYS)},
     },
-    "required": ["palettes", "motion", "frame"],
+    "required": ["palettes", "motion", "frame", "style"],
     "additionalProperties": False,
 }
 
@@ -409,7 +445,7 @@ def suggest_theme(tracks: list[Track], n: int = 4, job_id: str | None = None, mo
     tracklist's genre/mood."""
     try:
         tracklist_text = "\n".join(t.label() for t in tracks)
-        prompt = THEME_FROM_TRACKLIST_PROMPT.format(tracklist=tracklist_text, n=n)
+        prompt = THEME_FROM_TRACKLIST_PROMPT.format(tracklist=tracklist_text, n=n, style_menu=STYLE_MENU)
         return _generate_theme(prompt, job_id=job_id, model=model) or DEFAULT_THEME
     except Exception:
         return DEFAULT_THEME
@@ -417,7 +453,7 @@ def suggest_theme(tracks: list[Track], n: int = 4, job_id: str | None = None, mo
 
 def theme_from_description(description: str, n: int = 4, job_id: str | None = None, model: str = MODEL_SIMPLE) -> dict:
     """Generate a full theme from a free-text description."""
-    prompt = THEME_FROM_DESCRIPTION_PROMPT.format(description=description, n=n)
+    prompt = THEME_FROM_DESCRIPTION_PROMPT.format(description=description, n=n, style_menu=STYLE_MENU)
     theme = _generate_theme(prompt, job_id=job_id, model=model)
     if not theme:
         raise ValueError("Could not derive a valid theme from the model's response")

@@ -3,6 +3,7 @@ import math
 import os
 import subprocess
 
+import styles
 import visuals
 
 HYPERFRAMES_VERSION = "0.7.70"
@@ -46,10 +47,8 @@ html, body {
   position: absolute; top: 0; left: 0; width: 1080px; height: 1920px;
   object-fit: cover; z-index: 0; opacity: 0.55; transform-origin: center center;
 }
-.scrim {
-  position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1;
-  background: linear-gradient(180deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.8) 100%);
-}
+
+.scrim { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
 .orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0; z-index: 2; }
 .orb-a { width: 620px; height: 620px; top: 10%; left: 6%; }
 .orb-b { width: 520px; height: 520px; bottom: 10%; right: 6%; }
@@ -82,23 +81,10 @@ html, body {
   font-size: 32px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase;
   opacity: 0; margin-top: 16px; text-shadow: 0 4px 18px rgba(0,0,0,0.8); transform-origin: center center;
 }
-.meta-container {
-  position: relative; z-index: 10; width: 100%; text-align: center;
-  display: flex; flex-direction: column; align-items: center; margin-top: auto; margin-bottom: 230px;
-}
-.track-title {
-  font-weight: 900; text-transform: uppercase; letter-spacing: 3px;
-  color: #fff; margin-bottom: 20px; line-height: 1.08; text-shadow: 0 4px 24px rgba(0,0,0,0.7);
-  max-width: 970px;
-}
-.artist-name {
-  font-size: 34px; font-weight: 700; text-transform: uppercase; letter-spacing: 10px;
-  margin-bottom: 12px; text-shadow: 0 0 15px rgba(255,255,255,0.3);
-}
-.trivia-tag {
-  font-size: 24px; font-weight: 600; color: rgba(255,255,255,0.8); text-transform: none;
-  letter-spacing: 0.3px; max-width: 780px; margin-bottom: 12px; text-shadow: 0 3px 12px rgba(0,0,0,0.7);
-}
+
+
+
+
 .progress-container { width: 320px; height: 8px; background: rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; margin-top: 30px; }
 .progress-bar { width: 100%; height: 100%; transform-origin: left center; transform: scaleX(0); }
 .outro-brand {
@@ -159,15 +145,6 @@ UI_STRINGS = {
     },
 }
 
-# Four distinct in/out styles, cycled by scene index, so consecutive tracks never
-# repeat the same motion.
-ENTRANCE_STYLES = [
-    {"from": "{ y: 110, opacity: 0 }", "to": "{ y: 0, opacity: 1, duration: 1, ease: \"power4.out\" }", "exit": "{ opacity: 0, y: -50, duration: 0.5, ease: \"power3.in\" }"},
-    {"from": "{ x: -140, opacity: 0 }", "to": "{ x: 0, opacity: 1, duration: 1, ease: \"power3.out\" }", "exit": "{ opacity: 0, x: 140, duration: 0.5, ease: \"power3.in\" }"},
-    {"from": "{ scale: 0.6, opacity: 0 }", "to": "{ scale: 1, opacity: 1, duration: 1, ease: \"back.out(1.7)\" }", "exit": "{ opacity: 0, scale: 0.7, duration: 0.5, ease: \"power3.in\" }"},
-    {"from": "{ x: 140, opacity: 0 }", "to": "{ x: 0, opacity: 1, duration: 1, ease: \"power3.out\" }", "exit": "{ opacity: 0, x: -140, duration: 0.5, ease: \"power3.in\" }"},
-]
-
 
 def _esc(s: str) -> str:
     return html.escape(s or "", quote=True)
@@ -183,24 +160,15 @@ def _loop_repeat(span: float, cycle: float) -> int:
     return max(1, math.ceil(span / cycle))
 
 
-def _title_font_size(text: str) -> int:
-    """Long titles (remix/version qualifiers etc) need to fit without clipping."""
-    n = len(text)
-    if n <= 18:
-        return 84
-    if n <= 28:
-        return 68
-    if n <= 42:
-        return 54
-    return 44
 
 
-def _scene_html(index: int, start: float, duration: float, track: dict, media: dict, palette: dict, audio_duration: float | None = None, hero: tuple[str, str] | None = None, motion: dict | None = None, language: str = "en") -> tuple[str, str, str]:
+def _scene_html(index: int, start: float, duration: float, track: dict, media: dict, palette: dict, audio_duration: float | None = None, hero: tuple[str, str] | None = None, motion: dict | None = None, language: str = "en", style: dict | None = None) -> tuple[str, str, str]:
     """Returns (scene_div_html, media_tags_html, scene_js). Media tags must be direct
     children of the stage (siblings of .scene divs) — the framework cannot manage
     playback of <video>/<audio> nested inside another timed element."""
     scene_id = f"scene-{index}"
     pal = palette
+    style = style or styles.get(None)
     mo = motion or MOTION_STYLES["normal"]
     audio_duration = audio_duration or duration
     # Base paragraph direction matters even for a single Hebrew string: without
@@ -240,7 +208,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
 
     hero_html = hero[0] if hero else ""
     display_title = track["title"] + (f" ({track['album']})" if track.get("album") else "")
-    title_size = _title_font_size(display_title)
+    title_size = styles.title_size(style, display_title)
     trivia = track.get("reason", "").strip()
     trivia_html = f'<p id="trivia-{index}" class="trivia-tag">{_esc(trivia)}</p>' if trivia else ""
     scene_html = f"""
@@ -250,17 +218,21 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         <div id="orb-b-{index}" class="orb orb-b" style="background: {pal['orb2']};"></div>
         {hero_html}
         <div class="meta-container"{rtl}>
-          <h1 id="title-{index}" class="track-title" style="font-size: {title_size}px;">{_esc(display_title)}</h1>
-          <p id="artist-{index}" class="artist-name" style="color: {pal['accent']}; text-shadow: 0 0 15px {pal['accent']}99;">{_esc(track["artist"])}</p>
-          {trivia_html}
-          <div class="progress-container">
-            <div id="progress-{index}" class="progress-bar" style="background: linear-gradient(90deg, {pal['accent']}, {pal['accent2']});"></div>
+          <div class="meta-inner">
+            <h1 id="title-{index}" class="track-title" style="font-size: {title_size}px;">{_esc(display_title)}</h1>
+            <p id="artist-{index}" class="artist-name">{_esc(track["artist"])}</p>
+            {trivia_html}
+            <div class="progress-container">
+              <div id="progress-{index}" class="progress-bar" style="background: linear-gradient(90deg, {pal['accent']}, {pal['accent2']});"></div>
+            </div>
           </div>
         </div>
       </div>
     """
 
-    style = ENTRANCE_STYLES[index % len(ENTRANCE_STYLES)]
+    # One entrance for the whole promo, chosen by the theme. Cycling a
+    # different animation every scene made consecutive tracks feel unrelated.
+    entrance = styles.ENTRANCES[style["entrance"]]
     exit_start = start + duration - 0.55
     orb_a_cycle = max(duration / 2, 1.5) * mo["speed_mult"]
     orb_b_cycle = max(duration / 2.3, 1.5) * mo["speed_mult"]
@@ -268,14 +240,14 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     orb_bx, orb_by = round(-60 * mo["translate_mult"]), round(45 * mo["translate_mult"])
     text_sel = f'"#title-{index}, #artist-{index}' + (f', #trivia-{index}"' if trivia else '"')
     scene_js = f"""
-      tl.fromTo("#title-{index}", {style['from']}, Object.assign({style['to']}), {start + 0.25})
-        .fromTo("#artist-{index}", {style['from']}, Object.assign({{}}, {style['to']}, {{ duration: 1.1 }}), {start + 0.45})
-        {f'.fromTo("#trivia-{index}", {style["from"]}, Object.assign({{}}, {style["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else ''}
+      tl.fromTo("#title-{index}", {entrance['from']}, Object.assign({entrance['to']}), {start + 0.25})
+        .fromTo("#artist-{index}", {entrance['from']}, Object.assign({{}}, {entrance['to']}, {{ duration: 1.1 }}), {start + 0.45})
+        {f'.fromTo("#trivia-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else ''}
         .fromTo("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.2 }}, {start})
         .to("#orb-a-{index}", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#orb-b-{index}", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#progress-{index}", {{ scaleX: 1, duration: {max(duration - 0.6, 0.5)}, ease: "linear" }}, {start + 0.3})
-        .to({text_sel}, {style['exit']}, {exit_start})
+        .to({text_sel}, {entrance['exit']}, {exit_start})
         .set({text_sel}, {{ opacity: 0 }}, {start + duration})
         .set("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {start + duration});
     """
@@ -428,6 +400,7 @@ def build_composition_html(
     palette = theme["palettes"]
     motion = MOTION_STYLES.get(theme.get("motion", "normal"), MOTION_STYLES["normal"])
     frame = theme.get("frame", "clean")
+    style = styles.get(theme.get("style"))
 
     cursor = 0.0
     scenes_html = []
@@ -440,7 +413,7 @@ def build_composition_html(
         is_last = i == len(standout) - 1
         audio_duration = scene_duration + OUTRO_DURATION if is_last else None
         hero = _hero_html(show_name, episode_label) if i == 0 else None
-        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, hero=hero, motion=motion, language=language)
+        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, hero=hero, motion=motion, language=language, style=style)
         scenes_html.append(sh)
         media_tags_html.append(mh)
         scenes_js.append(sj)
@@ -468,7 +441,7 @@ def build_composition_html(
     frame_html = _frame_overlay_html(frame, total_duration, palette[0]["accent"])
     visuals_js = visuals.runtime_js(
         visual_scenes, total_duration,
-        motion_style=theme.get("motion", "normal"),
+        patch=style["patch"],
         accent_hex=palette[0]["accent"],
     )
 
@@ -479,7 +452,7 @@ def build_composition_html(
     <meta name="viewport" content="width=1080, height=1920" />
     <title>{_esc(show_name)} Promo</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>{BASE_CSS}{visuals.CSS}</style>
+    <style>{BASE_CSS}{visuals.CSS}{styles.text_css(style)}</style>
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{total_duration}" data-width="1080" data-height="1920">

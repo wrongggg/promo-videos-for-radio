@@ -31,59 +31,12 @@ import os
 import shutil
 from typing import Optional
 
+import styles
+
 HYDRA_VENDOR_REL = "assets/hydra-synth.js"
 _HYDRA_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "static", "vendor", "hydra-synth.js")
 
-# Patch families, keyed to the theme's motion style. Each is a JS expression
-# body that receives `h` (the hydra synth), `A` (accent rgb 0..1 triples) and
-# reads `h.time`. Kept deliberately short -- these run behind artwork and text,
-# so they read as texture, not as the subject.
-PATCHES = {
-    "calm": """
-      h.osc(6, 0.03, 0.7)
-        .color(A.r, A.g, A.b)
-        .rotate(() => h.time * 0.06)
-        .modulate(h.noise(1.6, 0.06), 0.22)
-        .brightness(-0.16)
-        .out(h.o0);
-    """,
-    "normal": """
-      h.osc(10, 0.05, 0.9)
-        .color(A.r, A.g, A.b)
-        .rotate(() => h.time * 0.12)
-        .kaleid(4)
-        .modulate(h.noise(2.2, 0.1), 0.3)
-        .brightness(-0.14)
-        .out(h.o0);
-    """,
-    "energetic": """
-      h.osc(14, 0.07, 1.0)
-        .color(A.r, A.g, A.b)
-        .kaleid(6)
-        .rotate(() => h.time * 0.22)
-        .modulate(h.noise(3.0, 0.16), 0.36)
-        .brightness(-0.12)
-        .out(h.o0);
-    """,
-    "hyper": """
-      h.osc(20, 0.09, 1.2)
-        .color(A.r, A.g, A.b)
-        .kaleid(8)
-        .rotate(() => h.time * 0.35)
-        .modulate(h.noise(4.0, 0.22), 0.42)
-        .diff(h.shape(5, 0.4).scale(() => 1.1 + Math.sin(h.time * 1.5) * 0.2))
-        .brightness(-0.1)
-        .out(h.o0);
-    """,
-}
-
-MOTION_TO_PATCH = {
-    "chill": "calm", "calm": "calm",
-    "normal": "normal",
-    "energetic": "energetic", "fast": "energetic",
-    "hyper": "hyper",
-}
 
 CSS = """
 /* Generative backdrop. Sits behind everything, including .bg-media artwork,
@@ -166,10 +119,14 @@ def art_html(index: int, start: float, duration: float, src: str) -> str:
 
 
 def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
-               motion_style: str = "normal", accent_hex: str = "#8844ff") -> str:
+               patch: str = "haze", accent_hex: str = "#8844ff") -> str:
     """`scenes`: [{index, start, duration, analysis, has_art}] where `analysis`
-    is the dict from audio_analysis.analyze (or None)."""
-    patch_key = MOTION_TO_PATCH.get(motion_style, "normal")
+    is the dict from audio_analysis.analyze (or None).
+
+    `patch` names a Hydra patch in styles.PATCHES. It comes from the theme's
+    visual style rather than from its motion preset -- what runs behind the
+    text is part of the look, not a side effect of how fast the orbs drift."""
+    patch_key = patch if patch in styles.PATCHES else "haze"
     r, g, b = _hex_to_rgb01(accent_hex)
 
     # Only the per-frame series the driver actually reads get serialized --
@@ -229,7 +186,7 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       h.speed = 0;
       h.fps = 0;
       var A = ACCENT;
-      {PATCHES[patch_key]}
+      {styles.PATCHES[patch_key]}
     }} catch (e) {{
       hydra = null;  // a WebGL failure must not take the whole render down
     }}
