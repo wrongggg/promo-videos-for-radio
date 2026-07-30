@@ -779,3 +779,91 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
         f'width="{W}" height="{H}" role="img" aria-label="{st["label"]} preview">'
         f'{defs}{"".join(parts)}</svg>'
     )
+
+
+# --------------------------------------------------------------------------
+# Composition text styling
+#
+# These three are consumed by compose.py for the rendered video, not by the
+# picker. They were destroyed by an edit that replaced styles.py "from
+# `def thumbnail_svg` to end of file" -- they happened to live after it, so
+# they went with it, and every render failed with
+# "module 'styles' has no attribute 'title_size'" until this was restored.
+# --------------------------------------------------------------------------
+
+
+def _case_css(value: str) -> str:
+    return "none" if value == "none" else value
+
+
+def text_css(style: dict) -> str:
+    """CSS for the text roles. Sizes for the title are a ceiling -- compose.py
+    steps it down for long titles."""
+    font = FONTS[style["font"]]
+    title, artist, trivia = style["title"], style["artist"], style["trivia"]
+    color = style["color"]
+    align = style["align"]
+    items = "center" if align == "center" else "flex-start"
+
+    # Black type gets no shadow (it sits on its own light panel); white type
+    # gets a soft one so it survives a bright patch of artwork.
+    shadow = "none" if color == INK else "0 4px 26px rgba(0,0,0,0.72)"
+
+    panel = style.get("panel")
+    if panel:
+        panel_css = (
+            f"background: {panel['bg']}; padding: {panel['pad']}; "
+            f"border-radius: {panel['radius']}px; max-width: 900px; opacity: 0;"
+        )
+    else:
+        panel_css = ""
+
+    if style["anchor"] == "center":
+        position_css = "justify-content: center; margin: 0;"
+    else:
+        position_css = f"margin-top: auto; margin-bottom: {style['bottom_gap']}px;"
+
+    return f"""
+.meta-container {{
+  position: relative; z-index: 10; width: 100%;
+  display: flex; flex-direction: column; align-items: {items};
+  text-align: {align}; {position_css}
+}}
+.meta-inner {{ display: flex; flex-direction: column; align-items: {items}; {panel_css} }}
+.track-title {{
+  font-family: {font}; font-weight: {title['weight']};
+  text-transform: {_case_css(title['case'])}; letter-spacing: {title['spacing']}px;
+  line-height: {title['line']}; color: {color}; text-shadow: {shadow};
+  margin-bottom: 18px; max-width: 950px;
+}}
+.artist-name {{
+  font-family: {font}; font-size: {artist['size']}px; font-weight: {artist['weight']};
+  text-transform: {_case_css(artist['case'])}; letter-spacing: {artist['spacing']}px;
+  color: {color}; text-shadow: {shadow}; margin-bottom: 14px; opacity: 0.92;
+}}
+.trivia-tag {{
+  font-family: {font}; font-size: {trivia['size']}px; font-weight: {trivia['weight']};
+  line-height: 1.4; color: {color}; text-shadow: {shadow};
+  letter-spacing: 0.2px; max-width: 840px; margin-bottom: 14px; opacity: 0.88;
+}}
+.scrim {{ background: {SCRIMS[style['scrim']]}; }}
+"""
+
+
+def title_size(style: dict, text: str) -> int:
+    """Step the title down for long names so it never overflows the frame.
+    Thresholds scale off each style's own ceiling rather than being absolute,
+    since a condensed 148px and a serif 112px break at different lengths."""
+    ceiling = style["title"]["max_size"]
+    n = len(text or "")
+    if n <= 14:
+        factor = 1.0
+    elif n <= 22:
+        factor = 0.82
+    elif n <= 32:
+        factor = 0.66
+    elif n <= 46:
+        factor = 0.54
+    else:
+        factor = 0.45
+    return max(34, int(ceiling * factor))
