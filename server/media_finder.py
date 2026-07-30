@@ -1,12 +1,29 @@
+"""Resolves each tracklist entry into the media a promo scene needs: an audio
+clip, and something to look at.
+
+Audio comes from the catalog preview chain in `providers` (iTunes, then
+Deezer) -- 30-second clips published by the rights holders' own APIs, fetched
+with a single HTTP GET, no API key and nothing for the user to upload.
+
+The version is never negotiable. A tracklist records what actually aired, so a
+live take or a remix is a different recording, not a substitute. When no
+provider carries the exact version the track resolves to artwork only and the
+scene falls back to generative visuals.
+
+yt-dlp remains available but is gated behind `allow_youtube`, which only the
+operator's own session sets. Downloading from YouTube violates its terms of
+service, so it must never run on behalf of a subscriber -- see app.py.
+"""
 import os
-import re
 import subprocess
+from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
-import requests
 import static_ffmpeg
-import yt_dlp
 
+import providers
+from providers import Candidate
 from track import Track
 
 static_ffmpeg.add_paths()
@@ -15,60 +32,51 @@ CLIP_DURATION = 10
 MAX_SOURCE_DURATION = 900  # skip full sets/mixes
 MIN_SOURCE_DURATION = 45
 
-# YouTube increasingly demands sign-in/bot-check on individual videos.
-# cookie_file (a Netscape-format cookies.txt, exported by the requesting user
-# from their own browser) is threaded through every yt-dlp call below to
-# authenticate as *their* session -- never a shared/operator identity, since
-# this app is used by multiple people.
-def _cookie_opts(cookie_file: str | None) -> dict:
-    if cookie_file and os.path.exists(cookie_file):
-        return {"cookiefile": cookie_file}
-    return {}
-
-VERSION_KEYWORDS = [
-    "remix", "rmx", "mix", "edit", "re-edit", "reedit", "dub", "version",
-    "vip", "flip", "rework", "bootleg", "mashup", "extended", "instrumental",
-    "acapella", "acoustic", "unplugged", "demo", "session", "live",
-]
-
-
 ENERGY_SAMPLE_RATE = 8000
 
 
-def _pick_clip_window(duration: float, length: float) -> tuple[float, float]:
-    """Fallback heuristic (used when energy analysis isn't available): skip a
-    likely intro rather than guessing the most energetic moment."""
-    start = min(45.0, duration * 0.3)
-    if start + length > duration:
-        start = max(0.0, duration - length)
-    return start, start + length
+@dataclass
+class ResolvedMedia:
+    """Everything one scene needs, plus where it came from.
+
+    `sources` feeds the per-job manifest: a paid product needs to be able to
+    say exactly which service each asset came from and under what terms."""
+    audio: Optional[str] = None
+    video: Optional[str] = None
+    artwork: Optional[str] = None
+    artist_image: Optional[str] = None
+    needs_manual_audio: bool = False
+    matched_label: str = ""
+    sources: list[dict] = field(default_factory=list)
+
+    def credit(self, cand: Candidate, kind: str) -> None:
+        self.sources.append({
+            "kind": kind,
+            "source": cand.source,
+            "matched": cand.label(),
+            "url": cand.attribution_url,
+            "license": cand.license_note,
+        })
+
+    def to_dict(self) -> dict:
+        # Kept key-compatible with what compose.py/app.py already consume.
+        return {
+            "audio": self.audio,
+            "video": self.video,
+            "image": self.artwork or self.artist_image,
+            "artwork": self.artwork,
+            "artist_image": self.artist_image,
+            "needs_manual_audio": self.needs_manual_audio,
+            "matched_label": self.matched_label,
+            "sources": self.sources,
+        }
 
 
-def _download_full_audio(url: str, out_stem: str, cookie_file: str | None = None) -> str | None:
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "format": "bestaudio/best",
-        "outtmpl": out_stem + ".%(ext)s",
-        "noplaylist": True,
-        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "m4a"}],
-        **_cookie_opts(cookie_file),
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-    except Exception:
-        return None
+# --------------------------------------------------------------------------
+# audio analysis -- pick the most energetic window inside a clip
+# --------------------------------------------------------------------------
 
-    stem_dir = os.path.dirname(out_stem)
-    stem_name = os.path.basename(out_stem)
-    for fname in os.listdir(stem_dir):
-        if fname.startswith(stem_name + "."):
-            return os.path.join(stem_dir, fname)
-    return None
-
-
-def _decode_pcm(audio_path: str, sample_rate: int = ENERGY_SAMPLE_RATE) -> np.ndarray | None:
+def _decode_pcm(audio_path: str, sample_rate: int = ENERGY_SAMPLE_RATE) -> Optional[np.ndarray]:
     try:
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", audio_path, "-f", "s16le", "-acodec", "pcm_s16le",
@@ -82,10 +90,10 @@ def _decode_pcm(audio_path: str, sample_rate: int = ENERGY_SAMPLE_RATE) -> np.nd
         return None
 
 
-def _energetic_start(pcm: np.ndarray, sample_rate: int, window_length: float) -> float | None:
-    """Find the `window_length`-second window with the highest average energy —
+def _energetic_start(pcm: np.ndarray, sample_rate: int, window_length: float) -> Optional[float]:
+    """Find the `window_length`-second window with the highest average energy --
     a proxy for the drop/hook/chorus, rather than an arbitrary fixed offset.
-    Skips the first/last 5% of the track (cold intro, outro fade/silence)."""
+    Skips the first/last 5% (cold intro, outro fade/silence)."""
     hop = sample_rate  # 1-second resolution
     n_hops = len(pcm) // hop
     if n_hops < 3:
@@ -99,282 +107,204 @@ def _energetic_start(pcm: np.ndarray, sample_rate: int, window_length: float) ->
         return None
 
     cumsum = np.cumsum(np.insert(rms, 0, 0.0))
-    window_sums = cumsum[window:] - cumsum[:-window]  # sum of energy per possible start second
+    window_sums = cumsum[window:] - cumsum[:-window]
 
     margin = max(1, round(n_hops * 0.05))
     lo, hi = margin, len(window_sums) - margin
     if hi <= lo:
         lo, hi = 0, len(window_sums)
 
-    best_start = lo + int(np.argmax(window_sums[lo:hi]))
-    return float(best_start)
+    return float(lo + int(np.argmax(window_sums[lo:hi])))
 
 
-def _normalize(s: str) -> str:
-    return re.sub(r"[^a-z0-9 ]", " ", (s or "").lower())
+def _trim_to_best_window(src: str, dest: str, want_seconds: float) -> Optional[str]:
+    """Cut the most energetic `want_seconds` out of an already-downloaded clip.
+
+    Catalog previews are label-chosen and usually already sit on the hook, but
+    they run 30s and a scene needs ~10s, so it still pays to pick the best
+    window inside them."""
+    pcm = _decode_pcm(src)
+    start = 0.0
+    if pcm is not None and len(pcm) > 0:
+        available = len(pcm) / ENERGY_SAMPLE_RATE
+        if available > want_seconds:
+            found = _energetic_start(pcm, ENERGY_SAMPLE_RATE, want_seconds)
+            if found is not None:
+                start = min(found, max(0.0, available - want_seconds))
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-ss", str(start), "-i", src, "-t", str(want_seconds),
+         "-acodec", "aac", "-b:a", "192k", dest],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return dest if os.path.exists(dest) and os.path.getsize(dest) > 0 else None
 
 
-def _extract_keywords(s: str) -> set:
-    norm = _normalize(s)
-    return {kw for kw in VERSION_KEYWORDS if kw in norm}
+# --------------------------------------------------------------------------
+# catalog preview path (the default for everyone)
+# --------------------------------------------------------------------------
 
-
-def _title_matches(track: Track, candidate_title: str) -> bool:
-    """Reject any candidate that isn't clearly the exact same track/version.
-    Never accept the original mix for a remix request, or vice versa."""
-    cand_norm = _normalize(candidate_title)
-    title_norm = _normalize(track.title)
-
-    title_words = [w for w in title_norm.split() if len(w) > 2]
-    if title_words and not all(w in cand_norm for w in title_words):
+def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds: float,
+                           result: ResolvedMedia) -> bool:
+    cand = providers.find_audio_candidate(track)
+    if not cand or not cand.audio_url:
         return False
 
-    qualifier = track.album or ""
-    required = _extract_keywords(qualifier)
-    if required:
-        qualifier_norm = _normalize(qualifier)
-        if qualifier_norm not in cand_norm and not required.issubset(_extract_keywords(candidate_title)):
-            return False
-    else:
-        # No version specified on the tracklist -- reject anything that is
-        # clearly a remix/edit/etc of the track rather than the plain version.
-        if _extract_keywords(candidate_title):
-            return False
+    raw = os.path.join(out_dir, f"track{index}_preview_raw")
+    downloaded = providers.download(cand.audio_url, raw)
+    if not downloaded:
+        return False
+
+    dest = os.path.join(out_dir, f"track{index}_audio.m4a")
+    trimmed = _trim_to_best_window(downloaded, dest, want_seconds)
+    try:
+        os.remove(downloaded)
+    except OSError:
+        pass
+
+    if not trimmed:
+        return False
+
+    result.audio = trimmed
+    result.matched_label = cand.label()
+    result.credit(cand, "audio")
+
+    # The audio provider usually carries usable artwork too -- take it now and
+    # save a second round of lookups.
+    if cand.artwork_url and not result.artwork:
+        art = providers.download(cand.artwork_url, os.path.join(out_dir, f"track{index}_art.jpg"))
+        if art:
+            result.artwork = art
+            result.credit(cand, "artwork")
     return True
 
 
-def _search_query(track: Track) -> str:
-    if track.album:
-        return f"{track.artist} {track.title} {track.album}"
-    return f"{track.artist} {track.title}"
+def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedia) -> None:
+    """Album art and an artist photo, from whichever providers have them.
+    These are what the generative/audio-reactive scenes are built around, so
+    it's worth checking every provider rather than stopping at the first."""
+    if result.artwork and result.artist_image:
+        return
+
+    for cand in providers.find_image_candidates(track):
+        if cand.artwork_url and not result.artwork:
+            art = providers.download(cand.artwork_url, os.path.join(out_dir, f"track{index}_art.jpg"))
+            if art:
+                result.artwork = art
+                result.credit(cand, "artwork")
+        if cand.artist_image_url and not result.artist_image:
+            pic = providers.download(
+                cand.artist_image_url, os.path.join(out_dir, f"track{index}_artist.jpg")
+            )
+            if pic:
+                result.artist_image = pic
+                result.credit(cand, "artist_image")
+        if result.artwork and result.artist_image:
+            return
 
 
-def _search_youtube(query: str, n: int = 8, cookie_file: str | None = None) -> list[dict]:
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "default_search": f"ytsearch{n}",
-        "extract_flat": False,
-        # one restricted/sign-in-gated result shouldn't sink the whole search --
-        # skip it and keep whichever other results resolved fine.
-        "ignoreerrors": True,
-        **_cookie_opts(cookie_file),
-    }
+# --------------------------------------------------------------------------
+# operator-only YouTube path
+# --------------------------------------------------------------------------
+
+def _resolve_youtube(track: Track, out_dir: str, index: int, clip_duration: int,
+                     audio_duration: int, cookie_file: Optional[str],
+                     result: ResolvedMedia) -> None:
+    """Operator-only. Imported lazily so a deployment that never enables it
+    doesn't even need yt-dlp installed."""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-    except Exception:
-        return []
-    if not info:
-        return []
-    return [e for e in (info.get("entries") or []) if e]
+        import youtube_source
+    except ImportError:
+        return
+
+    got = youtube_source.fetch_clip(
+        track, out_dir, index,
+        clip_duration=clip_duration, audio_duration=audio_duration,
+        cookie_file=cookie_file,
+    )
+    if not got:
+        return
+    if got.get("video") and not result.video:
+        result.video = got["video"]
+    if got.get("audio") and not result.audio:
+        result.audio = got["audio"]
+    result.sources.append({
+        "kind": "youtube",
+        "source": "youtube",
+        "matched": got.get("matched", track.label()),
+        "url": got.get("url"),
+        "license": "Operator-only source; not used for subscriber jobs.",
+    })
 
 
-def _download_range(url: str, start: float, end: float, out_stem: str, audio_only: bool, cookie_file: str | None = None) -> str | None:
-    fmt = "bestaudio/best" if audio_only else "bestvideo[height<=960]+bestaudio/best[height<=960]"
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "format": fmt,
-        "outtmpl": out_stem + ".%(ext)s",
-        "download_ranges": lambda info, ydl: [{"start_time": start, "end_time": end}],
-        "force_keyframes_at_cuts": True,
-        "noplaylist": True,
-        **_cookie_opts(cookie_file),
-    }
-    if audio_only:
-        ydl_opts["postprocessors"] = [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "m4a"}
-        ]
-    else:
-        ydl_opts["merge_output_format"] = "mp4"
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-    except Exception:
-        return None
+# --------------------------------------------------------------------------
+# public entry point
+# --------------------------------------------------------------------------
 
-    stem_dir = os.path.dirname(out_stem)
-    stem_name = os.path.basename(out_stem)
-    for fname in os.listdir(stem_dir):
-        if fname.startswith(stem_name + "."):
-            return os.path.join(stem_dir, fname)
-    return None
-
-
-def _find_matching_candidate(track: Track, entries: list[dict]) -> dict | None:
-    for entry in entries:
-        if not entry:
-            continue
-        duration = entry.get("duration") or 0
-        if not (MIN_SOURCE_DURATION <= duration <= MAX_SOURCE_DURATION):
-            continue
-        title = entry.get("title") or ""
-        if _title_matches(track, title):
-            return entry
-    return None
-
-
-def _best_window_start(url: str, out_dir: str, index: int, duration: float, window: float, cookie_file: str | None = None) -> float:
-    """Downloads the full audio once to analyze energy, then deletes it. Falls
-    back to the fixed heuristic if analysis fails for any reason (age-gated
-    track, decode failure, silence-only, etc)."""
-    full_stem = os.path.join(out_dir, f"track{index}_energyscan")
-    full_path = _download_full_audio(url, full_stem, cookie_file=cookie_file)
-    if not full_path:
-        return _pick_clip_window(duration, window)[0]
-    try:
-        pcm = _decode_pcm(full_path)
-        if pcm is None or len(pcm) == 0:
-            return _pick_clip_window(duration, window)[0]
-        start = _energetic_start(pcm, ENERGY_SAMPLE_RATE, window)
-        if start is None:
-            return _pick_clip_window(duration, window)[0]
-        return min(start, max(0.0, duration - window))
-    finally:
-        if os.path.exists(full_path):
-            os.remove(full_path)
-
-
-def find_youtube_video_clip(
+def resolve_track(
     track: Track, out_dir: str, index: int,
-    clip_duration: int = CLIP_DURATION, audio_duration: int | None = None,
-    cookie_file: str | None = None,
-) -> dict | None:
+    clip_duration: int = CLIP_DURATION,
+    audio_duration: Optional[int] = None,
+    allow_youtube: bool = False,
+    cookie_file: Optional[str] = None,
+) -> ResolvedMedia:
+    """audio_duration lets the caller request a longer audio bed than the
+    visual clip (e.g. the last featured track, whose audio also covers the
+    outro card so the video is never silent).
+
+    allow_youtube must only be true for the operator's own session.
+    """
     audio_duration = audio_duration or clip_duration
-    window = max(clip_duration, audio_duration)
-    entries = _search_youtube(_search_query(track) + " official", cookie_file=cookie_file)
-    candidate = _find_matching_candidate(track, entries)
-    if candidate is None:
-        return None
+    want = max(clip_duration, audio_duration)
+    result = ResolvedMedia()
 
-    duration = candidate.get("duration") or (MIN_SOURCE_DURATION + window)
-    url = candidate.get("webpage_url") or candidate.get("url")
-    start = _best_window_start(url, out_dir, index, duration, window, cookie_file=cookie_file)
-    end = start + window
-    raw_stem = os.path.join(out_dir, f"track{index}_raw")
-    raw_path = _download_range(url, start, end, raw_stem, audio_only=False, cookie_file=cookie_file)
-    if not raw_path or not os.path.exists(raw_path):
-        return None
+    got_audio = _resolve_preview_audio(track, out_dir, index, want, result)
 
-    cropped_path = os.path.join(out_dir, f"track{index}_video.mp4")
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", raw_path,
-            "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
-            "-an", "-t", str(clip_duration),
-            cropped_path,
-        ],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    audio_path = os.path.join(out_dir, f"track{index}_audio.m4a")
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", raw_path, "-vn", "-acodec", "aac", "-t", str(audio_duration), audio_path],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    os.remove(raw_path)
+    if not got_audio and allow_youtube:
+        _resolve_youtube(track, out_dir, index, clip_duration, audio_duration, cookie_file, result)
 
-    return {
-        "video": cropped_path if os.path.exists(cropped_path) else None,
-        "audio": audio_path if os.path.exists(audio_path) else None,
-    }
+    _resolve_images(track, out_dir, index, result)
 
-
-def find_youtube_audio_only(track: Track, out_dir: str, index: int, audio_duration: int = CLIP_DURATION, cookie_file: str | None = None) -> str | None:
-    entries = _search_youtube(_search_query(track) + " audio", n=6, cookie_file=cookie_file)
-    candidate = _find_matching_candidate(track, entries)
-    if candidate is None:
-        return None
-
-    duration = candidate.get("duration") or (MIN_SOURCE_DURATION + audio_duration)
-    url = candidate.get("webpage_url") or candidate.get("url")
-
-    # One full-track download serves both the energy analysis and the final clip
-    # (trimmed locally), instead of analyzing once and downloading a range again.
-    full_stem = os.path.join(out_dir, f"track{index}_fullaudio_tmp")
-    full_path = _download_full_audio(url, full_stem, cookie_file=cookie_file)
-    if not full_path:
-        return None
-
-    pcm = _decode_pcm(full_path)
-    start = _pick_clip_window(duration, audio_duration)[0]
-    if pcm is not None and len(pcm) > 0:
-        energetic = _energetic_start(pcm, ENERGY_SAMPLE_RATE, audio_duration)
-        if energetic is not None:
-            start = min(energetic, max(0.0, duration - audio_duration))
-
-    audio_path = os.path.join(out_dir, f"track{index}_audio.m4a")
-    subprocess.run(
-        ["ffmpeg", "-y", "-ss", str(start), "-i", full_path, "-t", str(audio_duration), "-acodec", "aac", audio_path],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    os.remove(full_path)
-    return audio_path if os.path.exists(audio_path) else None
-
-
-def find_artist_image(track: Track, out_dir: str, index: int) -> str | None:
-    try:
-        resp = requests.get(
-            "https://itunes.apple.com/search",
-            params={"term": f"{track.artist} {track.title}", "media": "music", "limit": 1},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        results = resp.json().get("results") or []
-        if not results:
-            return None
-        art_url = results[0].get("artworkUrl100")
-        if not art_url:
-            return None
-        art_url = art_url.replace("100x100bb", "600x600bb")
-        img_resp = requests.get(art_url, timeout=10)
-        img_resp.raise_for_status()
-        img_path = os.path.join(out_dir, f"track{index}_art.jpg")
-        with open(img_path, "wb") as f:
-            f.write(img_resp.content)
-        return img_path
-    except Exception:
-        return None
+    if not result.audio:
+        result.needs_manual_audio = True
+    return result
 
 
 def process_track(
     track: Track, out_dir: str, index: int,
-    clip_duration: int = CLIP_DURATION, audio_duration: int | None = None,
-    cookie_file: str | None = None,
+    clip_duration: int = CLIP_DURATION, audio_duration: Optional[int] = None,
+    allow_youtube: bool = False, cookie_file: Optional[str] = None,
 ) -> dict:
-    """audio_duration lets the caller request a longer audio bed than the visual
-    clip (e.g. the last featured track, whose audio also needs to cover the
-    outro card so the video is never silent). cookie_file, if given, should be
-    the requesting user's own exported YouTube cookies.txt -- never shared
-    across users."""
-    audio_duration = audio_duration or clip_duration
-    result = {"video": None, "audio": None, "image": None, "needs_manual_audio": False}
+    """Dict-returning wrapper kept for the existing callers in compose/app."""
+    return resolve_track(
+        track, out_dir, index,
+        clip_duration=clip_duration, audio_duration=audio_duration,
+        allow_youtube=allow_youtube, cookie_file=cookie_file,
+    ).to_dict()
 
-    video_result = find_youtube_video_clip(
-        track, out_dir, index, clip_duration=clip_duration, audio_duration=audio_duration, cookie_file=cookie_file,
-    )
-    if video_result:
-        result["video"] = video_result["video"]
-        result["audio"] = video_result["audio"]
 
-    if not result["video"]:
-        result["image"] = find_artist_image(track, out_dir, index)
-
-    if not result["audio"]:
-        result["audio"] = find_youtube_audio_only(track, out_dir, index, audio_duration=audio_duration, cookie_file=cookie_file)
-
-    if not result["audio"]:
-        result["needs_manual_audio"] = True
-
-    return result
+def find_audio_only(track: Track, out_dir: str, index: int, audio_duration: int = CLIP_DURATION,
+                    allow_youtube: bool = False, cookie_file: Optional[str] = None) -> Optional[str]:
+    """Audio without the imagery lookup -- used to extend the closing track's
+    bed over the outro card."""
+    result = ResolvedMedia()
+    if _resolve_preview_audio(track, out_dir, index, audio_duration, result):
+        return result.audio
+    if allow_youtube:
+        _resolve_youtube(track, out_dir, index, audio_duration, audio_duration, cookie_file, result)
+    return result.audio
 
 
 if __name__ == "__main__":
     import tempfile
 
-    t = Track("The Cure", "Pictures of You", album="Extended Dub Mix")
-    with tempfile.TemporaryDirectory() as d:
-        print(process_track(t, d, 0))
-        print(os.listdir(d))
+    for t in [
+        Track("The Cure", "Pictures of You", album="Extended Dub Mix"),
+        Track("Kendrick Lamar", "Not Like Us"),
+        Track("Noga Erez", "VIEWS"),
+    ]:
+        with tempfile.TemporaryDirectory() as d:
+            r = resolve_track(t, d, 0)
+            print(f"{t.label()!r:55s} -> matched={r.matched_label!r}")
+            print(f"    audio={bool(r.audio)} artwork={bool(r.artwork)} "
+                  f"artist_img={bool(r.artist_image)} manual={r.needs_manual_audio}")

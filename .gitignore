@@ -17,3 +17,6 @@ server/analytics.jsonl
 server/admins.json
 server/user_data/
 server/themes.json
+
+# Written at render time by visuals.install_vendor() from server/static/vendor/
+assets/

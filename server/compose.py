@@ -3,10 +3,32 @@ import math
 import os
 import subprocess
 
+import visuals
+
 HYPERFRAMES_VERSION = "0.7.70"
 
 OUTRO_DURATION = 5
 LOGO_PATH = "server/static/kz-logo.png"
+
+# The composition is written to PROJECT_DIR/index.html and loaded from there,
+# so media has to be referenced relative to that directory -- the same way
+# LOGO_PATH already is. Absolute filesystem paths in a src attribute resolve
+# against the document's origin and 404.
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _rel(path: str) -> str:
+    """Project-relative form of an absolute media path, left untouched if it
+    already is relative or lives outside the project."""
+    if not path:
+        return path
+    if not os.path.isabs(path):
+        return path
+    try:
+        rel = os.path.relpath(path, PROJECT_DIR)
+    except ValueError:
+        return path
+    return path if rel.startswith("..") else rel
 
 BASE_CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -188,6 +210,9 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     # The .scene wrapper sits at a higher z-index than .bg-media (it holds the scrim/
     # orbs/text). A solid background here would paint over the video underneath, so
     # only fall back to the gradient when there's no video/image to show through.
+    # The generative backdrop is always present, so a scene is never blank --
+    # the flat gradient is only needed when artwork would otherwise paint over
+    # a video underneath.
     has_visual = bool(media.get("video") or media.get("image"))
     bg_style = (
         "" if has_visual
@@ -199,19 +224,18 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         media_html += (
             f'<video id="media-{index}" class="clip bg-media" muted playsinline preload="auto" '
             f'data-start="{start}" data-duration="{duration}" data-track-index="1" '
-            f'src="{_esc(media["video"])}"></video>\n'
+            f'src="{_esc(_rel(media["video"]))}"></video>\n'
         )
     elif media.get("image"):
-        media_html += (
-            f'<img id="media-{index}" class="clip bg-media" '
-            f'data-start="{start}" data-duration="{duration}" data-track-index="1" '
-            f'src="{_esc(media["image"])}" />\n'
-        )
+        # Artwork is animated every frame by the visuals runtime (Ken Burns +
+        # bass breath), so it uses .art-media and carries no CSS transition --
+        # a transition would key off real elapsed time and break determinism.
+        media_html += visuals.art_html(index, start, duration, _esc(_rel(media["image"])))
 
     if media.get("audio"):
         media_html += (
             f'<audio id="audio-{index}" class="clip" data-start="{start}" data-duration="{audio_duration}" '
-            f'data-track-index="2" src="{_esc(media["audio"])}"></audio>\n'
+            f'data-track-index="2" src="{_esc(_rel(media["audio"]))}"></audio>\n'
         )
 
     hero_html = hero[0] if hero else ""
@@ -255,15 +279,11 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         .set({text_sel}, {{ opacity: 0 }}, {start + duration})
         .set("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {start + duration});
     """
-    if media.get("image"):
-        # Full Ken Burns push + pan for static artwork, alternating direction by index.
-        image_zoom = 1 + mo["zoom"] * 1.6
-        pan_x = round(-26 * mo["translate_mult"]) if index % 2 == 0 else round(26 * mo["translate_mult"])
-        pan_y = round(-18 * mo["translate_mult"]) if (index // 2) % 2 == 0 else round(18 * mo["translate_mult"])
-        scene_js += f"""
-      tl.fromTo("#media-{index}", {{ scale: 1.06, x: 0, y: 0 }}, {{ scale: {image_zoom}, x: {pan_x}, y: {pan_y}, duration: {duration}, ease: "none" }}, {start});
-    """
-    elif media.get("video"):
+    # Artwork gets no GSAP tween here. Its Ken Burns push, pan and bass-driven
+    # breath are all written per frame by the visuals runtime, which owns the
+    # #art-N elements outright -- a tween on the same transform would fight it,
+    # and would target a #media-N element that no longer exists for stills.
+    if media.get("video"):
         # Subtler zoom-only creep on video so it doesn't fight the footage's own motion.
         video_zoom = 1 + mo["zoom"]
         scene_js += f"""
@@ -413,6 +433,7 @@ def build_composition_html(
     scenes_html = []
     media_tags_html = []
     scenes_js = []
+    visual_scenes = []
 
     for i, item in enumerate(standout):
         pal = palette[i % len(palette)]
@@ -423,6 +444,15 @@ def build_composition_html(
         scenes_html.append(sh)
         media_tags_html.append(mh)
         scenes_js.append(sj)
+        visual_scenes.append({
+            "index": i,
+            "start": cursor,
+            "duration": scene_duration,
+            "analysis": item.get("analysis"),
+            # Video keeps its own footage; only still artwork gets the
+            # Ken Burns / breathing treatment from the visuals runtime.
+            "has_art": bool(item["media"].get("image")) and not item["media"].get("video"),
+        })
         cursor += scene_duration
 
     outro_pal = palette[len(standout) % len(palette)]
@@ -436,6 +466,11 @@ def build_composition_html(
     header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at)
     scenes_js.append(header_js)
     frame_html = _frame_overlay_html(frame, total_duration, palette[0]["accent"])
+    visuals_js = visuals.runtime_js(
+        visual_scenes, total_duration,
+        motion_style=theme.get("motion", "normal"),
+        accent_hex=palette[0]["accent"],
+    )
 
     return f"""<!doctype html>
 <html lang="en">
@@ -444,10 +479,11 @@ def build_composition_html(
     <meta name="viewport" content="width=1080, height=1920" />
     <title>{_esc(show_name)} Promo</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>{BASE_CSS}</style>
+    <style>{BASE_CSS}{visuals.CSS}</style>
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{total_duration}" data-width="1080" data-height="1920">
+      {visuals.canvas_html()}
       {''.join(media_tags_html)}
       {''.join(scenes_html)}
       {header_html}
@@ -459,6 +495,7 @@ def build_composition_html(
       {''.join(scenes_js)}
       window.__timelines["main"] = tl;
     </script>
+    {visuals_js}
   </body>
 </html>
 """

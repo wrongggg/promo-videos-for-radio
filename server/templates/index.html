@@ -191,14 +191,11 @@
                 <p class="subtitle">Paste a tracklist, get a 9:16 promo video.</p>
             </div>
             <div style="display:flex; gap:14px; align-items:center; flex-shrink:0; white-space:nowrap;">
-                {% if username %}
-                {% if personal_mode %}<a href="{{ url_for('analytics_page') }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">Analytics</a>{% endif %}
-                <a href="{{ url_for('account') }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">{{ username }}</a>
-                <form method="POST" action="{{ url_for('logout') }}" style="margin:0;">
-                    <button type="submit" style="all:unset; cursor:pointer; color:var(--text-muted); font-size:12px; white-space:nowrap;">Log out</button>
+                {% if personal_mode %}
+                <a href="{{ url_for('analytics_page') }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">Analytics</a>
+                <form method="POST" action="{{ url_for('revoke_operator') }}" style="margin:0;">
+                    <button type="submit" style="all:unset; cursor:pointer; color:var(--text-muted); font-size:12px; white-space:nowrap;">Exit operator mode</button>
                 </form>
-                {% else %}
-                <a href="{{ url_for('login', next=request.path) }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">Sign in</a>
                 {% endif %}
             </div>
         </div>
@@ -313,7 +310,6 @@
 
 <script>
 const PERSONAL_MODE = {{ "true" if personal_mode else "false" }};
-const LOGGED_IN = {{ "true" if username else "false" }};
 const MAX_MANUAL_TRACKS = {{ max_manual_tracks }};
 let pollInterval = null;
 let currentJobId = null;
@@ -425,12 +421,12 @@ function loadThemes() {
 }
 loadThemes();
 
-// --- Preserve the draft across a sign-in round trip (submit is gated on
-// LOGGED_IN below) so typing a whole tracklist then hitting Generate never
-// loses work just because sign-in wasn't done yet. ---
+// --- Draft restore. Sign-in is gone, so there's no redirect to survive any
+// more, but keeping the restore path means a stray reload doesn't lose a
+// half-typed tracklist. ---
 const DRAFT_KEY = "promoDraft";
 
-function saveDraftAndRedirectToLogin() {
+function saveDraft() {
     const draft = {
         tracklist: document.getElementById("tracklistInput").value,
         show_name: document.querySelector('[name="show_name"]').value,
@@ -442,7 +438,6 @@ function saveDraftAndRedirectToLogin() {
         selectionMode, language,
     };
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
 }
 
 function restoreDraftIfAny() {
@@ -521,10 +516,6 @@ function requestNotifyPermission() {
 
 document.getElementById("startForm").addEventListener("submit", function (e) {
     e.preventDefault();
-    if (!LOGGED_IN) {
-        saveDraftAndRedirectToLogin();
-        return;
-    }
     requestNotifyPermission();
 
     const btn = document.getElementById("submitBtn");

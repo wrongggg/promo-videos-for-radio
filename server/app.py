@@ -6,17 +6,18 @@ import traceback
 import uuid
 from functools import wraps
 
-from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
+import access
 import analytics
+import audio_analysis
 import compose
 import curator
 import media_finder
-import users
+import visuals
 from track import Track, parse_tracklist
 
 load_dotenv()
@@ -36,6 +37,14 @@ VIDEO_RATIO_TARGET = 0.6
 MAX_EXTRA_FETCH_ATTEMPTS = 8
 PACE_SCENE_DURATION = {"chill": 11, "normal": 8, "fast": 6, "hyper": 4.5}
 MAX_MANUAL_TRACKS_NON_ADMIN = 7
+# Must match what the hyperframes renderer emits, or the baked per-frame audio
+# arrays drift out of sync with the frames they are indexed against.
+RENDER_FPS = 30
+
+# The operator's own YouTube cookies, read from a path on disk rather than
+# uploaded through the app -- there are no user accounts to attach them to any
+# more, and they must never be reachable by anyone else's job.
+YOUTUBE_COOKIE_FILE = os.environ.get("YOUTUBE_COOKIE_FILE") or None
 
 
 def _load_or_create_secret_key() -> str:
@@ -66,49 +75,13 @@ app.secret_key = _load_or_create_secret_key()
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 JOBS = {}
 
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-oauth = OAuth(app)
-if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
-    oauth.register(
-        name="google",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
-        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
-    )
-
-
-# manage_users.py operates on local files, which is useless once DATA_DIR
-# points at a remote volume you can't shell into directly -- this env var
-# bootstraps the first admin on startup instead. Idempotent (safe to leave
-# set permanently, or remove after first deploy).
-_initial_admin = os.environ.get("INITIAL_ADMIN_EMAIL")
-if _initial_admin:
-    users.add_admin(_initial_admin)
-
-
-def current_username() -> str | None:
-    return session.get("username")
-
-
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not current_username():
-            return redirect(url_for("login", next=request.path))
-        return view(*args, **kwargs)
-    return wrapped
-
-
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        username = current_username()
-        if not username:
-            return redirect(url_for("login", next=request.path))
-        if not users.is_admin(username):
-            return jsonify({"error": "admin only"}), 403
+        if not access.is_operator():
+            # 404 rather than 403 -- an anonymous visitor shouldn't be able to
+            # discover that these routes exist at all.
+            abort(404)
         return view(*args, **kwargs)
     return wrapped
 
@@ -150,7 +123,7 @@ def _resolve_theme(theme_mode, theme_value, tracks, job_id=None, model=curator.M
     return curator.suggest_theme(tracks, job_id=job_id, model=model)
 
 
-def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, cookie_file=None):
+def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=False, cookie_file=None):
     """Fetch media for ranked candidates (best first), enforcing: at least
     VIDEO_RATIO_TARGET of the final picks have video, and extra candidates are
     pulled in to satisfy that when the top picks don't have enough video."""
@@ -169,7 +142,7 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
 
         track_obj = Track(artist=cand["artist"], title=cand["title"], album=cand.get("album"))
         _log(job, f"Fetching media for {cand['artist']} - {cand['title']}...")
-        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, cookie_file=cookie_file)
+        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
         this_index = media_index
         media_index += 1
         has_video = bool(result["video"])
@@ -204,7 +177,7 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
     return resolved
 
 
-def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
+def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
     """picks: list of {artist, title, album}. Unlike auto mode, there's no backup
     pool to draw from -- every pick is attempted once, in order, and only true
     dead-ends (no video, no image, no audio found anywhere) get dropped."""
@@ -217,7 +190,7 @@ def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=
     for p in picks:
         track_obj = Track(artist=p["artist"], title=p["title"], album=p.get("album"))
         _log(job, f"Fetching media for {p['artist']} - {p['title']}...")
-        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, cookie_file=cookie_file)
+        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
         this_index = media_index
         media_index += 1
         has_video = bool(result["video"])
@@ -246,29 +219,26 @@ def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=
     return resolved
 
 
-def _extend_closing_audio(job, last_entry, job_dir, scene_duration, cookie_file=None):
+def _extend_closing_audio(job, last_entry, job_dir, scene_duration, allow_youtube=False, cookie_file=None):
     extended = scene_duration + compose.OUTRO_DURATION
     track_obj = last_entry["track_obj"]
     idx = last_entry["media_index"]
     _log(job, f"Extending closing track's audio to cover the outro card...")
     try:
-        if last_entry["has_video"]:
-            video_result = media_finder.find_youtube_video_clip(
-                track_obj, job_dir, idx, clip_duration=scene_duration, audio_duration=extended, cookie_file=cookie_file,
-            )
-            if video_result and video_result.get("audio"):
-                last_entry["media"]["audio"] = video_result["audio"]
-        else:
-            audio_path = media_finder.find_youtube_audio_only(track_obj, job_dir, idx, audio_duration=extended, cookie_file=cookie_file)
-            if audio_path:
-                last_entry["media"]["audio"] = audio_path
+        audio_path = media_finder.find_audio_only(
+            track_obj, job_dir, idx, audio_duration=extended,
+            allow_youtube=allow_youtube, cookie_file=cookie_file,
+        )
+        if audio_path:
+            last_entry["media"]["audio"] = audio_path
     except Exception as e:
         _log(job, f"  could not extend closing audio ({e}) — outro may be quiet")
 
 
-def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
+def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE):
     job = JOBS[job_id]
     job["cookie_file"] = cookie_file
+    job["allow_youtube"] = allow_youtube
     job_dir = os.path.join(RENDERS_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
     scene_duration = PACE_SCENE_DURATION.get(pace, PACE_SCENE_DURATION["normal"])
@@ -279,8 +249,6 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
         if not tracks:
             raise ValueError("No tracks found in tracklist")
         _log(job, f"Parsed {len(tracks)} tracks")
-        if not cookie_file:
-            _log(job, "No YouTube cookies linked for your account — some videos may fail to fetch (add them under Account).")
 
         job["status"] = "theming"
         _log(job, "Choosing a visual theme...")
@@ -298,7 +266,7 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
                 raise ValueError("No tracks were selected")
             job["status"] = "curating"
             job["status"] = "fetching_media"
-            resolved = _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=job_id, personal=personal, cookie_file=cookie_file, use_search=use_search, model=model)
+            resolved = _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=job_id, personal=personal, allow_youtube=allow_youtube, cookie_file=cookie_file, use_search=use_search, model=model)
         else:
             job["status"] = "curating"
             _log(job, "Ranking standout tracks" + (" (web research)..." if use_search else "..."))
@@ -306,13 +274,13 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
             _log(job, "Ranked candidates: " + ", ".join(f"{r['artist']} - {r['title']}" for r in ranked))
 
             job["status"] = "fetching_media"
-            resolved = _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, cookie_file=cookie_file)
+            resolved = _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
 
         if not resolved:
             raise ValueError("Could not resolve media for any standout track")
 
         job["resolved"] = resolved
-        _extend_closing_audio(job, resolved[-1], job_dir, scene_duration, cookie_file=cookie_file)
+        _extend_closing_audio(job, resolved[-1], job_dir, scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
 
         # Exclude by artist too, not just exact track match -- the "also in this
         # episode" list shouldn't repeat an artist already featured in the video.
@@ -367,10 +335,33 @@ def _start_render(job_id):
     thread.start()
 
 
+def _analyze_scene_audio(job):
+    """Bake each scene's audio into per-frame energy arrays for the reactive
+    visuals. Runs once here rather than live in the browser, because the
+    renderer seeks a paused timeline and a live analyser would read silence
+    (and could disagree between passes). Roughly a second of CPU per clip and
+    no API calls -- see audio_analysis.py."""
+    _log(job, "Analyzing audio for reactive visuals...")
+    for item in job["standout"]:
+        audio_path = (item.get("media") or {}).get("audio")
+        if not audio_path or not os.path.exists(audio_path):
+            item["analysis"] = None
+            continue
+        try:
+            item["analysis"] = audio_analysis.analyze(audio_path, fps=RENDER_FPS)
+        except Exception as e:
+            # A failed analysis just means that scene isn't reactive; it must
+            # never take down the render.
+            item["analysis"] = None
+            _log(job, f"  audio analysis skipped for one track ({e})")
+
+
 def _run_render_stage(job_id):
     job = JOBS[job_id]
     try:
         job["status"] = "composing"
+        _analyze_scene_audio(job)
+        visuals.install_vendor(PROJECT_DIR)
         _log(job, "Building composition...")
         html = compose.build_composition_html(
             job["show_name"], job["episode_label"], job["standout"], job["remaining"],
@@ -396,75 +387,33 @@ def _run_render_stage(job_id):
         analytics.record_job_done(job_id, "failed")
 
 
-@app.route("/login")
-def login():
-    return render_template("login.html", error=None, next=request.args.get("next", ""))
+@app.route("/o/<token>")
+def grant_operator(token):
+    """The operator's private door. Visit once per browser; the session flag
+    persists from then on. Replaces the whole Google sign-in flow -- there are
+    no user accounts any more, only "is this the operator's browser"."""
+    if not access.token_matches(token):
+        abort(404)
+    access.grant_operator()
+    return redirect(url_for("index"))
 
 
-@app.route("/auth/google")
-def auth_google():
-    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
-        return "Google sign-in isn't configured yet (missing GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET in .env).", 503
-    session["post_login_redirect"] = request.args.get("next") or url_for("index")
-    redirect_uri = url_for("auth_google_callback", _external=True)
-    return oauth.google.authorize_redirect(redirect_uri)
-
-
-@app.route("/auth/google/callback")
-def auth_google_callback():
-    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
-        return "Google sign-in isn't configured yet.", 503
-    token = oauth.google.authorize_access_token()
-    userinfo = token.get("userinfo") or {}
-    email = userinfo.get("email")
-    if not email or not userinfo.get("email_verified"):
-        return render_template("login.html", error="Google didn't return a verified email address.", next=""), 400
-
-    session.clear()
-    session["username"] = email.strip().lower()
-    session.permanent = True
-    next_url = session.pop("post_login_redirect", None) or url_for("index")
-    return redirect(next_url)
-
-
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-@app.route("/account", methods=["GET", "POST"])
-@login_required
-def account():
-    username = current_username()
-    error = None
-    if request.method == "POST":
-        file = request.files.get("cookies_file")
-        if not file or not file.filename:
-            error = "Choose a cookies.txt file first."
-        else:
-            data = file.read()
-            if len(data) > 1_000_000:
-                error = "That file is too large to be a cookies.txt export."
-            elif b"\t" not in data and b"Netscape" not in data:
-                error = "That doesn't look like a Netscape-format cookies.txt export."
-            else:
-                users.save_cookies(username, data)
-    return render_template(
-        "account.html", username=username,
-        has_cookies=users.has_cookies(username), error=error,
-    )
+@app.route("/o/revoke", methods=["POST"])
+def revoke_operator():
+    access.revoke_operator()
+    return redirect(url_for("index"))
 
 
 @app.route("/")
 def index():
-    analytics.record_visit("/", current_username())
-    # personal_mode gates admin-only UI: custom/saved theme tools and the
-    # Analytics link. Pop Lock curation personalization is separate -- it
-    # keys off the show name typed into the form (see /start).
+    analytics.record_visit("/", access.visitor_id())
+    # personal_mode gates operator-only UI: custom/saved theme tools, AI
+    # curation, quality mode and the Analytics link. Pop Lock curation
+    # personalization is separate -- it keys off the show name (see /start).
     return render_template(
-        "index.html", default_show_name=DEFAULT_SHOW_NAME, username=current_username(),
-        presets=list(curator.PRESET_THEMES.keys()), personal_mode=users.is_admin(current_username()),
+        "index.html", default_show_name=DEFAULT_SHOW_NAME,
+        presets=list(curator.PRESET_THEMES.keys()),
+        personal_mode=access.is_operator(),
         max_manual_tracks=MAX_MANUAL_TRACKS_NON_ADMIN,
     )
 
@@ -481,7 +430,7 @@ def themes():
 
 
 @app.route("/themes/save", methods=["POST"])
-@login_required
+@admin_required
 def save_theme():
     data = request.get_json(force=True)
     name = (data.get("name") or "").strip()
@@ -502,10 +451,17 @@ def parse_tracklist_route():
 
 
 @app.route("/start", methods=["POST"])
-@login_required
 def start():
-    username = current_username()
-    is_admin_user = users.is_admin(username)
+    is_admin_user = access.is_operator()
+
+    # With sign-in gone there's nothing in front of a job that spends Anthropic
+    # tokens and render CPU, so an anonymous visitor gets a daily cap. The
+    # operator is exempt.
+    allowed, remaining = access.check_job_quota()
+    if not allowed:
+        return jsonify({
+            "error": "Daily limit reached. You can make more promos again tomorrow."
+        }), 429
 
     tracklist_text = request.form.get("tracklist", "")
     show_name = request.form.get("show_name", "").strip() or DEFAULT_SHOW_NAME
@@ -544,16 +500,20 @@ def start():
         if not is_admin_user:
             manual_picks = manual_picks[:MAX_MANUAL_TRACKS_NON_ADMIN]
 
-    cookie_file = users.cookie_path(username) if users.has_cookies(username) else None
+    # The YouTube source is operator-only: downloading from YouTube breaks its
+    # terms of service, so it must never run for anyone else's job.
+    allow_youtube = is_admin_user
+    cookie_file = YOUTUBE_COOKIE_FILE if (allow_youtube and YOUTUBE_COOKIE_FILE) else None
 
+    owner = access.visitor_id()
     job_id = str(uuid.uuid4())
-    JOBS[job_id] = {"status": "queued", "log": [], "error": None, "needs_upload": [], "owner": username}
+    JOBS[job_id] = {"status": "queued", "log": [], "error": None, "needs_upload": [], "owner": owner}
 
-    analytics.record_job_start(job_id, "/", username)
+    analytics.record_job_start(job_id, "/", owner)
 
     thread = threading.Thread(
         target=_run_fetch_stage,
-        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, cookie_file, use_search, model),
+        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model),
         daemon=True,
     )
     thread.start()
@@ -561,11 +521,10 @@ def start():
 
 
 def _owns_job(job) -> bool:
-    return job is not None and job.get("owner") == current_username()
+    return job is not None and job.get("owner") == access.visitor_id()
 
 
 @app.route("/status/<job_id>")
-@login_required
 def status(job_id):
     job = JOBS.get(job_id)
     if not job:
@@ -582,7 +541,6 @@ def status(job_id):
 
 
 @app.route("/upload/<job_id>/<int:track_index>", methods=["POST"])
-@login_required
 def upload(job_id, track_index):
     job = JOBS.get(job_id)
     if not _owns_job(job):
@@ -610,7 +568,6 @@ def upload(job_id, track_index):
 
 
 @app.route("/skip/<job_id>/<int:track_index>", methods=["POST"])
-@login_required
 def skip_upload(job_id, track_index):
     job = JOBS.get(job_id)
     if not _owns_job(job):
@@ -641,7 +598,7 @@ def skip_upload(job_id, track_index):
     if track_index == len(job["standout"]):
         last_standout = job["standout"][-1]
         if last_standout["media"]["audio"]:
-            _extend_closing_audio(job, job["resolved"][-1], job["job_dir"], job["scene_duration"], cookie_file=job.get("cookie_file"))
+            _extend_closing_audio(job, job["resolved"][-1], job["job_dir"], job["scene_duration"], allow_youtube=job.get("allow_youtube", False), cookie_file=job.get("cookie_file"))
             if job["resolved"][-1]["media"]["audio"]:
                 last_standout["media"]["audio"] = os.path.relpath(job["resolved"][-1]["media"]["audio"], PROJECT_DIR)
 
@@ -654,7 +611,6 @@ def skip_upload(job_id, track_index):
 
 
 @app.route("/preview/<job_id>")
-@login_required
 def preview_video(job_id):
     """Serves the rendered video inline for the in-page <video> player -- not
     counted as a download (see /download for the actual export/save action)."""
@@ -667,14 +623,13 @@ def preview_video(job_id):
 
 
 @app.route("/download/<job_id>")
-@login_required
 def download(job_id):
     job = JOBS.get(job_id)
     if not _owns_job(job):
         return jsonify({"error": "not your job"}), 403
     if job["status"] != "done":
         return jsonify({"error": "not ready"}), 400
-    analytics.record_download(job_id, current_username())
+    analytics.record_download(job_id, access.visitor_id())
     return send_file(job["output_path"], as_attachment=True, download_name=f"promo-{job_id}.mp4")
 
 

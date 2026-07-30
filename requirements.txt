@@ -6,5 +6,4 @@ python-dotenv
 static-ffmpeg
 numpy
 pycryptodomex
-Authlib
 gunicorn
