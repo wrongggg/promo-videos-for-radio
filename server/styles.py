@@ -30,12 +30,20 @@ Two rules hold across every style, both deliberate:
     be used without a matching @font-face.
 """
 
+# 'Noto Sans' and 'Noto Sans JP' sit in every stack because they are the only
+# two broad-coverage families the renderer will supply itself -- everything the
+# display faces don't cover (Cyrillic, Greek, Hebrew, Arabic, CJK, Devanagari,
+# Thai) lands on them. See languages.py for the render test that confirmed all
+# ten scripts, and for the caveat that the Latin-only display faces mean XL and
+# Poppy lose some character in non-Latin languages.
+_FALLBACK = "'Noto Sans', 'Noto Sans JP'"
+
 FONTS = {
-    "grotesque": "'Inter', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif",
-    "mono": "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace",
-    "serif": "'Playfair Display', Georgia, 'Times New Roman', serif",
-    "condensed": "'Bebas Neue', 'Oswald', sans-serif",
-    "display": "'Archivo Black', 'Inter', system-ui, sans-serif",
+    "grotesque": f"'Inter', {_FALLBACK}, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif",
+    "mono": f"'IBM Plex Mono', ui-monospace, {_FALLBACK}, Menlo, Consolas, monospace",
+    "serif": f"'Playfair Display', Georgia, 'Times New Roman', {_FALLBACK}, serif",
+    "condensed": f"'Bebas Neue', 'Oswald', {_FALLBACK}, sans-serif",
+    "display": f"'Archivo Black', 'Inter', {_FALLBACK}, system-ui, sans-serif",
 }
 
 WHITE = "#ffffff"

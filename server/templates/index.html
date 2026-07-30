@@ -218,8 +218,6 @@
             display: inline-block; background: var(--accent2); color: #fff; font-weight: 700;
             padding: 12px 26px; border-radius: 14px; text-decoration: none; font-size: 14px;
         }
-        .swatches { display: flex; gap: 6px; margin-top: 16px; justify-content: center; }
-        .swatch { width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.12); }
         .save-theme-box { display: none; margin-top: 16px; }
         .save-theme-row { display: flex; gap: 8px; }
         .save-theme-row input { flex: 1; }
@@ -335,13 +333,28 @@
                 <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
             </div>
 
-            <div class="form-group">
-                <label>On-screen language</label>
-                <div class="segmented" id="languageToggle">
-                    <button type="button" data-value="en" class="active">English</button>
-                    <button type="button" data-value="he">עברית</button>
+            <div class="row">
+                <div class="form-group">
+                    <label>On-screen language</label>
+                    <select name="language" id="languageInput">
+                        {% for l in language_choices %}
+                        <option value="{{ l.code }}"{% if l.code == 'en' %} selected{% endif %}>{{ l.label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <input type="hidden" name="language" id="languageInput" value="en">
+                <div class="form-group">
+                    <label>Logo</label>
+                    <div class="segmented" id="logoToggle">
+                        {% if personal_mode %}<button type="button" data-value="default" class="active">KZ Radio</button>{% endif %}
+                        <button type="button" data-value="upload"{% if not personal_mode %} {% endif %}>Upload</button>
+                        <button type="button" data-value="none"{% if not personal_mode %} class="active"{% endif %}>None</button>
+                    </div>
+                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if personal_mode %}default{% else %}none{% endif %}">
+                    <div id="logoUploadGroup" style="display:none; margin-top:10px;">
+                        <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+                        <p class="hint">PNG with a transparent background works best. Max 2&nbsp;MB.</p>
+                    </div>
+                </div>
             </div>
 
             {% if personal_mode %}
@@ -376,7 +389,6 @@
         <div class="video-wrap" id="downloadBox">
             <video id="previewPlayer" controls playsinline></video>
             <a id="downloadLink" href="#">Download MP4</a>
-            <div class="swatches" id="paletteSwatches"></div>
             <div class="save-theme-box" id="saveThemeBox">
                 <div class="save-theme-row">
                     <input type="text" id="saveThemeName" placeholder="Name this theme to reuse it">
@@ -397,7 +409,6 @@ let lastTheme = null;
 // Manual selection is the default for everyone -- AI (Auto) curation is an
 // admin-only option, toggled on below only when PERSONAL_MODE.
 let selectionMode = "manual";
-let language = "en";
 let activeUploadRows = {};
 
 function setActive(container, value) {
@@ -415,20 +426,21 @@ if (PERSONAL_MODE) {
     });
 }
 
+document.getElementById("logoToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    setActive(e.currentTarget, btn.dataset.value);
+    document.getElementById("useLogoInput").value = btn.dataset.value;
+    document.getElementById("logoUploadGroup").style.display =
+        btn.dataset.value === "upload" ? "block" : "none";
+});
+
 document.getElementById("trackList").addEventListener("change", (e) => {
     if (PERSONAL_MODE || e.target.type !== "checkbox") return;
     const checked = document.querySelectorAll("#trackList input[type=checkbox]:checked");
     if (checked.length > MAX_MANUAL_TRACKS) {
         e.target.checked = false;
     }
-});
-
-document.getElementById("languageToggle").addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    language = btn.dataset.value;
-    setActive(e.currentTarget, language);
-    document.getElementById("languageInput").value = language;
 });
 
 if (PERSONAL_MODE) {
@@ -545,7 +557,8 @@ function saveDraft() {
         pace: document.querySelector('[name="pace"]').value,
         theme_mode: document.getElementById("themeMode").value,
         theme_value: document.getElementById("themeDescription") ? document.getElementById("themeDescription").value : "",
-        selectionMode, language,
+        selectionMode,
+        language: document.getElementById("languageInput").value,
     };
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
 }
@@ -567,9 +580,10 @@ function restoreDraftIfAny() {
     if (draft.pace) document.querySelector('[name="pace"]').value = draft.pace;
 
     if (draft.language) {
-        language = draft.language;
-        setActive(document.getElementById("languageToggle"), language);
-        document.getElementById("languageInput").value = language;
+        const langEl = document.getElementById("languageInput");
+        if ([...langEl.options].some((o) => o.value === draft.language)) {
+            langEl.value = draft.language;
+        }
     }
     if (PERSONAL_MODE && draft.selectionMode) {
         selectionMode = draft.selectionMode;
@@ -647,7 +661,6 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
 
     const formData = new FormData(this);
     formData.set("selection_mode", selectionMode);
-    formData.set("language", language);
 
     if (selectionMode === "manual") {
         const picks = [];
@@ -721,18 +734,12 @@ function pollStatus() {
         .catch(() => {});
 }
 
+// The palette swatches under the finished video were decoration -- the video
+// itself already shows the colours. Only the (operator-only) save-theme box
+// remains here.
 function renderPaletteAndSave() {
-    const swatches = document.getElementById("paletteSwatches");
-    const saveThemeBox = document.getElementById("saveThemeBox");
-    swatches.innerHTML = "";
     if (!lastTheme) return;
-    lastTheme.palettes.forEach((p) => {
-        const el = document.createElement("div");
-        el.className = "swatch";
-        el.style.background = `linear-gradient(135deg, ${p.accent}, ${p.accent2})`;
-        swatches.appendChild(el);
-    });
-    if (PERSONAL_MODE) saveThemeBox.style.display = "block";
+    if (PERSONAL_MODE) document.getElementById("saveThemeBox").style.display = "block";
 }
 
 document.getElementById("saveThemeBtn").addEventListener("click", function () {

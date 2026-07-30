@@ -3,17 +3,20 @@ import math
 import os
 import subprocess
 
+import languages
 import styles
 import visuals
 
 HYPERFRAMES_VERSION = "0.7.70"
 
 OUTRO_DURATION = 5
-LOGO_PATH = "server/static/kz-logo.png"
+# The operator's own mark. Only used when the requesting session is the
+# operator; every other job either uses an uploaded logo or shows none.
+DEFAULT_LOGO_PATH = "server/static/kz-logo.png"
 
 # The composition is written to PROJECT_DIR/index.html and loaded from there,
 # so media has to be referenced relative to that directory -- the same way
-# LOGO_PATH already is. Absolute filesystem paths in a src attribute resolve
+# DEFAULT_LOGO_PATH already is. Absolute filesystem paths in a src attribute resolve
 # against the document's origin and 404.
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -145,16 +148,6 @@ MOTION_STYLES = {
 }
 FRAME_STYLES = ("clean", "film-grain", "vignette-heavy", "glow-frame")
 
-UI_STRINGS = {
-    "en": {
-        "also_featuring": "Also in this episode",
-        "cta": "Listen Now",
-    },
-    "he": {
-        "also_featuring": "עוד בפרק הזה",
-        "cta": "האזינו עכשיו",
-    },
-}
 
 
 def _esc(s: str) -> str:
@@ -185,7 +178,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     # Base paragraph direction matters even for a single Hebrew string: without
     # it, the browser's bidi algorithm mis-nests any embedded Latin words/names
     # (artist, album, award names) and punctuation ends up in the wrong place.
-    rtl = ' dir="rtl"' if language == "he" else ""
+    rtl = ' dir="rtl"' if languages.is_rtl(language) else ""
     # The .scene wrapper sits at a higher z-index than .bg-media (it holds the scrim/
     # orbs/text). A solid background here would paint over the video underneath, so
     # only fall back to the gradient when there's no video/image to show through.
@@ -303,12 +296,12 @@ HERO_TO_HEADER_SHOW = {"x": -400, "y": -300, "scale": 0.31}
 HERO_TO_HEADER_EPISODE = {"x": -400, "y": -370, "scale": 0.6}
 
 
-def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float, outro_start: float | None = None) -> tuple[str, str]:
+def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float, outro_start: float | None = None, logo_path: str | None = None) -> tuple[str, str]:
     # Alignment follows the show/episode name's own script, not the on-screen
     # language toggle -- an English show name shouldn't right-align just
     # because Hebrew is selected for the UI strings elsewhere.
     rtl = ' dir="rtl"' if _looks_hebrew(show_name) or _looks_hebrew(episode_label) else ""
-    logo_html = f'<img class="header-logo" src="{_esc(LOGO_PATH)}" alt="logo" />' if LOGO_PATH else ""
+    logo_html = f'<img class="header-logo" src="{_esc(_rel(logo_path))}" alt="" />' if logo_path else ""
     header_html = f"""
       <div id="header" class="clip header" data-start="0" data-duration="{total_duration}" data-track-index="20">
         <div id="header-inner" class="header-inner">
@@ -360,10 +353,10 @@ def _hero_html(show_name: str, episode_label: str) -> tuple[str, str]:
     return hero_html, hero_js
 
 
-def _outro_html(start: float, duration: float, show_name: str, episode_label: str, remaining: list[dict], pal: dict, language: str = "en", motion: dict | None = None) -> tuple[str, str]:
+def _outro_html(start: float, duration: float, show_name: str, episode_label: str, remaining: list[dict], pal: dict, language: str = "en", motion: dict | None = None, logo_path: str | None = None) -> tuple[str, str]:
     mo = motion or MOTION_STYLES["normal"]
-    strings = UI_STRINGS.get(language, UI_STRINGS["en"])
-    rtl = ' dir="rtl"' if language == "he" else ""
+    strings = languages.strings(language)
+    rtl = ' dir="rtl"' if languages.is_rtl(language) else ""
     bg_style = f"background: radial-gradient(circle at center, {pal['bg1']} 0%, {pal['bg2']} 100%);"
     also_html = ""
     if remaining:
@@ -379,7 +372,7 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
           <h1 id="outro-title" class="outro-title"{rtl}>{_esc(strings['also_featuring'])}</h1>
           <p id="also-featuring" class="also-featuring-list">{items}</p>
         """
-    logo_html = f'<img id="outro-logo" class="outro-logo" src="{_esc(LOGO_PATH)}" alt="logo" />' if LOGO_PATH else ""
+    logo_html = f'<img id="outro-logo" class="outro-logo" src="{_esc(_rel(logo_path))}" alt="" />' if logo_path else ""
     scene_html = f"""
       <div id="outro" class="clip scene" style="{bg_style}" data-start="{start}" data-duration="{duration}" data-track-index="0">
         <div id="outro-orb-a" class="orb orb-a" style="background: {pal['orb1']};"></div>
@@ -399,11 +392,18 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
     orb_b_cycle = max(duration / 2.2, 1.5) * mo["speed_mult"]
     orb_ax, orb_ay = round(50 * mo["translate_mult"]), round(-30 * mo["translate_mult"])
     orb_bx, orb_by = round(-45 * mo["translate_mult"]), round(30 * mo["translate_mult"])
+    # Skip the tween entirely when there is no logo -- GSAP warns on a missing
+    # target and the composition check treats that as a finding.
+    logo_tween = (
+        '.fromTo("#outro-logo", { opacity: 0, y: -20, scale: 0.7 }, '
+        '{ opacity: 0.9, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.7)" }, '
+        f'{start + 0.15})'
+    ) if logo_path else ""
     scene_js = f"""
       tl.fromTo("#outro-orb-a, #outro-orb-b", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.4 }}, {start})
         .to("#outro-orb-a", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#outro-orb-b", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
-        .fromTo("#outro-logo", {{ opacity: 0, y: -20, scale: 0.7 }}, {{ opacity: 0.9, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.7)" }}, {start + 0.15})
+        {logo_tween}
         .fromTo("#outro-show", {{ opacity: 0, y: 24 }}, {{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, {start + 0.3})
         .fromTo("#outro-episode", {{ opacity: 0, y: 16 }}, {{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.45})
         .fromTo("#outro-title", {{ opacity: 0, y: 40 }}, {{ opacity: 1, y: 0, duration: 1, ease: "power3.out" }}, {start + 0.65})
@@ -425,6 +425,7 @@ def _frame_overlay_html(frame: str, total_duration: float, accent_hex: str) -> s
 def build_composition_html(
     show_name: str, episode_label: str, standout: list[dict], remaining: list[dict],
     theme: dict, scene_duration: float, language: str = "en",
+    logo_path: str | None = None,
 ) -> str:
     """standout: list of {track: dict(artist,title), media: dict(video/image/audio)}.
     The video always opens directly on the first track (no title-card intro); the
@@ -461,7 +462,7 @@ def build_composition_html(
         cursor += scene_duration
 
     outro_pal = palette[len(standout) % len(palette)]
-    oh, oj = _outro_html(cursor, OUTRO_DURATION, show_name, episode_label, remaining, outro_pal, language=language, motion=motion)
+    oh, oj = _outro_html(cursor, OUTRO_DURATION, show_name, episode_label, remaining, outro_pal, language=language, motion=motion, logo_path=logo_path)
     scenes_html.append(oh)
     scenes_js.append(oj)
     cursor += OUTRO_DURATION
@@ -469,7 +470,8 @@ def build_composition_html(
     total_duration = cursor
     header_fade_in_at = HERO_HANDOFF_START + HERO_HANDOFF_DURATION - 0.25
     header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at,
-                                         outro_start=total_duration - OUTRO_DURATION)
+                                         outro_start=total_duration - OUTRO_DURATION,
+                                         logo_path=logo_path)
     scenes_js.append(header_js)
     frame_html = _frame_overlay_html(frame, total_duration, palette[0]["accent"])
     visuals_js = visuals.runtime_js(

@@ -5,6 +5,7 @@ import re
 import anthropic
 
 import analytics
+import languages
 import styles
 from track import Track
 
@@ -13,7 +14,6 @@ from track import Track
 MODEL_SIMPLE = "claude-sonnet-5"
 MODEL_ADVANCED = "claude-opus-4-8"
 
-LANGUAGE_NAMES = {"en": "English", "he": "Hebrew"}
 
 POPLOCK_SHOW_CONTEXT = """
 Extra context on this specific show: this is "Pop Lock" on KZ Radio (Tel Aviv's Radio
@@ -263,7 +263,7 @@ def curate_ranked(tracks: list[Track], n: int = 5, previous_shows: list | None =
 
     client = anthropic.Anthropic()
     tracklist_text = "\n".join(t.label() for t in tracks)
-    language_name = LANGUAGE_NAMES.get(language, "English")
+    language_name = languages.english_name(language)
     show_context = POPLOCK_SHOW_CONTEXT if personal else ""
     research_instruction = RESEARCH_INSTRUCTION_WITH_SEARCH if use_search else RESEARCH_INSTRUCTION_NO_SEARCH
 
@@ -364,7 +364,7 @@ def trivia_for_tracks(tracks: list[Track], language: str = "en", job_id: str | N
     try:
         client = anthropic.Anthropic()
         tracklist_text = "\n".join(t.label() for t in tracks)
-        language_name = LANGUAGE_NAMES.get(language, "English")
+        language_name = languages.english_name(language)
         show_context = POPLOCK_SHOW_CONTEXT if personal else ""
         research_instruction = TRIVIA_RESEARCH_INSTRUCTION_WITH_SEARCH if use_search else TRIVIA_RESEARCH_INSTRUCTION_NO_SEARCH
         kwargs = dict(

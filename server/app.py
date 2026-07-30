@@ -16,6 +16,7 @@ import analytics
 import audio_analysis
 import compose
 import curator
+import languages
 import media_finder
 import styles
 import visuals
@@ -41,6 +42,12 @@ MAX_MANUAL_TRACKS_NON_ADMIN = 7
 # Must match what the hyperframes renderer emits, or the baked per-frame audio
 # arrays drift out of sync with the frames they are indexed against.
 RENDER_FPS = 30
+
+# Uploaded logos. Kept small deliberately -- this is a mark in a corner of the
+# frame, not artwork, and an unbounded upload on a no-login endpoint is a free
+# disk-fill for anyone who finds the URL.
+MAX_LOGO_BYTES = 2 * 1024 * 1024
+LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 
 # The operator's own YouTube cookies, read from a path on disk rather than
 # uploaded through the app -- there are no user accounts to attach them to any
@@ -249,10 +256,11 @@ def _extend_closing_audio(job, last_entry, job_dir, scene_duration, allow_youtub
         _log(job, f"  could not extend closing audio ({e}) — outro may be quiet")
 
 
-def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False):
+def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False, logo_path=None):
     job = JOBS[job_id]
     job["cookie_file"] = cookie_file
     job["allow_youtube"] = allow_youtube
+    job["logo_path"] = logo_path
     job_dir = os.path.join(RENDERS_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
     scene_duration = PACE_SCENE_DURATION.get(pace, PACE_SCENE_DURATION["normal"])
@@ -349,6 +357,31 @@ def _start_render(job_id):
     thread.start()
 
 
+def _save_logo(file_storage, job_dir) -> str | None:
+    """Store an uploaded logo inside the job directory and return its path.
+
+    Returns None for anything that isn't plausibly an image, rather than
+    raising -- a bad logo should cost the user their logo, not their render.
+    The extension is checked against an allowlist and the name is run through
+    secure_filename, so nothing here can escape the job directory."""
+    if not file_storage or not file_storage.filename:
+        return None
+    name = secure_filename(file_storage.filename)
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in LOGO_EXTENSIONS:
+        return None
+
+    data = file_storage.read(MAX_LOGO_BYTES + 1)
+    if not data or len(data) > MAX_LOGO_BYTES:
+        return None
+
+    os.makedirs(job_dir, exist_ok=True)
+    dest = os.path.join(job_dir, f"logo{ext}")
+    with open(dest, "wb") as f:
+        f.write(data)
+    return dest
+
+
 def _analyze_scene_audio(job):
     """Bake each scene's audio into per-frame energy arrays for the reactive
     visuals. Runs once here rather than live in the browser, because the
@@ -380,6 +413,7 @@ def _run_render_stage(job_id):
         html = compose.build_composition_html(
             job["show_name"], job["episode_label"], job["standout"], job["remaining"],
             job["theme"], job["scene_duration"], language=job.get("language", "en"),
+            logo_path=job.get("logo_path"),
         )
         with open(os.path.join(PROJECT_DIR, "index.html"), "w") as f:
             f.write(html)
@@ -426,6 +460,7 @@ def index():
     # personalization is separate -- it keys off the show name (see /start).
     return render_template(
         "index.html", default_show_name=DEFAULT_SHOW_NAME,
+        language_choices=languages.choices(),
         theme_choices=styles.choices({
             k: (t["palettes"] or [{}])[0] for k, t in curator.PRESET_THEMES.items()
         }),
@@ -487,7 +522,7 @@ def start():
     theme_mode = request.form.get("theme_mode", "auto")
     theme_value = request.form.get("theme_value", "")
     selection_mode = request.form.get("selection_mode", "auto")
-    language = request.form.get("language", "en")
+    language = languages.normalize(request.form.get("language"))
     # Custom/saved themes are admin (Roni) only -- enforced here too, not just
     # hidden in the UI, since form fields can be submitted directly.
     if theme_mode in ("custom", "saved") and not is_admin_user:
@@ -525,13 +560,23 @@ def start():
 
     owner = access.visitor_id()
     job_id = str(uuid.uuid4())
+    # The KZ Radio mark is the operator's own branding -- it must never end up
+    # on a stranger's promo. Everyone else gets their upload, or no logo.
+    use_logo = request.form.get("use_logo", "none")
+    logo_path = None
+    if use_logo == "upload":
+        logo_path = _save_logo(request.files.get("logo"), os.path.join(RENDERS_DIR, job_id))
+    elif use_logo == "default" and is_admin_user:
+        # The KZ Radio mark is the operator's own branding, so it stays gated to
+        # the operator session even though the option is only rendered for them.
+        logo_path = compose.DEFAULT_LOGO_PATH
     JOBS[job_id] = {"status": "queued", "log": [], "error": None, "needs_upload": [], "owner": owner}
 
     analytics.record_job_start(job_id, "/", owner)
 
     thread = threading.Thread(
         target=_run_fetch_stage,
-        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model, show_info),
+        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model, show_info, logo_path),
         daemon=True,
     )
     thread.start()
