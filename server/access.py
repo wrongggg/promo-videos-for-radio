@@ -25,7 +25,15 @@ from collections import defaultdict
 
 from flask import request, session
 
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN") or ""
+# Read lazily, never captured at import time. app.py imports this module before
+# it calls load_dotenv(), so a module-level os.environ.get() captured an empty
+# string and every token in .env was silently ignored -- which meant
+# /o/<ADMIN_TOKEN> 404'd forever for anyone who configured it the way
+# .env.example says to. Reading per call also means rotating a token only needs
+# a restart, not a code change.
+def _env(name: str) -> str:
+    return os.environ.get(name) or ""
+
 
 # Jobs per IP per rolling 24h for anonymous visitors. Generous enough that a
 # radio producer making promos all afternoon never notices, low enough that a
@@ -54,12 +62,39 @@ def is_operator() -> bool:
     return bool(session.get("operator"))
 
 
+def grant_station() -> None:
+    session["station"] = True
+    session.permanent = True
+
+
+def revoke_station() -> None:
+    session.pop("station", None)
+
+
+def is_station() -> bool:
+    """Operator counts as station -- they are the station."""
+    return bool(session.get("station")) or is_operator()
+
+
 def token_matches(token: str) -> bool:
     """Constant-time compare, and never true when no token is configured --
     otherwise an unset ADMIN_TOKEN would hand operator rights to /o/."""
-    if not ADMIN_TOKEN or not token:
+    expected = _env("ADMIN_TOKEN")
+    if not expected or not token:
         return False
-    return secrets.compare_digest(token, ADMIN_TOKEN)
+    return secrets.compare_digest(token, expected)
+
+
+def station_token_matches(token: str) -> bool:
+    """A weaker, shareable token for colleagues at the same station. It grants
+    exactly one thing -- the station's own logo as the default -- and none of
+    the operator perks. It exists because the station logo must never end up on
+    a stranger's promo, but with no login there is no other way to tell a
+    colleague from a passer-by."""
+    expected = _env("STATION_TOKEN")
+    if not expected or not token:
+        return False
+    return secrets.compare_digest(token, expected)
 
 
 # --------------------------------------------------------------------------

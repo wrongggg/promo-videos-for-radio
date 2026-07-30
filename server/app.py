@@ -450,6 +450,16 @@ def grant_operator(token):
     return redirect(url_for("index"))
 
 
+@app.route("/s/<token>")
+def grant_station(token):
+    """The station link. Hand this to colleagues: it defaults their promos to
+    the station logo and grants nothing else."""
+    if not access.station_token_matches(token):
+        abort(404)
+    access.grant_station()
+    return redirect(url_for("index"))
+
+
 @app.route("/o/revoke", methods=["POST"])
 def revoke_operator():
     access.revoke_operator()
@@ -466,10 +476,13 @@ def index():
         "index.html", default_show_name=DEFAULT_SHOW_NAME,
         language_choices=languages.choices(),
         theme_preview_css=styles.thumbnail_css(),
+        theme_layout_css=styles.preview_layout_css(),
         theme_choices=styles.choices({
             k: (t["palettes"] or [{}])[0] for k, t in curator.PRESET_THEMES.items()
         }),
         personal_mode=access.is_operator(),
+        station_mode=access.is_station(),
+        station_logo_url=url_for("static", filename=os.path.basename(compose.DEFAULT_LOGO_PATH)),
         max_manual_tracks=MAX_MANUAL_TRACKS_NON_ADMIN,
     )
 
@@ -520,7 +533,16 @@ def start():
         }), 429
 
     tracklist_text = request.form.get("tracklist", "")
-    show_name = request.form.get("show_name", "").strip() or DEFAULT_SHOW_NAME
+    # The show name is on screen for the whole promo, so there is no sensible
+    # generic default -- and defaulting to the operator's own show would put
+    # "Pop Lock" on a stranger's video. Station sessions keep it as a
+    # convenience; everyone else has to say what their show is called.
+    show_name = request.form.get("show_name", "").strip()
+    if not show_name:
+        if access.is_station():
+            show_name = DEFAULT_SHOW_NAME
+        else:
+            return jsonify({"error": "Add your show name first."}), 400
     episode_label = request.form.get("episode_label", "")
     num_standout = max(2, min(15, int(request.form.get("num_standout", 5))))
     pace = request.form.get("pace", "normal")
@@ -571,9 +593,9 @@ def start():
     logo_path = None
     if use_logo == "upload":
         logo_path = _save_logo(request.files.get("logo"), os.path.join(RENDERS_DIR, job_id))
-    elif use_logo == "default" and is_admin_user:
-        # The KZ Radio mark is the operator's own branding, so it stays gated to
-        # the operator session even though the option is only rendered for them.
+    elif use_logo == "default" and access.is_station():
+        # Gated server-side as well as hidden in the UI -- the option is a form
+        # field, so hiding it is not a control.
         logo_path = compose.DEFAULT_LOGO_PATH
     JOBS[job_id] = {"status": "queued", "log": [], "error": None, "needs_upload": [], "owner": owner}
 

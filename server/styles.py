@@ -350,6 +350,69 @@ def get(key: str | None) -> dict:
     return STYLES.get(key or "", STYLES[DEFAULT_STYLE])
 
 
+PREVIEW_TITLE = "Glue"
+PREVIEW_ARTIST = "BICEP"
+
+
+def thumbnail_markup(key: str, palette: dict | None = None) -> str:
+    """The full preview tile: generated SVG for the backdrop and covers, with a
+    real-type text block laid over it."""
+    st = get(key)
+    svg = thumbnail_svg(key, palette)
+
+    ent = ENTRANCES[st["entrance"]]
+    per_char = bool(ent.get("chars"))
+    if per_char:
+        title = "".join(
+            f'<span class="tp-ch tp-ch{i % 6}">{c}</span>'
+            for i, c in enumerate(PREVIEW_TITLE)
+        )
+    else:
+        title = f'<span class="tp-ch tp-ch0">{PREVIEW_TITLE}</span>'
+
+    # Scale the real type down to tile width (112px against a 1080px frame),
+    # with a floor so the smallest styles stay legible at this size.
+    t_px = max(13, round(st["title"]["max_size"] * 0.115))
+    a_px = max(6, round(st["artist"]["size"] * 0.20))
+
+    return (
+        f'{svg}'
+        f'<span class="tp-txt tp-{key}">'
+        f'<span class="tp-title" style="font-size:{t_px}px">{title}</span>'
+        f'<span class="tp-artist" style="font-size:{a_px}px">{PREVIEW_ARTIST}</span>'
+        f'</span>'
+    )
+
+
+def preview_layout_css() -> str:
+    """Per-style positioning and typography for the preview text block."""
+    out = [
+        ".theme-thumb { position: relative; }",
+        ".tp-txt { position: absolute; left: 0; right: 0; display: flex;"
+        " flex-direction: column; padding: 0 8px; pointer-events: none; }",
+        ".tp-title { display: block; line-height: 1.02; }",
+        ".tp-ch { display: inline-block; will-change: transform, opacity; }",
+        ".tp-artist { display: block; opacity: .75; margin-top: 3px; letter-spacing: 1px; }",
+    ]
+    for key, st in STYLES.items():
+        font = FONTS[st["font"]]
+        ink = st["color"] == INK
+        colour = "#0b0b0d" if ink else "#fff"
+        align = "center" if st["align"] == "center" else "flex-start"
+        pos = ("top: 46%;" if st["anchor"] == "center" else "bottom: 12%;")
+        panel = (" background: rgba(255,255,255,.95); border-radius: 5px;"
+                 " padding: 6px 8px; margin: 0 6px;" if st.get("panel") else "")
+        shadow = "" if ink else " text-shadow: 0 1px 4px rgba(0,0,0,.8);"
+        case = "uppercase" if st["title"]["case"] == "uppercase" else "none"
+        out.append(
+            f".tp-{key} {{ font-family: {font}; color: {colour}; {pos}"
+            f" align-items: {align}; text-align: {st['align']};"
+            f" font-weight: {st['title']['weight']}; text-transform: {case};"
+            f"{shadow}{panel} }}"
+        )
+    return "\n".join(out)
+
+
 def choices(palettes: dict | None = None) -> list[dict]:
     """What the picker in the UI renders, thumbnail included.
 
@@ -359,7 +422,7 @@ def choices(palettes: dict | None = None) -> list[dict]:
     palettes = palettes or {}
     return [
         {"key": k, "label": v["label"], "blurb": v["blurb"],
-         "thumb": thumbnail_svg(k, palettes.get(k))}
+         "thumb": thumbnail_markup(k, palettes.get(k))}
         for k, v in STYLES.items()
     ]
 
@@ -482,21 +545,33 @@ def thumbnail_css() -> str:
         out.append(f"@keyframes tpa-{key} {{ {a_kf} }}")
         out.append(f"@keyframes tpb-{key} {{ {b_kf} }}")
         out.append(f"@keyframes tpt-{key} {{ {t_kf} }}")
-        # Two triggers, not just :hover -- a `.previewing` class means the
-        # preview also works for keyboard focus or a tap on touch (where there
-        # is no hover at all), and makes the behaviour testable.
-        base = f'.theme-card[data-mode="preset:{key}"]'
-        sel = f'{base}:hover .theme-thumb svg, {base}.previewing .theme-thumb svg'
-        out.append(
-            f"{sel} .tp-a {{ animation: tpa-{key} {PREVIEW_SECS}s {ease} infinite; }}"
-            f"{sel} .tp-b {{ animation: tpb-{key} {PREVIEW_SECS}s {ease} infinite; }}"
-            f"{sel} .tp-bar {{ animation: tpt-{key} 0.5s {t_ease} both; }}"
-        )
+
+        # Two triggers: :hover for the mouse, a `.previewing` class for keyboard
+        # focus and touch (where there is no hover state at all).
+        #
+        # Selectors are built as explicit lists, never by concatenating another
+        # selector string. Doing that produced a stray sibling combinator that
+        # matched at a HIGHER specificity than the per-character delay rules, so
+        # its `animation` shorthand reset every delay to 0s and the stagger --
+        # the whole point of the preview -- silently never happened.
+        def rule(suffix: str, body: str) -> str:
+            sels = [f'.theme-card[data-mode="preset:{key}"]{trig} {suffix}'
+                    for trig in (":hover", ".previewing")]
+            return ", ".join(sels) + " { " + body + " }"
+
+        out.append(rule(".theme-thumb svg .tp-a",
+                        f"animation: tpa-{key} {PREVIEW_SECS}s {ease} infinite;"))
+        out.append(rule(".theme-thumb svg .tp-b",
+                        f"animation: tpb-{key} {PREVIEW_SECS}s {ease} infinite;"))
+        out.append(rule(".tp-txt .tp-ch",
+                        f"animation: tpt-{key} 0.55s {t_ease} both;"))
+
         if ent in _STAGGERED:
-            for n in range(1, 4):
-                delay = f"animation-delay: {0.07 * n:.2f}s;"
-                out.append(f"{base}:hover .theme-thumb svg .tp-bar{n} {{ {delay} }}"
-                           f"{base}.previewing .theme-thumb svg .tp-bar{n} {{ {delay} }}")
+            # Same selector shape as the rule above plus one class, so these
+            # win on specificity as well as order.
+            for n in range(6):
+                out.append(rule(f".tp-txt .tp-ch{n}",
+                                f"animation-delay: {0.06 * n:.2f}s;"))
     return "\n".join(out)
 
 

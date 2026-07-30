@@ -118,6 +118,22 @@
 
         /* segmented control */
 {{ theme_preview_css|safe }}
+{{ theme_layout_css|safe }}
+        .logo-preview {
+            display: flex; align-items: center; gap: 10px; margin-top: 10px;
+            padding: 8px 12px; border-radius: 10px;
+            background: #14141a; border: 1px solid var(--border-soft);
+        }
+        .logo-preview img {
+            height: 26px; max-width: 120px; object-fit: contain;
+            /* Matches what the renderer does to the logo, so the chip shows
+               what will actually appear rather than the raw file. */
+            filter: brightness(0) invert(1);
+        }
+        .logo-preview span {
+            font-size: 11px; color: rgba(255,255,255,0.6);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .theme-grid {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
             gap: 10px;
@@ -254,7 +270,7 @@
             <div class="row">
                 <div class="form-group">
                     <label>Show name</label>
-                    <input type="text" name="show_name" placeholder="{{ default_show_name }}" value="{{ default_show_name }}">
+                    <input type="text" name="show_name" required placeholder="{% if station_mode %}{{ default_show_name }}{% else %}Your show name{% endif %}"{% if station_mode %} value="{{ default_show_name }}"{% endif %}>
                 </div>
                 <div class="form-group">
                     <label>Episode name</label>
@@ -341,14 +357,18 @@
                 <div class="form-group">
                     <label>Logo</label>
                     <div class="segmented" id="logoToggle">
-                        {% if personal_mode %}<button type="button" data-value="default" class="active">KZ Radio</button>{% endif %}
-                        <button type="button" data-value="upload"{% if not personal_mode %} {% endif %}>Upload</button>
-                        <button type="button" data-value="none"{% if not personal_mode %} class="active"{% endif %}>None</button>
+                        {% if station_mode %}<button type="button" data-value="default" class="active">KZ Radio</button>{% endif %}
+                        <button type="button" data-value="upload">Upload</button>
+                        <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
                     </div>
-                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if personal_mode %}default{% else %}none{% endif %}">
+                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}default{% else %}none{% endif %}">
                     <div id="logoUploadGroup" style="display:none; margin-top:10px;">
                         <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
                         <p class="hint">PNG with a transparent background works best. Max 2&nbsp;MB.</p>
+                    </div>
+                    <div class="logo-preview" id="logoPreview" style="display:none;">
+                        <img id="logoPreviewImg" alt="" />
+                        <span id="logoPreviewName">KZ Radio</span>
                     </div>
                 </div>
             </div>
@@ -422,6 +442,33 @@ if (PERSONAL_MODE) {
     });
 }
 
+const STATION_LOGO_URL = "{{ station_logo_url }}";
+
+function refreshLogoPreview() {
+    const mode = document.getElementById("useLogoInput").value;
+    const box = document.getElementById("logoPreview");
+    const img = document.getElementById("logoPreviewImg");
+    const name = document.getElementById("logoPreviewName");
+    const file = document.getElementById("logoInput").files[0];
+
+    if (mode === "default") {
+        img.src = STATION_LOGO_URL;
+        name.textContent = "KZ Radio";
+        box.style.display = "flex";
+    } else if (mode === "upload" && file) {
+        // Revoke the previous blob URL so picking several files in a row
+        // doesn't leak one per attempt.
+        if (img.dataset.blob) URL.revokeObjectURL(img.dataset.blob);
+        const url = URL.createObjectURL(file);
+        img.dataset.blob = url;
+        img.src = url;
+        name.textContent = file.name;
+        box.style.display = "flex";
+    } else {
+        box.style.display = "none";
+    }
+}
+
 document.getElementById("logoToggle").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
@@ -429,7 +476,10 @@ document.getElementById("logoToggle").addEventListener("click", (e) => {
     document.getElementById("useLogoInput").value = btn.dataset.value;
     document.getElementById("logoUploadGroup").style.display =
         btn.dataset.value === "upload" ? "block" : "none";
+    refreshLogoPreview();
 });
+
+document.getElementById("logoInput").addEventListener("change", refreshLogoPreview);
 
 document.getElementById("trackList").addEventListener("change", (e) => {
     if (PERSONAL_MODE || e.target.type !== "checkbox") return;
@@ -842,6 +892,7 @@ function skipUpload(row) {
 // its declaration threw, aborting the rest of the script -- including the
 // submit handler, so the form fell back to a native GET.
 loadThemes();
+refreshLogoPreview();
 </script>
 </body>
 </html>
