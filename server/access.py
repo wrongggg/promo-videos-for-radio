@@ -121,26 +121,13 @@ def station_token_matches(token: str) -> bool:
 # anonymous visitor id (analytics only)
 # --------------------------------------------------------------------------
 
-def owner_id() -> str:
-    """Stable per-browser id. Used to decide who owns a job, so it must NOT
-    change when the session's privileges change.
-
-    visitor_id() folds the operator/anon distinction into the string, which is
-    right for analytics and wrong for ownership: the moment a session gained
-    (or lost) a privilege, its id changed and it was locked out of every job it
-    had already created. That is precisely the paid flow -- generate a promo,
-    then pay, then download -- so ownership keys off this bare id instead."""
+def visitor_id() -> str:
     vid = session.get("vid")
     if not vid:
         vid = secrets.token_hex(8)
         session["vid"] = vid
         session.permanent = True
-    return vid
-
-
-def visitor_id() -> str:
-    """Labelled id for analytics only -- never for ownership (see owner_id)."""
-    return ("operator:" if is_operator() else "anon:") + owner_id()
+    return ("operator:" if is_operator() else "anon:") + vid
 
 
 # --------------------------------------------------------------------------

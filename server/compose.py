@@ -577,7 +577,7 @@ def render_video(project_dir: str, output_rel_path: str, quality: str = "standar
 # ffmpeg `drawtext` call: drawtext needs libfreetype, which this project's
 # ffmpeg builds don't consistently have, and a raster asset looks identical in
 # dev and in the container. Regenerate with tools/make_watermark.py.
-WATERMARK_PATH = os.path.join(PROJECT_DIR, "server", "static", "brand", "watermark.png")
+WATERMARK_PATH = os.path.join(PROJECT_DIR, "assets", "brand", "watermark.png")
 # Distance from the bottom edge, in output pixels. Clear of the 1080x1920
 # frame's safe area but inside the crop most players/socials apply.
 WATERMARK_MARGIN_BOTTOM = 96
