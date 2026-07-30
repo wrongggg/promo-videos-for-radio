@@ -350,8 +350,8 @@ def get(key: str | None) -> dict:
     return STYLES.get(key or "", STYLES[DEFAULT_STYLE])
 
 
-PREVIEW_TITLE = "Night Ferry"
-PREVIEW_ARTIST = "HALO COURT"
+PREVIEW_TITLE = "Afterglow"
+PREVIEW_ARTIST = "SABLE"
 
 
 def thumbnail_markup(key: str, palette: dict | None = None) -> str:
@@ -363,18 +363,20 @@ def thumbnail_markup(key: str, palette: dict | None = None) -> str:
     ent = ENTRANCES[st["entrance"]]
     per_char = bool(ent.get("chars"))
     if per_char:
-        # Spaces get a plain inline span, not an inline-block one. Every
-        # character being inline-block leaves the line with no break
-        # opportunity, so a two-word title just overflowed the tile.
-        parts = []
+        # Characters are grouped per word. Each character is its own
+        # inline-block, which gives the line a break opportunity between every
+        # pair of them -- Flipboard split a title as "NIGHT FERR / Y". A nowrap
+        # word span means a break can only land between words.
+        words = []
         n = 0
-        for c in PREVIEW_TITLE:
-            if c == " ":
-                parts.append('<span class="tp-sp"> </span>')
-            else:
-                parts.append(f'<span class="tp-ch tp-ch{n % 6}">{c}</span>')
-                n += 1
-        title = "".join(parts)
+        for word in PREVIEW_TITLE.split(" "):
+            chars = "".join(
+                f'<span class="tp-ch tp-ch{(n + j) % 6}">{c}</span>'
+                for j, c in enumerate(word)
+            )
+            n += len(word)
+            words.append(f'<span class="tp-word">{chars}</span>')
+        title = '<span class="tp-sp"> </span>'.join(words)
     else:
         title = f'<span class="tp-ch tp-ch0">{PREVIEW_TITLE}</span>'
 
@@ -402,6 +404,7 @@ def preview_layout_css() -> str:
         " flex-direction: column; padding: 0 8px; pointer-events: none;"
         " overflow: hidden; }",
         ".tp-sp { display: inline; }",
+        ".tp-word { display: inline-block; white-space: nowrap; }",
         ".tp-title { display: block; line-height: 1.02; }",
         ".tp-ch { display: inline-block; will-change: transform, opacity; }",
         ".tp-artist { display: block; opacity: .75; margin-top: 3px; letter-spacing: 1px; }",
@@ -593,25 +596,44 @@ def thumbnail_css() -> str:
 
 
 def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
-    """A stand-in album cover.
+    """A stand-in artist image.
 
-    The tile has to show artwork, because artwork is what dominates a real
-    frame -- the synth is texture behind it, not the subject. Two variants, so
-    the hand-over shows one cover replacing a different one rather than itself.
-    Deliberately abstract: a made-up sleeve, not an imitation of a real one."""
+    Deliberately generated rather than fetched. A stock photo would add a
+    network dependency to the picker, raise licensing questions for a paid
+    product, and -- worst -- show a stranger's face where the real promo shows
+    that track's actual artist photo or cover art. So this aims for the *read*
+    of a moody press shot: soft bokeh, a figure silhouette, grain and a
+    vignette, all from the theme's own palette.
+
+    Two variants so a hand-over swaps to a different image, not to itself."""
     W, H = 120, 213
+    v = "A" if variant == 0 else "B"
     if variant == 0:
-        return (
-            f'<rect width="{W}" height="{H}" fill="url(#cvA{key})"/>'
-            f'<circle cx="42" cy="74" r="40" fill="{accent}" opacity="0.85"/>'
-            f'<path d="M0 150 Q60 96 120 150 L120 213 L0 213 Z" fill="{a2}" opacity="0.7"/>'
-            f'<rect x="72" y="26" width="34" height="34" fill="{a1}" opacity="0.55"/>'
+        figure = (
+            f'<ellipse cx="58" cy="96" rx="21" ry="25" fill="#05050a" opacity="0.72"/>'
+            f'<path d="M22 213 Q30 138 58 130 Q86 138 94 213 Z" fill="#05050a" opacity="0.72"/>'
+        )
+        bokeh = (
+            f'<circle cx="30" cy="52" r="26" fill="{a1}" opacity="0.5"/>'
+            f'<circle cx="96" cy="40" r="17" fill="{accent}" opacity="0.42"/>'
+            f'<circle cx="88" cy="150" r="30" fill="{a2}" opacity="0.3"/>'
+        )
+    else:
+        figure = (
+            f'<ellipse cx="70" cy="82" rx="19" ry="23" fill="#05050a" opacity="0.7"/>'
+            f'<path d="M36 213 Q44 122 70 115 Q98 124 106 213 Z" fill="#05050a" opacity="0.7"/>'
+        )
+        bokeh = (
+            f'<circle cx="92" cy="60" r="24" fill="{a2}" opacity="0.5"/>'
+            f'<circle cx="26" cy="112" r="20" fill="{accent}" opacity="0.4"/>'
+            f'<circle cx="40" cy="30" r="15" fill="{a1}" opacity="0.35"/>'
         )
     return (
-        f'<rect width="{W}" height="{H}" fill="url(#cvB{key})"/>'
-        f'<path d="M0 0 L120 0 L120 96 L0 46 Z" fill="{a2}" opacity="0.8"/>'
-        f'<circle cx="82" cy="140" r="46" fill="{accent}" opacity="0.7"/>'
-        f'<rect x="10" y="112" width="46" height="8" fill="{a1}" opacity="0.9"/>'
+        f'<rect width="{W}" height="{H}" fill="url(#cv{v}{key})"/>'
+        f'<g filter="url(#blur{key})">{bokeh}</g>'
+        f'{figure}'
+        f'<rect width="{W}" height="{H}" fill="url(#vig{key})"/>'
+        f'<rect width="{W}" height="{H}" filter="url(#grain{key})" opacity="0.16"/>'
     )
 
 
@@ -642,6 +664,15 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
         f'<linearGradient id="cvB{key}" x1="1" y1="0" x2="0" y2="1">'
         f'<stop offset="0%" stop-color="{a2}"/><stop offset="100%" stop-color="#0b0b12"/>'
         f'</linearGradient>'
+        # Soft bokeh, a vignette and film grain -- the three things that make a
+        # flat vector read as a photograph rather than a diagram.
+        f'<filter id="blur{key}"><feGaussianBlur stdDeviation="7"/></filter>'
+        f'<filter id="grain{key}"><feTurbulence type="fractalNoise" '
+        f'baseFrequency="0.9" numOctaves="2"/></filter>'
+        f'<radialGradient id="vig{key}" cx="50%" cy="42%" r="72%">'
+        f'<stop offset="55%" stop-color="#000" stop-opacity="0"/>'
+        f'<stop offset="100%" stop-color="#000" stop-opacity="0.6"/>'
+        f'</radialGradient>'
         f'<linearGradient id="g{key}" x1="0" y1="0" x2="0" y2="1">'
         f'<stop offset="0%" stop-color="#000" stop-opacity="{0.5 if heavy else 0.25}"/>'
         f'<stop offset="40%" stop-color="#000" stop-opacity="0.10"/>'
