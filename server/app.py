@@ -595,7 +595,7 @@ def start():
     allow_youtube = is_admin_user
     cookie_file = YOUTUBE_COOKIE_FILE if (allow_youtube and YOUTUBE_COOKIE_FILE) else None
 
-    owner = access.visitor_id()
+    owner = access.owner_id()
     job_id = str(uuid.uuid4())
     # The KZ Radio mark is the operator's own branding -- it must never end up
     # on a stranger's promo. Everyone else gets their upload, or no logo.
@@ -624,7 +624,7 @@ def start():
 
 
 def _owns_job(job) -> bool:
-    return job is not None and job.get("owner") == access.visitor_id()
+    return job is not None and job.get("owner") == access.owner_id()
 
 
 @app.route("/status/<job_id>")
