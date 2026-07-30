@@ -351,35 +351,36 @@ def get(key: str | None) -> dict:
     return STYLES.get(key or "", STYLES[DEFAULT_STYLE])
 
 
-PREVIEW_TITLE = "Afterglow"
-PREVIEW_ARTIST = "SABLE"
+# Two invented tracks, one per cover. The hand-over swaps both together.
+PREVIEW_TRACKS = (("Afterglow", "SABLE"), ("Halcyon", "MIRA VOSS"))
+
+
+def _title_spans(title: str, per_char: bool) -> str:
+    """Title markup. Per-character entrances need one span per character, but
+    characters are grouped into nowrap word spans first: every character being
+    an inline-block gives the line a break opportunity between each pair, so a
+    two-word title could split mid-word."""
+    if not per_char:
+        return f'<span class="tp-ch tp-ch0">{title}</span>'
+    words = []
+    n = 0
+    for word in title.split(" "):
+        chars = "".join(
+            f'<span class="tp-ch tp-ch{(n + j) % 6}">{c}</span>'
+            for j, c in enumerate(word)
+        )
+        n += len(word)
+        words.append(f'<span class="tp-word">{chars}</span>')
+    return '<span class="tp-sp"> </span>'.join(words)
 
 
 def thumbnail_markup(key: str, palette: dict | None = None) -> str:
     """The full preview tile: generated SVG for the backdrop and covers, with a
-    real-type text block laid over it."""
+    real-type text block laid over it -- one block per cover, so the words swap
+    when the picture does."""
     st = get(key)
     svg = thumbnail_svg(key, palette)
-
-    ent = ENTRANCES[st["entrance"]]
-    per_char = bool(ent.get("chars"))
-    if per_char:
-        # Characters are grouped per word. Each character is its own
-        # inline-block, which gives the line a break opportunity between every
-        # pair of them -- Flipboard split a title as "NIGHT FERR / Y". A nowrap
-        # word span means a break can only land between words.
-        words = []
-        n = 0
-        for word in PREVIEW_TITLE.split(" "):
-            chars = "".join(
-                f'<span class="tp-ch tp-ch{(n + j) % 6}">{c}</span>'
-                for j, c in enumerate(word)
-            )
-            n += len(word)
-            words.append(f'<span class="tp-word">{chars}</span>')
-        title = '<span class="tp-sp"> </span>'.join(words)
-    else:
-        title = f'<span class="tp-ch tp-ch0">{PREVIEW_TITLE}</span>'
+    per_char = bool(ENTRANCES[st["entrance"]].get("chars"))
 
     # Scale the real type to the tile (112px wide against a 1080px frame), then
     # clamp. XL's 210px would land at 24px here and run straight off the edge,
@@ -388,13 +389,16 @@ def thumbnail_markup(key: str, palette: dict | None = None) -> str:
     t_px = max(11, min(16, round(st["title"]["max_size"] * 0.115)))
     a_px = max(6, min(9, round(st["artist"]["size"] * 0.20)))
 
-    return (
-        f'{svg}'
-        f'<span class="tp-txt tp-{key}">'
-        f'<span class="tp-title" style="font-size:{t_px}px">{title}</span>'
-        f'<span class="tp-artist" style="font-size:{a_px}px">{PREVIEW_ARTIST}</span>'
-        f'</span>'
-    )
+    blocks = ""
+    for blk, (title, artist) in zip(("a", "b"), PREVIEW_TRACKS):
+        blocks += (
+            f'<span class="tp-txt tp-txt-{blk} tp-{key}">'
+            f'<span class="tp-title" style="font-size:{t_px}px">'
+            f'{_title_spans(title, per_char)}</span>'
+            f'<span class="tp-artist" style="font-size:{a_px}px">{artist}</span>'
+            f'</span>'
+        )
+    return svg + blocks
 
 
 def preview_layout_css() -> str:
@@ -404,6 +408,10 @@ def preview_layout_css() -> str:
         ".tp-txt { position: absolute; left: 0; right: 0; display: flex;"
         " flex-direction: column; padding: 0 8px; pointer-events: none;"
         " overflow: hidden; }",
+        # Both track blocks occupy the same slot; the loop decides which shows.
+        # Track B starts hidden so a tile at rest shows one track, not two
+        # stacked on top of each other.
+        ".tp-txt-b .tp-ch, .tp-txt-b .tp-artist { opacity: 0; }",
         ".tp-sp { display: inline; }",
         ".tp-word { display: inline-block; white-space: nowrap; }",
         ".tp-title { display: block; line-height: 1.02; }",
@@ -497,42 +505,47 @@ PREVIEW_SECS = 3.0
 
 # Cover hand-over, per transition kind. The window is 45%-62% of the loop.
 _COVER_KEYFRAMES = {
-    "fade": ("0%,45% { opacity: 1; transform: none; }"
-             " 62%,100% { opacity: 0; transform: none; }",
-             "0%,45% { opacity: 0; }"
-             " 62%,100% { opacity: 1; }"),
-    "slide": ("0%,45% { opacity: 1; transform: translateX(0); }"
-              " 62%,100% { opacity: 1; transform: translateX(-100%); }",
-              "0%,45% { opacity: 1; transform: translateX(100%); }"
-              " 62%,100% { opacity: 1; transform: translateX(0); }"),
-    "zoom": ("0%,45% { opacity: 1; transform: scale(1); }"
-             " 62%,100% { opacity: 0; transform: scale(0.8); }",
-             "0%,45% { opacity: 0; transform: scale(1.4); }"
-             " 62%,100% { opacity: 1; transform: scale(1); }"),
-    "spin": ("0%,45% { opacity: 1; transform: rotate(0deg) scale(1); }"
-             " 62%,100% { opacity: 0; transform: rotate(12deg) scale(0.85); }",
-             "0%,45% { opacity: 0; transform: rotate(-14deg) scale(0.72); }"
-             " 62%,100% { opacity: 1; transform: rotate(0deg) scale(1); }"),
+    "fade": ("0%,30% { opacity: 1; transform: none; }"
+             " 45%,100% { opacity: 0; transform: none; }",
+             "0%,30% { opacity: 0; }"
+             " 45%,100% { opacity: 1; }"),
+    "slide": ("0%,30% { opacity: 1; transform: translateX(0); }"
+              " 45%,100% { opacity: 1; transform: translateX(-100%); }",
+              "0%,30% { opacity: 1; transform: translateX(100%); }"
+              " 45%,100% { opacity: 1; transform: translateX(0); }"),
+    "zoom": ("0%,30% { opacity: 1; transform: scale(1); }"
+             " 45%,100% { opacity: 0; transform: scale(0.8); }",
+             "0%,30% { opacity: 0; transform: scale(1.4); }"
+             " 45%,100% { opacity: 1; transform: scale(1); }"),
+    "spin": ("0%,30% { opacity: 1; transform: rotate(0deg) scale(1); }"
+             " 45%,100% { opacity: 0; transform: rotate(12deg) scale(0.85); }",
+             "0%,30% { opacity: 0; transform: rotate(-14deg) scale(0.72); }"
+             " 45%,100% { opacity: 1; transform: rotate(0deg) scale(1); }"),
     # A hard cut: no interpolation, so the steps() timing does the work.
-    "swap": ("0%,52% { opacity: 1; } 52.01%,100% { opacity: 0; }",
-             "0%,52% { opacity: 0; } 52.01%,100% { opacity: 1; }"),
+    "swap": ("0%,36% { opacity: 1; } 36.01%,100% { opacity: 0; }",
+             "0%,36% { opacity: 0; } 36.01%,100% { opacity: 1; }"),
 }
 
 # How the text bars arrive. Char-based entrances get a per-bar delay so the
 # preview reads as a stagger rather than a single move.
-_TEXT_KEYFRAMES = {
-    "rise":    "from { opacity: 0; transform: translateY(14px); }",
-    "fade":    "from { opacity: 0; }",
-    "slide":   "from { opacity: 0; transform: translateX(-26px); }",
-    "snap":    "from { opacity: 0; transform: scale(1.35); }",
-    "drift":   "from { opacity: 0; transform: translateY(9px) scale(1.05); }",
-    "type":    "from { opacity: 0; transform: scaleX(0); }",
-    "spin":    "from { opacity: 0; transform: rotate(-70deg) scale(0.4); }",
-    "flip":    "from { opacity: 0; transform: scaleY(0.1); }",
-    "scatter": "from { opacity: 0; transform: translate(-14px, 12px) rotate(-18deg); }",
-    "wave":    "from { opacity: 0; transform: translateY(20px); }",
-    "stamp":   "from { opacity: 0; transform: scale(2.2) rotate(-8deg); }",
+# The entry state of each entrance, as bare declarations. Kept without a
+# `from {}` wrapper so it can be placed at any point in a keyframe list -- the
+# second track has to perform its entrance partway through the loop, not at 0%.
+_TEXT_FROM = {
+    "rise":    "opacity: 0; transform: translateY(14px);",
+    "fade":    "opacity: 0;",
+    "slide":   "opacity: 0; transform: translateX(-26px);",
+    "snap":    "opacity: 0; transform: scale(1.35);",
+    "drift":   "opacity: 0; transform: translateY(9px) scale(1.05);",
+    "type":    "opacity: 0; transform: scaleX(0);",
+    "spin":    "opacity: 0; transform: rotate(-70deg) scale(0.4);",
+    "flip":    "opacity: 0; transform: scaleY(0.1);",
+    "scatter": "opacity: 0; transform: translate(-14px, 12px) rotate(-18deg);",
+    "wave":    "opacity: 0; transform: translateY(20px);",
+    "stamp":   "opacity: 0; transform: scale(2.2) rotate(-8deg);",
 }
+_SETTLED = "opacity: 1; transform: none;"
+_GONE = "opacity: 0; transform: none;"
 
 _STAGGERED = {"type", "spin", "flip", "scatter", "wave"}
 
@@ -554,24 +567,35 @@ def thumbnail_css() -> str:
         kind = TRANSITIONS.get(st.get("transition", "fade"), TRANSITIONS["fade"])["kind"]
         a_kf, b_kf = _COVER_KEYFRAMES.get(kind, _COVER_KEYFRAMES["fade"])
         ent = st["entrance"]
-        t_kf = _TEXT_KEYFRAMES.get(ent, _TEXT_KEYFRAMES["fade"])
         ease = "steps(1, end)" if kind == "swap" else "cubic-bezier(.4,0,.2,1)"
         t_ease = "steps(1, end)" if ent == "type" else "cubic-bezier(.2,.7,.3,1)"
 
         out.append(f"@keyframes tpa-{key} {{ {a_kf} }}")
         out.append(f"@keyframes tpb-{key} {{ {b_kf} }}")
-        out.append(f"@keyframes tpt-{key} {{ {t_kf} }}")
+
+        frm = _TEXT_FROM.get(ent, _TEXT_FROM["fade"])
+        # Track A: enters, holds, clears out as the cover hands over at 30-45%.
+        out.append(
+            f"@keyframes tpta-{key} {{ 0% {{ {frm} }} 14% {{ {_SETTLED} }}"
+            f" 30% {{ {_SETTLED} }} 40%,100% {{ {_GONE} }} }}"
+        )
+        # Track B: hidden until the hand-over, then the same entrance, so both
+        # tracks arrive the way the theme actually animates.
+        out.append(
+            f"@keyframes tptb-{key} {{ 0%,44% {{ {_GONE} }} 45% {{ {frm} }}"
+            f" 60%,100% {{ {_SETTLED} }} }}"
+        )
 
         # Two triggers: :hover for the mouse, a `.previewing` class for keyboard
-        # focus and touch (where there is no hover state at all).
+        # focus and touch, where there is no hover state at all.
         #
         # Selectors are built as explicit lists, never by concatenating another
-        # selector string. Doing that produced a stray sibling combinator that
-        # matched at a HIGHER specificity than the per-character delay rules, so
-        # its `animation` shorthand reset every delay to 0s and the stagger --
-        # the whole point of the preview -- silently never happened.
-        def rule(suffix: str, body: str) -> str:
-            sels = [f'.theme-card[data-mode="preset:{key}"]{trig} {suffix}'
+        # selector string. Doing that once produced a stray sibling combinator
+        # that matched at HIGHER specificity than the per-character delay rules,
+        # so its `animation` shorthand reset every delay to 0s and the stagger
+        # silently never happened.
+        def rule(suffix: str, body: str, k=key) -> str:
+            sels = [f'.theme-card[data-mode="preset:{k}"]{trig} {suffix}'
                     for trig in (":hover", ".previewing")]
             return ", ".join(sels) + " { " + body + " }"
 
@@ -579,20 +603,23 @@ def thumbnail_css() -> str:
                         f"animation: tpa-{key} {PREVIEW_SECS}s {ease} infinite;"))
         out.append(rule(".theme-thumb svg .tp-b",
                         f"animation: tpb-{key} {PREVIEW_SECS}s {ease} infinite;"))
-        # Title characters and the artist line both animate -- the artist is
-        # part of the feel, and animating only the title looked half-finished.
-        out.append(rule(".tp-txt .tp-ch",
-                        f"animation: tpt-{key} 0.55s {t_ease} both;"))
-        out.append(rule(".tp-txt .tp-artist",
-                        f"animation: tpt-{key} 0.5s cubic-bezier(.2,.7,.3,1) both;"
-                        f" animation-delay: 0.3s;"))
+
+        # Title characters and the artist line both animate, each on the loop
+        # belonging to its own cover -- animating only the title looked
+        # half-finished, and a preview that swaps the picture while keeping the
+        # words reads as a glitch.
+        for blk, kf in (("a", f"tpta-{key}"), ("b", f"tptb-{key}")):
+            out.append(rule(f".tp-txt-{blk} .tp-ch",
+                            f"animation: {kf} {PREVIEW_SECS}s {t_ease} infinite;"))
+            out.append(rule(f".tp-txt-{blk} .tp-artist",
+                            f"animation: {kf} {PREVIEW_SECS}s cubic-bezier(.2,.7,.3,1) infinite;"))
 
         if ent in _STAGGERED:
-            # Same selector shape as the rule above plus one class, so these
-            # win on specificity as well as order.
+            # On a looping animation a delay shifts the phase, which still reads
+            # as a stagger without desyncing a character from its own cover.
             for n in range(6):
                 out.append(rule(f".tp-txt .tp-ch{n}",
-                                f"animation-delay: {0.06 * n:.2f}s;"))
+                                f"animation-delay: {0.05 * n:.2f}s;"))
     return "\n".join(out)
 
 
