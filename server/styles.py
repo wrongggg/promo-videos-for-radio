@@ -409,9 +409,9 @@ def preview_layout_css() -> str:
         " flex-direction: column; padding: 0 8px; pointer-events: none;"
         " overflow: hidden; }",
         # Both track blocks occupy the same slot; the loop decides which shows.
-        # Track B starts hidden so a tile at rest shows one track, not two
-        # stacked on top of each other.
-        ".tp-txt-b .tp-ch, .tp-txt-b .tp-artist { opacity: 0; }",
+        # Track B is hidden at rest -- including its card background, or a
+        # panel style would show an empty white card over track A.
+        ".tp-txt-b { opacity: 0; }",
         ".tp-sp { display: inline; }",
         ".tp-word { display: inline-block; white-space: nowrap; }",
         ".tp-title { display: block; line-height: 1.02; }",
@@ -444,8 +444,12 @@ def choices(palettes: dict | None = None) -> list[dict]:
     so each thumbnail previews its own colours rather than a shared stand-in --
     which is most of what makes the five readable at a glance."""
     palettes = palettes or {}
+    # No blurb: the tile animates what the theme does, which says it better than
+    # a sentence, and the two together were redundant. The blurbs stay in STYLES
+    # because the custom-theme prompt still needs them to describe each style to
+    # the model (see curator.STYLE_MENU).
     return [
-        {"key": k, "label": v["label"], "blurb": v["blurb"],
+        {"key": k, "label": v["label"],
          "thumb": thumbnail_markup(k, palettes.get(k))}
         for k, v in STYLES.items()
     ]
@@ -586,6 +590,15 @@ def thumbnail_css() -> str:
             f" 60%,100% {{ {_SETTLED} }} }}"
         )
 
+        # Visibility of the whole block, not just its text. A style with a card
+        # paints that card from the block's own background, so gating only the
+        # characters left block B's panel sitting on top of block A's words and
+        # washing them out.
+        out.append(f"@keyframes tpva-{key} {{ 0%,32% {{ opacity: 1; }}"
+                   f" 42%,100% {{ opacity: 0; }} }}")
+        out.append(f"@keyframes tpvb-{key} {{ 0%,44% {{ opacity: 0; }}"
+                   f" 46%,100% {{ opacity: 1; }} }}")
+
         # Two triggers: :hover for the mouse, a `.previewing` class for keyboard
         # focus and touch, where there is no hover state at all.
         #
@@ -609,6 +622,8 @@ def thumbnail_css() -> str:
         # half-finished, and a preview that swaps the picture while keeping the
         # words reads as a glitch.
         for blk, kf in (("a", f"tpta-{key}"), ("b", f"tptb-{key}")):
+            out.append(rule(f".tp-txt-{blk}",
+                            f"animation: tpv{blk}-{key} {PREVIEW_SECS}s steps(1, end) infinite;"))
             out.append(rule(f".tp-txt-{blk} .tp-ch",
                             f"animation: {kf} {PREVIEW_SECS}s {t_ease} infinite;"))
             out.append(rule(f".tp-txt-{blk} .tp-artist",
