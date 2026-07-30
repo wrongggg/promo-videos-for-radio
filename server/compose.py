@@ -578,9 +578,6 @@ def render_video(project_dir: str, output_rel_path: str, quality: str = "standar
 # ffmpeg builds don't consistently have, and a raster asset looks identical in
 # dev and in the container. Regenerate with tools/make_watermark.py.
 WATERMARK_PATH = os.path.join(PROJECT_DIR, "server", "static", "brand", "watermark.png")
-# Distance from the bottom edge, in output pixels. Clear of the 1080x1920
-# frame's safe area but inside the crop most players/socials apply.
-WATERMARK_MARGIN_BOTTOM = 96
 
 
 def watermark_video(src_path: str, dst_path: str) -> str:
@@ -601,8 +598,10 @@ def watermark_video(src_path: str, dst_path: str) -> str:
         "ffmpeg", "-v", "error", "-y",
         "-i", src_path,
         "-i", WATERMARK_PATH,
-        "-filter_complex",
-        f"[0:v][1:v]overlay=(W-w)/2:H-h-{WATERMARK_MARGIN_BOTTOM}:format=auto",
+        # The asset is a full-frame 1080x1920 overlay of tiled diagonal marks,
+        # so it composites at the origin -- no positioning arithmetic here. A
+        # corner mark was the first attempt and was simply croppable.
+        "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         # Copy audio untouched -- re-encoding it would cost quality for nothing.

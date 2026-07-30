@@ -34,11 +34,21 @@ BRAND_DIR = os.path.join(ROOT, "server", "static", "brand")
 FONT_PATH = os.path.join(BRAND_DIR, "bebas-neue.woff2")
 OUT_PATH = os.path.join(BRAND_DIR, "watermark.png")
 
-# Sized for a 1080x1920 frame at 1:1 -- compose.watermark_video overlays it
-# without scaling, so these are literal output pixels. The canvas is padded
-# well beyond the glyphs to leave room for the shadow blur.
-CANVAS_W, CANVAS_H = 560, 150
-FONT_SIZE = 68
+# A full-frame overlay, not a corner mark: compose.watermark_video composites it
+# at 0,0 without scaling, so these are literally the output frame's dimensions.
+# A corner mark is trivially cropped off, which defeats the point -- the job here
+# is to make a video obviously un-postable while leaving it readable enough to
+# judge. Tiled and rotated does that; a single mark does not.
+CANVAS_W, CANVAS_H = 1080, 1920
+FONT_SIZE = 52
+# Rows x columns of marks. 3x2 puts 6 on screen, with alternate rows offset half
+# a column so the tiling doesn't read as a rigid grid.
+ROWS, COLS = 3, 2
+ANGLE_DEG = -30
+# Low enough to see the footage through it, high enough that nobody publishes it.
+# The paired shadow is what keeps it legible over bright frames -- pure white at
+# this opacity vanishes against pale artwork on its own.
+MARK_OPACITY = 0.20
 
 
 def _find_chrome() -> str:
@@ -63,6 +73,19 @@ def _find_chrome() -> str:
 
 def _html(name: str) -> str:
     font_b64 = base64.b64encode(open(FONT_PATH, "rb").read()).decode()
+
+    # Cell centres, with odd rows nudged half a column across. Rotation happens
+    # per mark about its own centre, so a mark near an edge runs off the canvas
+    # and is clipped -- which is what makes the tiling read as continuous rather
+    # than as six things arranged on a page.
+    cell_w, cell_h = CANVAS_W / COLS, CANVAS_H / ROWS
+    marks = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            cx = (col + 0.5) * cell_w + (cell_w / 2 if row % 2 else 0)
+            cy = (row + 0.5) * cell_h
+            marks.append(f'<div class="mark" style="left:{cx:.1f}px; top:{cy:.1f}px">{name}</div>')
+
     return f"""<!doctype html>
 <meta charset="utf-8">
 <style>
@@ -73,23 +96,27 @@ def _html(name: str) -> str:
   html, body {{ margin: 0; background: transparent; }}
   body {{
     width: {CANVAS_W}px; height: {CANVAS_H}px;
-    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
   }}
   .mark {{
+    position: absolute;
+    /* translate(-50%,-50%) centres the mark on its cell point before the
+       rotation is applied, so each one spins about itself rather than swinging
+       around the canvas origin. */
+    transform: translate(-50%, -50%) rotate({ANGLE_DEG}deg);
     font-family: "Brand", sans-serif;
     font-size: {FONT_SIZE}px;
     letter-spacing: 0.22em;
-    /* letter-spacing adds a trailing gap after the last glyph; pull it back
-       so the wordmark is optically centred rather than sitting left. */
     text-indent: 0.22em;
-    color: #fff;
+    color: rgba(255,255,255,{MARK_OPACITY});
     white-space: nowrap;
-    /* Two shadows: a tight dark one for contrast against bright footage, and a
-       wide soft one so the mark still reads over a busy, mid-tone frame. */
-    text-shadow: 0 2px 6px rgba(0,0,0,.55), 0 0 26px rgba(0,0,0,.4);
+    /* Shadow alpha is scaled to the mark's own opacity -- at full strength it
+       would read as a dark smear around ghosted text. It exists only to hold
+       the letterforms apart from bright footage. */
+    text-shadow: 0 1px 3px rgba(0,0,0,{MARK_OPACITY * 0.9:.2f});
   }}
 </style>
-<div class="mark">{name}</div>
+{chr(10).join(marks)}
 """
 
 
