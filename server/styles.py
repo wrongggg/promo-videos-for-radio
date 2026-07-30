@@ -350,8 +350,8 @@ def get(key: str | None) -> dict:
     return STYLES.get(key or "", STYLES[DEFAULT_STYLE])
 
 
-PREVIEW_TITLE = "Glue"
-PREVIEW_ARTIST = "BICEP"
+PREVIEW_TITLE = "Night Ferry"
+PREVIEW_ARTIST = "HALO COURT"
 
 
 def thumbnail_markup(key: str, palette: dict | None = None) -> str:
@@ -363,17 +363,27 @@ def thumbnail_markup(key: str, palette: dict | None = None) -> str:
     ent = ENTRANCES[st["entrance"]]
     per_char = bool(ent.get("chars"))
     if per_char:
-        title = "".join(
-            f'<span class="tp-ch tp-ch{i % 6}">{c}</span>'
-            for i, c in enumerate(PREVIEW_TITLE)
-        )
+        # Spaces get a plain inline span, not an inline-block one. Every
+        # character being inline-block leaves the line with no break
+        # opportunity, so a two-word title just overflowed the tile.
+        parts = []
+        n = 0
+        for c in PREVIEW_TITLE:
+            if c == " ":
+                parts.append('<span class="tp-sp"> </span>')
+            else:
+                parts.append(f'<span class="tp-ch tp-ch{n % 6}">{c}</span>')
+                n += 1
+        title = "".join(parts)
     else:
         title = f'<span class="tp-ch tp-ch0">{PREVIEW_TITLE}</span>'
 
-    # Scale the real type down to tile width (112px against a 1080px frame),
-    # with a floor so the smallest styles stay legible at this size.
-    t_px = max(13, round(st["title"]["max_size"] * 0.115))
-    a_px = max(6, round(st["artist"]["size"] * 0.20))
+    # Scale the real type to the tile (112px wide against a 1080px frame), then
+    # clamp. XL's 210px would land at 24px here and run straight off the edge,
+    # so the ceiling matters more than the ratio -- the tile shows which
+    # typeface and how it moves, not the true size.
+    t_px = max(11, min(16, round(st["title"]["max_size"] * 0.115)))
+    a_px = max(6, min(9, round(st["artist"]["size"] * 0.20)))
 
     return (
         f'{svg}'
@@ -389,7 +399,9 @@ def preview_layout_css() -> str:
     out = [
         ".theme-thumb { position: relative; }",
         ".tp-txt { position: absolute; left: 0; right: 0; display: flex;"
-        " flex-direction: column; padding: 0 8px; pointer-events: none; }",
+        " flex-direction: column; padding: 0 8px; pointer-events: none;"
+        " overflow: hidden; }",
+        ".tp-sp { display: inline; }",
         ".tp-title { display: block; line-height: 1.02; }",
         ".tp-ch { display: inline-block; will-change: transform, opacity; }",
         ".tp-artist { display: block; opacity: .75; margin-top: 3px; letter-spacing: 1px; }",
@@ -530,7 +542,7 @@ def thumbnail_css() -> str:
     out = [
         # Transforms on SVG children need a box to resolve percentages and a
         # sane origin, or translateX(100%) means something unexpected.
-        ".theme-thumb svg .tp-cover, .theme-thumb svg .tp-bar {"
+        ".theme-thumb svg .tp-cover {"
         " transform-box: fill-box; transform-origin: center; }",
         ".theme-thumb svg .tp-b { opacity: 0; }",
     ]
@@ -563,8 +575,13 @@ def thumbnail_css() -> str:
                         f"animation: tpa-{key} {PREVIEW_SECS}s {ease} infinite;"))
         out.append(rule(".theme-thumb svg .tp-b",
                         f"animation: tpb-{key} {PREVIEW_SECS}s {ease} infinite;"))
+        # Title characters and the artist line both animate -- the artist is
+        # part of the feel, and animating only the title looked half-finished.
         out.append(rule(".tp-txt .tp-ch",
                         f"animation: tpt-{key} 0.55s {t_ease} both;"))
+        out.append(rule(".tp-txt .tp-artist",
+                        f"animation: tpt-{key} 0.5s cubic-bezier(.2,.7,.3,1) both;"
+                        f" animation-delay: 0.3s;"))
 
         if ent in _STAGGERED:
             # Same selector shape as the rule above plus one class, so these
@@ -575,149 +592,78 @@ def thumbnail_css() -> str:
     return "\n".join(out)
 
 
-def thumbnail_svg(key: str, palette: dict | None = None) -> str:
-    """A 120x213 (9:16) inline SVG preview of one style.
+def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
+    """A stand-in album cover.
 
-    Generated from the style definition itself rather than drawn by hand, so a
-    change to type, alignment, colour or patch shows up in the picker without
-    anyone remembering to update an image. Inline SVG also keeps the picker
-    free of binary assets and network requests."""
-    s = get(key)
-    pal = palette or {"orb1": "#7b5cff", "orb2": "#00d4ff", "accent": "#ff2e88"}
-    a1, a2 = pal.get("orb1", "#7b5cff"), pal.get("orb2", "#00d4ff")
+    The tile has to show artwork, because artwork is what dominates a real
+    frame -- the synth is texture behind it, not the subject. Two variants, so
+    the hand-over shows one cover replacing a different one rather than itself.
+    Deliberately abstract: a made-up sleeve, not an imitation of a real one."""
     W, H = 120, 213
+    if variant == 0:
+        return (
+            f'<rect width="{W}" height="{H}" fill="url(#cvA{key})"/>'
+            f'<circle cx="42" cy="74" r="40" fill="{accent}" opacity="0.85"/>'
+            f'<path d="M0 150 Q60 96 120 150 L120 213 L0 213 Z" fill="{a2}" opacity="0.7"/>'
+            f'<rect x="72" y="26" width="34" height="34" fill="{a1}" opacity="0.55"/>'
+        )
+    return (
+        f'<rect width="{W}" height="{H}" fill="url(#cvB{key})"/>'
+        f'<path d="M0 0 L120 0 L120 96 L0 46 Z" fill="{a2}" opacity="0.8"/>'
+        f'<circle cx="82" cy="140" r="46" fill="{accent}" opacity="0.7"/>'
+        f'<rect x="10" y="112" width="46" height="8" fill="{a1}" opacity="0.9"/>'
+    )
 
-    left = s["align"] == "left"
-    x = 12 if left else W // 2
-    anchor = "start" if left else "middle"
 
-    # Title bars stand in for the type: their height tracks the style's actual
-    # title size, which is what makes XL obviously XL in the picker.
-    t_h = max(6, round(s["title"]["max_size"] * 0.075))
-    a_h = max(3, round(s["artist"]["size"] * 0.10))
-    bar_w = 96 if left else 88
-    body_y = H // 2 - 18 if s["anchor"] == "center" else H - 34 - t_h * 2 - a_h
+def thumbnail_svg(key: str, palette: dict | None = None) -> str:
+    """A 120x213 (9:16) preview of one style.
 
-    def bar(bx, by, bw, bh, fill, op=1.0, r=1, cls=""):
-        extra = f' class="tp-bar {cls}"' if cls else ""
-        return (f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" rx="{r}" '
-                f'fill="{fill}" opacity="{op}"{extra}/>')
+    Layered exactly like the rendered frame: synth patch at the back, artwork
+    over it, scrim on top, and the text laid over that as HTML (see
+    thumbnail_markup). Generated from the style definition rather than drawn by
+    hand, so a change to palette, patch or scrim shows up in the picker without
+    anyone remembering to update an image.
 
-    panel = s.get("panel")
-    ink = s["color"] == INK
-    text_fill = "#0b0b0d" if ink else "#ffffff"
+    There are no placeholder bars any more -- the preview shows real type, so a
+    stand-in for it was just clutter sitting under the actual words."""
+    st = get(key)
+    pal = palette or {"orb1": "#7b5cff", "orb2": "#00d4ff", "accent": "#ff2e88"}
+    a1 = pal.get("orb1", "#7b5cff")
+    a2 = pal.get("orb2", "#00d4ff")
+    accent = pal.get("accent", "#ff2e88")
+    W, H = 120, 213
+    heavy = st["scrim"] == "heavy"
 
-    # Two stacked "covers". Statically only .tp-a shows (.tp-b is opacity 0 in
-    # thumbnail_css); on hover they cross over using the style's real
-    # transition, which is the whole point of the preview.
+    defs = (
+        f'<defs>'
+        f'<linearGradient id="cvA{key}" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0%" stop-color="{a1}"/><stop offset="100%" stop-color="#0b0b12"/>'
+        f'</linearGradient>'
+        f'<linearGradient id="cvB{key}" x1="1" y1="0" x2="0" y2="1">'
+        f'<stop offset="0%" stop-color="{a2}"/><stop offset="100%" stop-color="#0b0b12"/>'
+        f'</linearGradient>'
+        f'<linearGradient id="g{key}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0%" stop-color="#000" stop-opacity="{0.5 if heavy else 0.25}"/>'
+        f'<stop offset="40%" stop-color="#000" stop-opacity="0.10"/>'
+        f'<stop offset="100%" stop-color="#000" stop-opacity="{0.92 if heavy else 0.78}"/>'
+        f'</linearGradient>'
+        f'</defs>'
+    )
+
     parts = [
         f'<rect width="{W}" height="{H}" fill="#0a0a0f"/>',
-        f'<g class="tp-cover tp-a">{_patch_thumb(s["patch"], a1, a2)}</g>',
-        f'<g class="tp-cover tp-b">{_patch_thumb(s["patch"], a2, a1)}</g>',
-        # scrim
+        # The synth patch sits behind the artwork and dimmed, matching the real
+        # frame where it runs at ~0.15 under the cover rather than full strength.
+        f'<g opacity="0.5">{_patch_thumb(st["patch"], a1, a2)}</g>',
+        # Two covers: .tp-a on screen, .tp-b arriving. thumbnail_css keeps
+        # .tp-b hidden until the card is previewing.
+        f'<g class="tp-cover tp-a" opacity="0.92">{_cover_art(0, a1, a2, accent, key)}</g>',
+        f'<g class="tp-cover tp-b" opacity="0.92">{_cover_art(1, a1, a2, accent, key)}</g>',
         f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
     ]
 
-    px = 8 if left else (W - bar_w) // 2 - 6
-    if panel:
-        parts.append(
-            f'<rect x="{px}" y="{body_y - 12}" width="{bar_w + 12}" '
-            f'height="{t_h * 2 + a_h + 34}" rx="7" fill="#ffffff" opacity="0.95"/>'
-        )
-
-    tx = 14 if left else (W - bar_w) // 2
-    parts += [
-        bar(tx, body_y, bar_w, t_h, text_fill, 0.95, cls="tp-bar1"),
-        bar(tx, body_y + t_h + 5, round(bar_w * 0.66), t_h, text_fill, 0.95, cls="tp-bar2"),
-        bar(tx, body_y + t_h * 2 + 14, round(bar_w * 0.42), a_h, text_fill, 0.7, cls="tp-bar3"),
-    ]
-
-    grad = (
-        f'<defs><linearGradient id="g{key}" x1="0" y1="0" x2="0" y2="1">'
-        f'<stop offset="0%" stop-color="#000" stop-opacity="{0.5 if s["scrim"] == "heavy" else 0.25}"/>'
-        f'<stop offset="40%" stop-color="#000" stop-opacity="0.10"/>'
-        f'<stop offset="100%" stop-color="#000" stop-opacity="{0.9 if s["scrim"] == "heavy" else 0.7}"/>'
-        f'</linearGradient></defs>'
-    )
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" '
-        f'width="{W}" height="{H}" role="img" aria-label="{s["label"]} preview">'
-        f'{grad}{"".join(parts)}</svg>'
+        f'width="{W}" height="{H}" role="img" aria-label="{st["label"]} preview">'
+        f'{defs}{"".join(parts)}</svg>'
     )
-
-
-def _case_css(value: str) -> str:
-    return "none" if value == "none" else value
-
-
-def text_css(style: dict) -> str:
-    """CSS for the text roles. Sizes for the title are a ceiling -- compose.py
-    steps it down for long titles."""
-    font = FONTS[style["font"]]
-    title, artist, trivia = style["title"], style["artist"], style["trivia"]
-    color = style["color"]
-    align = style["align"]
-    items = "center" if align == "center" else "flex-start"
-
-    # Black type gets no shadow (it sits on its own light panel); white type
-    # gets a soft one so it survives a bright patch of artwork.
-    shadow = "none" if color == INK else "0 4px 26px rgba(0,0,0,0.72)"
-
-    panel = style.get("panel")
-    if panel:
-        panel_css = (
-            f"background: {panel['bg']}; padding: {panel['pad']}; "
-            f"border-radius: {panel['radius']}px; max-width: 900px; opacity: 0;"
-        )
-    else:
-        panel_css = ""
-
-    if style["anchor"] == "center":
-        position_css = "justify-content: center; margin: 0;"
-    else:
-        position_css = f"margin-top: auto; margin-bottom: {style['bottom_gap']}px;"
-
-    return f"""
-.meta-container {{
-  position: relative; z-index: 10; width: 100%;
-  display: flex; flex-direction: column; align-items: {items};
-  text-align: {align}; {position_css}
-}}
-.meta-inner {{ display: flex; flex-direction: column; align-items: {items}; {panel_css} }}
-.track-title {{
-  font-family: {font}; font-weight: {title['weight']};
-  text-transform: {_case_css(title['case'])}; letter-spacing: {title['spacing']}px;
-  line-height: {title['line']}; color: {color}; text-shadow: {shadow};
-  margin-bottom: 18px; max-width: 950px;
-}}
-.artist-name {{
-  font-family: {font}; font-size: {artist['size']}px; font-weight: {artist['weight']};
-  text-transform: {_case_css(artist['case'])}; letter-spacing: {artist['spacing']}px;
-  color: {color}; text-shadow: {shadow}; margin-bottom: 14px; opacity: 0.92;
-}}
-.trivia-tag {{
-  font-family: {font}; font-size: {trivia['size']}px; font-weight: {trivia['weight']};
-  line-height: 1.4; color: {color}; text-shadow: {shadow};
-  letter-spacing: 0.2px; max-width: 840px; margin-bottom: 14px; opacity: 0.88;
-}}
-.scrim {{ background: {SCRIMS[style['scrim']]}; }}
-"""
-
-
-def title_size(style: dict, text: str) -> int:
-    """Step the title down for long names so it never overflows the frame.
-    Thresholds scale off each style's own ceiling rather than being absolute,
-    since a condensed 148px and a serif 112px break at different lengths."""
-    ceiling = style["title"]["max_size"]
-    n = len(text or "")
-    if n <= 14:
-        factor = 1.0
-    elif n <= 22:
-        factor = 0.82
-    elif n <= 32:
-        factor = 0.66
-    elif n <= 46:
-        factor = 0.54
-    else:
-        factor = 0.45
-    return max(34, int(ceiling * factor))
