@@ -505,29 +505,29 @@ def _patch_thumb(patch: str, a1: str, a2: str) -> str:
 #
 # The loop shows two covers and one hand-over, using that style's real
 # transition kind and entrance family.
-PREVIEW_SECS = 3.0
+PREVIEW_SECS = 2.6
 
 # Cover hand-over, per transition kind. The window is 45%-62% of the loop.
 _COVER_KEYFRAMES = {
-    "fade": ("0%,30% { opacity: 1; transform: none; }"
-             " 45%,100% { opacity: 0; transform: none; }",
-             "0%,30% { opacity: 0; }"
-             " 45%,100% { opacity: 1; }"),
-    "slide": ("0%,30% { opacity: 1; transform: translateX(0); }"
-              " 45%,100% { opacity: 1; transform: translateX(-100%); }",
-              "0%,30% { opacity: 1; transform: translateX(100%); }"
-              " 45%,100% { opacity: 1; transform: translateX(0); }"),
-    "zoom": ("0%,30% { opacity: 1; transform: scale(1); }"
-             " 45%,100% { opacity: 0; transform: scale(0.8); }",
-             "0%,30% { opacity: 0; transform: scale(1.4); }"
-             " 45%,100% { opacity: 1; transform: scale(1); }"),
-    "spin": ("0%,30% { opacity: 1; transform: rotate(0deg) scale(1); }"
-             " 45%,100% { opacity: 0; transform: rotate(12deg) scale(0.85); }",
-             "0%,30% { opacity: 0; transform: rotate(-14deg) scale(0.72); }"
-             " 45%,100% { opacity: 1; transform: rotate(0deg) scale(1); }"),
+    "fade": ("0%,22% { opacity: 1; transform: none; }"
+             " 34%,100% { opacity: 0; transform: none; }",
+             "0%,22% { opacity: 0; }"
+             " 34%,100% { opacity: 1; }"),
+    "slide": ("0%,22% { opacity: 1; transform: translateX(0); }"
+              " 34%,100% { opacity: 1; transform: translateX(-100%); }",
+              "0%,22% { opacity: 1; transform: translateX(100%); }"
+              " 34%,100% { opacity: 1; transform: translateX(0); }"),
+    "zoom": ("0%,22% { opacity: 1; transform: scale(1); }"
+             " 34%,100% { opacity: 0; transform: scale(0.8); }",
+             "0%,22% { opacity: 0; transform: scale(1.4); }"
+             " 34%,100% { opacity: 1; transform: scale(1); }"),
+    "spin": ("0%,22% { opacity: 1; transform: rotate(0deg) scale(1); }"
+             " 34%,100% { opacity: 0; transform: rotate(12deg) scale(0.85); }",
+             "0%,22% { opacity: 0; transform: rotate(-14deg) scale(0.72); }"
+             " 34%,100% { opacity: 1; transform: rotate(0deg) scale(1); }"),
     # A hard cut: no interpolation, so the steps() timing does the work.
-    "swap": ("0%,36% { opacity: 1; } 36.01%,100% { opacity: 0; }",
-             "0%,36% { opacity: 0; } 36.01%,100% { opacity: 1; }"),
+    "swap": ("0%,27% { opacity: 1; } 27.01%,100% { opacity: 0; }",
+             "0%,27% { opacity: 0; } 27.01%,100% { opacity: 1; }"),
 }
 
 # How the text bars arrive. Char-based entrances get a per-bar delay so the
@@ -580,24 +580,24 @@ def thumbnail_css() -> str:
         frm = _TEXT_FROM.get(ent, _TEXT_FROM["fade"])
         # Track A: enters, holds, clears out as the cover hands over at 30-45%.
         out.append(
-            f"@keyframes tpta-{key} {{ 0% {{ {frm} }} 14% {{ {_SETTLED} }}"
-            f" 30% {{ {_SETTLED} }} 40%,100% {{ {_GONE} }} }}"
+            f"@keyframes tpta-{key} {{ 0% {{ {frm} }} 12% {{ {_SETTLED} }}"
+            f" 22% {{ {_SETTLED} }} 31%,100% {{ {_GONE} }} }}"
         )
         # Track B: hidden until the hand-over, then the same entrance, so both
         # tracks arrive the way the theme actually animates.
         out.append(
-            f"@keyframes tptb-{key} {{ 0%,44% {{ {_GONE} }} 45% {{ {frm} }}"
-            f" 60%,100% {{ {_SETTLED} }} }}"
+            f"@keyframes tptb-{key} {{ 0%,33% {{ {_GONE} }} 34% {{ {frm} }}"
+            f" 48%,100% {{ {_SETTLED} }} }}"
         )
 
         # Visibility of the whole block, not just its text. A style with a card
         # paints that card from the block's own background, so gating only the
         # characters left block B's panel sitting on top of block A's words and
         # washing them out.
-        out.append(f"@keyframes tpva-{key} {{ 0%,32% {{ opacity: 1; }}"
-                   f" 42%,100% {{ opacity: 0; }} }}")
-        out.append(f"@keyframes tpvb-{key} {{ 0%,44% {{ opacity: 0; }}"
-                   f" 46%,100% {{ opacity: 1; }} }}")
+        out.append(f"@keyframes tpva-{key} {{ 0%,24% {{ opacity: 1; }}"
+                   f" 32%,100% {{ opacity: 0; }} }}")
+        out.append(f"@keyframes tpvb-{key} {{ 0%,32% {{ opacity: 0; }}"
+                   f" 34%,100% {{ opacity: 1; }} }}")
 
         # Two triggers: :hover for the mouse, a `.previewing` class for keyboard
         # focus and touch, where there is no hover state at all.
