@@ -427,8 +427,18 @@ def _run_render_stage(job_id):
         output_rel = os.path.relpath(os.path.join(job["job_dir"], "output.mp4"), PROJECT_DIR)
         compose.render_video(PROJECT_DIR, output_rel, quality="standard")
 
+        master = os.path.join(job["job_dir"], "output.mp4")
+        # The clean master never leaves the server unless the session is
+        # entitled to it. Everything on-screen -- and every unentitled download
+        # -- comes from the watermarked copy, so the master is not reachable by
+        # reading a URL out of the page source.
+        _log(job, "Adding watermark...")
+        watermarked = os.path.join(job["job_dir"], "output-watermarked.mp4")
+        compose.watermark_video(master, watermarked)
+
         job["status"] = "done"
-        job["output_path"] = os.path.join(job["job_dir"], "output.mp4")
+        job["output_path"] = master
+        job["watermarked_path"] = watermarked
         _log(job, "Done!")
         analytics.record_job_done(job_id, "done")
     except Exception as e:
@@ -703,28 +713,50 @@ def skip_upload(job_id, track_index):
     return jsonify({"ok": True, "remaining": job["needs_upload"], "status": job["status"]})
 
 
+def _served_path(job, clean: bool) -> str:
+    """The file to hand out. Falls back to the master only when no watermarked
+    copy exists -- which now means a job rendered before watermarking existed,
+    not a job whose watermark step failed (that fails the whole render, so an
+    unmarked file can never reach an unentitled visitor by accident)."""
+    if clean:
+        return job["output_path"]
+    return job.get("watermarked_path") or job["output_path"]
+
+
 @app.route("/preview/<job_id>")
 def preview_video(job_id):
     """Serves the rendered video inline for the in-page <video> player -- not
-    counted as a download (see /download for the actual export/save action)."""
+    counted as a download (see /download for the actual export/save action).
+
+    Always the watermarked cut, even for the operator. The player is the one
+    URL that is trivially readable from the page source, so serving the clean
+    master here would hand it to anyone with a network tab open and make the
+    download gate meaningless."""
     job = JOBS.get(job_id)
     if not _owns_job(job):
         return jsonify({"error": "not your job"}), 403
     if job["status"] != "done":
         return jsonify({"error": "not ready"}), 400
-    return send_file(job["output_path"])
+    return send_file(_served_path(job, clean=False))
 
 
 @app.route("/download/<job_id>")
 def download(job_id):
-    """The export."""
+    """The export. Entitled sessions get the clean master; everyone else gets
+    the same watermarked cut they were watching."""
     job = JOBS.get(job_id)
     if not _owns_job(job):
         return jsonify({"error": "not your job"}), 403
     if job["status"] != "done":
         return jsonify({"error": "not ready"}), 400
+    clean = access.can_download_clean()
     analytics.record_download(job_id, access.visitor_id())
-    return send_file(job["output_path"], as_attachment=True, download_name=f"promo-{job_id}.mp4")
+    suffix = "" if clean else "-watermarked"
+    return send_file(
+        _served_path(job, clean=clean),
+        as_attachment=True,
+        download_name=f"promo-{job_id}{suffix}.mp4",
+    )
 
 
 if __name__ == "__main__":
