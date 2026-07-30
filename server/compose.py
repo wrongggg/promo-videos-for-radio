@@ -303,7 +303,7 @@ HERO_TO_HEADER_SHOW = {"x": -400, "y": -300, "scale": 0.31}
 HERO_TO_HEADER_EPISODE = {"x": -400, "y": -370, "scale": 0.6}
 
 
-def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float) -> tuple[str, str]:
+def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float, outro_start: float | None = None) -> tuple[str, str]:
     # Alignment follows the show/episode name's own script, not the on-screen
     # language toggle -- an English show name shouldn't right-align just
     # because Hebrew is selected for the UI strings elsewhere.
@@ -320,8 +320,17 @@ def _header_html(show_name: str, episode_label: str, total_duration: float, fade
         </div>
       </div>
     """
+    # The closing card shows the logo and show name full size, so the small
+    # header versions are redundant there -- and having both on screen reads as
+    # a duplicate. Fade the header out just before the outro brand animates in.
+    header_out = ""
+    if outro_start is not None:
+        header_out = (
+            f'\n      tl.to("#header-inner", {{ opacity: 0, duration: 0.35, '
+            f'ease: "power2.in" }}, {max(0.0, outro_start - 0.3)});'
+        )
     header_js = f"""
-      tl.fromTo("#header-inner", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5, ease: "power2.out" }}, {fade_in_at});
+      tl.fromTo("#header-inner", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5, ease: "power2.out" }}, {fade_in_at});{header_out}
     """
     return header_html, header_js
 
@@ -459,7 +468,8 @@ def build_composition_html(
 
     total_duration = cursor
     header_fade_in_at = HERO_HANDOFF_START + HERO_HANDOFF_DURATION - 0.25
-    header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at)
+    header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at,
+                                         outro_start=total_duration - OUTRO_DURATION)
     scenes_js.append(header_js)
     frame_html = _frame_overlay_html(frame, total_duration, palette[0]["accent"])
     visuals_js = visuals.runtime_js(
