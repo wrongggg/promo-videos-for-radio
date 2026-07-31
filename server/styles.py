@@ -219,8 +219,8 @@ STYLES = {
         "label": "Classic",
         "blurb": "Clean and neutral. Centred sans type, gentle rise, soft haze behind. The safe choice for any show.",
         "font": "grotesque",
-        "title": {"max_size": 104, "weight": 800, "case": "none", "spacing": -1, "line": 1.06},
-        "artist": {"size": 32, "weight": 600, "case": "uppercase", "spacing": 6},
+        "primary": {"max_size": 104, "weight": 800, "case": "none", "spacing": -1, "line": 1.06},
+        "secondary": {"size": 32, "weight": 600, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "center", "anchor": "bottom", "bottom_gap": 230,
@@ -230,8 +230,8 @@ STYLES = {
         "label": "Poppy",
         "blurb": "Black type on a bright white card, bouncy entrances, saturated colour behind. Loud and friendly.",
         "font": "display",
-        "title": {"max_size": 88, "weight": 400, "case": "none", "spacing": -1, "line": 1.04},
-        "artist": {"size": 29, "weight": 400, "case": "uppercase", "spacing": 5},
+        "primary": {"max_size": 88, "weight": 400, "case": "none", "spacing": -1, "line": 1.04},
+        "secondary": {"size": 29, "weight": 400, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 500},
         "color": INK,
         # The card is what makes black type safe over arbitrary album art, and
@@ -245,8 +245,8 @@ STYLES = {
         "label": "XL",
         "blurb": "Type as the whole picture. Enormous condensed caps that fill the frame, hard cuts, stark bars.",
         "font": "condensed",
-        "title": {"max_size": 210, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.88},
-        "artist": {"size": 44, "weight": 400, "case": "uppercase", "spacing": 10},
+        "primary": {"max_size": 210, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.88},
+        "secondary": {"size": 44, "weight": 400, "case": "uppercase", "spacing": 10},
         "trivia": {"size": 32, "weight": 500},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 190,
@@ -256,8 +256,8 @@ STYLES = {
         "label": "Liner Notes",
         "blurb": "Monospaced and left-aligned like a sleeve credit. Quiet, factual, text-forward.",
         "font": "mono",
-        "title": {"max_size": 86, "weight": 600, "case": "none", "spacing": -1, "line": 1.14},
-        "artist": {"size": 29, "weight": 500, "case": "uppercase", "spacing": 5},
+        "primary": {"max_size": 86, "weight": 600, "case": "none", "spacing": -1, "line": 1.14},
+        "secondary": {"size": 29, "weight": 500, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 240,
@@ -267,8 +267,8 @@ STYLES = {
         "label": "Slow Ambient",
         "blurb": "Airy letter-spaced serif that drifts in, centred high, over soft flow. For downtempo, jazz and classical.",
         "font": "serif",
-        "title": {"max_size": 90, "weight": 400, "case": "none", "spacing": 1, "line": 1.18},
-        "artist": {"size": 28, "weight": 400, "case": "uppercase", "spacing": 12},
+        "primary": {"max_size": 90, "weight": 400, "case": "none", "spacing": 1, "line": 1.18},
+        "secondary": {"size": 28, "weight": 400, "case": "uppercase", "spacing": 12},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "center", "anchor": "center", "bottom_gap": 0,
@@ -278,8 +278,8 @@ STYLES = {
         "label": "Terminal",
         "blurb": "Titles type themselves out character by character in mono, over scrolling bars. Deliberately machine-like.",
         "font": "mono",
-        "title": {"max_size": 84, "weight": 600, "case": "uppercase", "spacing": 0, "line": 1.12},
-        "artist": {"size": 28, "weight": 500, "case": "uppercase", "spacing": 4},
+        "primary": {"max_size": 84, "weight": 600, "case": "uppercase", "spacing": 0, "line": 1.12},
+        "secondary": {"size": 28, "weight": 500, "case": "uppercase", "spacing": 4},
         "trivia": {"size": 29, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 250,
@@ -289,8 +289,8 @@ STYLES = {
         "label": "Carousel",
         "blurb": "Artwork slides across like a deck of covers while titles push in from the side. Restless and modern.",
         "font": "grotesque",
-        "title": {"max_size": 98, "weight": 800, "case": "none", "spacing": -1, "line": 1.05},
-        "artist": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 6},
+        "primary": {"max_size": 98, "weight": 800, "case": "none", "spacing": -1, "line": 1.05},
+        "secondary": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 225,
@@ -300,8 +300,8 @@ STYLES = {
         "label": "Kinetic",
         "blurb": "Every letter spins into place and the covers spin with them. The loudest option here.",
         "font": "display",
-        "title": {"max_size": 86, "weight": 400, "case": "uppercase", "spacing": 0, "line": 1.04},
-        "artist": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 6},
+        "primary": {"max_size": 86, "weight": 400, "case": "uppercase", "spacing": 0, "line": 1.04},
+        "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 29, "weight": 500},
         "color": WHITE, "panel": None,
         "align": "center", "anchor": "bottom", "bottom_gap": 235,
@@ -311,8 +311,8 @@ STYLES = {
         "label": "Flipboard",
         "blurb": "Letters flip over like an airport board, covers cut hard between tracks. Crisp and rhythmic.",
         "font": "condensed",
-        "title": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.92},
-        "artist": {"size": 36, "weight": 400, "case": "uppercase", "spacing": 8},
+        "primary": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.92},
+        "secondary": {"size": 36, "weight": 400, "case": "uppercase", "spacing": 8},
         "trivia": {"size": 30, "weight": 500},
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 210,
@@ -322,8 +322,8 @@ STYLES = {
         "label": "Confetti",
         "blurb": "Letters fly in from all directions and settle; artwork zooms through. Playful and chaotic.",
         "font": "grotesque",
-        "title": {"max_size": 92, "weight": 900, "case": "none", "spacing": -1, "line": 1.04},
-        "artist": {"size": 30, "weight": 700, "case": "uppercase", "spacing": 5},
+        "primary": {"max_size": 92, "weight": 900, "case": "none", "spacing": -1, "line": 1.04},
+        "secondary": {"size": 30, "weight": 700, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 500},
         "color": INK,
         "panel": {"bg": "rgba(255,255,255,0.95)", "pad": "50px 56px", "radius": 22},
@@ -334,8 +334,8 @@ STYLES = {
         "label": "Tidal",
         "blurb": "Letters rise on an elastic swell, one after another, over slow haze. Big but unhurried.",
         "font": "serif",
-        "title": {"max_size": 104, "weight": 400, "case": "none", "spacing": 0, "line": 1.1},
-        "artist": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 9},
+        "primary": {"max_size": 104, "weight": 400, "case": "none", "spacing": 0, "line": 1.1},
+        "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 9},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
         "align": "center", "anchor": "bottom", "bottom_gap": 240,
@@ -386,16 +386,16 @@ def thumbnail_markup(key: str, palette: dict | None = None) -> str:
     # clamp. XL's 210px would land at 24px here and run straight off the edge,
     # so the ceiling matters more than the ratio -- the tile shows which
     # typeface and how it moves, not the true size.
-    t_px = max(11, min(16, round(st["title"]["max_size"] * 0.115)))
-    a_px = max(6, min(9, round(st["artist"]["size"] * 0.20)))
+    t_px = max(11, min(16, round(st["primary"]["max_size"] * 0.115)))
+    a_px = max(6, min(9, round(st["secondary"]["size"] * 0.20)))
 
     blocks = ""
     for blk, (title, artist) in zip(("a", "b"), PREVIEW_TRACKS):
         blocks += (
             f'<span class="tp-txt tp-txt-{blk} tp-{key}">'
             f'<span class="tp-title" style="font-size:{t_px}px">'
-            f'{_title_spans(title, per_char)}</span>'
-            f'<span class="tp-artist" style="font-size:{a_px}px">{artist}</span>'
+            f'{_title_spans(artist, per_char)}</span>'
+            f'<span class="tp-artist" style="font-size:{a_px}px">{title}</span>'
             f'</span>'
         )
     return svg + blocks
@@ -427,11 +427,11 @@ def preview_layout_css() -> str:
         panel = (" background: rgba(255,255,255,.95); border-radius: 5px;"
                  " padding: 6px 8px; margin: 0 6px;" if st.get("panel") else "")
         shadow = "" if ink else " text-shadow: 0 1px 4px rgba(0,0,0,.8);"
-        case = "uppercase" if st["title"]["case"] == "uppercase" else "none"
+        case = "uppercase" if st["primary"]["case"] == "uppercase" else "none"
         out.append(
             f".tp-{key} {{ font-family: {font}; color: {colour}; {pos}"
             f" align-items: {align}; text-align: {st['align']};"
-            f" font-weight: {st['title']['weight']}; text-transform: {case};"
+            f" font-weight: {st['primary']['weight']}; text-transform: {case};"
             f"{shadow}{panel} }}"
         )
     return "\n".join(out)
@@ -864,7 +864,11 @@ def text_css(style: dict) -> str:
     """CSS for the text roles. Sizes for the title are a ceiling -- compose.py
     steps it down for long titles."""
     font = FONTS[style["font"]]
-    title, artist, trivia = style["title"], style["artist"], style["trivia"]
+    # The artist name is the promo's headline and the track title sits under
+    # it, in every theme. Someone scrolling recognises the artist first -- it is
+    # how a gig poster or a festival lineup is set -- and the hierarchy is a
+    # product decision, so it does not vary per theme.
+    primary, secondary, trivia = style["primary"], style["secondary"], style["trivia"]
     color = style["color"]
     align = style["align"]
     items = "center" if align == "center" else "flex-start"
@@ -894,15 +898,15 @@ def text_css(style: dict) -> str:
   text-align: {align}; {position_css}
 }}
 .meta-inner {{ display: flex; flex-direction: column; align-items: {items}; {panel_css} }}
-.track-title {{
-  font-family: {font}; font-weight: {title['weight']};
-  text-transform: {_case_css(title['case'])}; letter-spacing: {title['spacing']}px;
-  line-height: {title['line']}; color: {color}; text-shadow: {shadow};
-  margin-bottom: 18px; max-width: 950px;
-}}
 .artist-name {{
-  font-family: {font}; font-size: {artist['size']}px; font-weight: {artist['weight']};
-  text-transform: {_case_css(artist['case'])}; letter-spacing: {artist['spacing']}px;
+  font-family: {font}; font-weight: {primary['weight']};
+  text-transform: {_case_css(primary['case'])}; letter-spacing: {primary['spacing']}px;
+  line-height: {primary['line']}; color: {color}; text-shadow: {shadow};
+  margin-bottom: 10px; max-width: 950px;
+}}
+.track-title {{
+  font-family: {font}; font-size: {secondary['size']}px; font-weight: {secondary['weight']};
+  text-transform: {_case_css(secondary['case'])}; letter-spacing: {secondary['spacing']}px;
   color: {color}; text-shadow: {shadow}; margin-bottom: 14px; opacity: 0.92;
 }}
 .trivia-tag {{
@@ -914,11 +918,15 @@ def text_css(style: dict) -> str:
 """
 
 
-def title_size(style: dict, text: str) -> int:
-    """Step the title down for long names so it never overflows the frame.
+def headline_size(style: dict, text: str) -> int:
+    """Step the headline down for long names so it never overflows the frame.
+
+    The headline is the artist, so this has more work to do than it did for
+    track titles -- collaborations like "Local Artist & Joey G ii & Klein Zage"
+    are far longer than most track names.
     Thresholds scale off each style's own ceiling rather than being absolute,
     since a condensed 148px and a serif 112px break at different lengths."""
-    ceiling = style["title"]["max_size"]
+    ceiling = style["primary"]["max_size"]
     n = len(text or "")
     if n <= 14:
         factor = 1.0

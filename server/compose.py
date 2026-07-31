@@ -53,8 +53,8 @@ html, body {
 
 /* Transforms don't apply to inline boxes, so per-character spans have to be
    inline-block. will-change keeps the staggered transforms on the compositor. */
-.track-title .ch { display: inline-block; will-change: transform, opacity; }
-.track-title .ch.sp { white-space: pre; }
+.artist-name .ch { display: inline-block; will-change: transform, opacity; }
+.artist-name .ch.sp { white-space: pre; }
 .scrim { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
 .orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0; z-index: 2; }
 .orb-a { width: 620px; height: 620px; top: 10%; left: 6%; }
@@ -246,10 +246,12 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
 
     hero_html = hero[0] if hero else ""
     display_title = track["title"] + (f" ({track['album']})" if track.get("album") else "")
-    title_size = styles.title_size(style, display_title)
     entrance = styles.ENTRANCES[style["entrance"]]
-    split_title = bool(entrance.get("chars")) and _can_split_chars(display_title)
-    title_markup = _split_chars(display_title) if split_title else _esc(display_title)
+    headline = track["artist"]
+    headline_size = styles.headline_size(style, headline)
+    # The per-character effects apply to the headline, which is the artist.
+    split_title = bool(entrance.get("chars")) and _can_split_chars(headline)
+    headline_markup = _split_chars(headline) if split_title else _esc(headline)
     trivia = track.get("reason", "").strip()
     trivia_html = f'<p id="trivia-{index}" class="trivia-tag">{_esc(trivia)}</p>' if trivia else ""
     scene_html = f"""
@@ -260,8 +262,8 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         {hero_html}
         <div class="meta-container"{rtl}>
           <div id="meta-{index}" class="meta-inner">
-            <h1 id="title-{index}" class="track-title" style="font-size: {title_size}px;">{title_markup}</h1>
-            <p id="artist-{index}" class="artist-name">{_esc(track["artist"])}</p>
+            <p id="artist-{index}" class="artist-name" style="font-size: {headline_size}px;">{headline_markup}</p>
+            <h1 id="title-{index}" class="track-title">{_esc(display_title)}</h1>
             {trivia_html}
             <div class="progress-container">
               <div id="progress-{index}" class="progress-bar" style="background: linear-gradient(90deg, {pal['accent']}, {pal['accent2']});"></div>
@@ -291,9 +293,9 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
                     f'{{ opacity: 1, duration: 0.3 }}, {start + 0.2})\n        .'
                     if has_panel else 'tl.')
         entrance_js = (
-            f'{panel_in}fromTo("#title-{index} .ch", {entrance["from"]}, '
+            f'{panel_in}fromTo("#artist-{index} .ch", {entrance["from"]}, '
             f'Object.assign({entrance["to"]}), {start + 0.25})\n'
-            f'        .fromTo("#artist-{index}", {{ opacity: 0, y: 20 }}, '
+            f'        .fromTo("#title-{index}", {{ opacity: 0, y: 20 }}, '
             f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.55})'
             + (f'\n        .fromTo("#trivia-{index}", {{ opacity: 0, y: 14 }}, '
                f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.7})' if trivia else '')
@@ -307,8 +309,8 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     else:
         text_sel = f'"#title-{index}, #artist-{index}' + (f', #trivia-{index}"' if trivia else '"')
         entrance_js = (
-            f'tl.fromTo("#title-{index}", {entrance["from"]}, Object.assign({entrance["to"]}), {start + 0.25})\n'
-            f'        .fromTo("#artist-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.45})'
+            f'tl.fromTo("#artist-{index}", {entrance["from"]}, Object.assign({entrance["to"]}), {start + 0.25})\n'
+            f'        .fromTo("#title-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.45})'
             + (f'\n        .fromTo("#trivia-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else '')
         )
 
