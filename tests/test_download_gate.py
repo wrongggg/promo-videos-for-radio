@@ -21,7 +21,13 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server"))
 os.environ.setdefault("FLASK_SECRET_KEY", "test-only-not-a-real-key")
+# Point the app at a scratch DATA_DIR before importing it, so the test writes
+# its renders and its credit ledger somewhere disposable instead of into the
+# working copy. app.py resolves DATA_DIR at import time.
+_DATA = tempfile.mkdtemp(prefix="rotation-test-")
+os.environ["DATA_DIR"] = _DATA
 
+import accounts         # noqa: E402
 import app as A          # noqa: E402
 import compose           # noqa: E402
 
@@ -97,6 +103,54 @@ def main():
             check("download is the clean master", which(r.data), "CLEAN")
             check("filename is clean", "-watermarked" not in r.headers.get("Content-Disposition", ""), True)
 
+        print("\nsigned in, no credits:")
+        with A.app.test_client() as c:
+            with c.session_transaction() as s:
+                s["vid"] = "vc1"
+                s["account"] = "broke@example.com"
+            install("vc1")
+            r = c.get(f"/download/{jid}")
+            check("download is watermarked", which(r.data), "WATERMARKED")
+            check("nothing charged", accounts.balance("broke@example.com"), 0)
+
+        print("\nsigned in, with credits:")
+        accounts.grant("payer@example.com", 2, source="test")
+        with A.app.test_client() as c:
+            with c.session_transaction() as s:
+                s["vid"] = "vc2"
+                s["account"] = "payer@example.com"
+            install("vc2")
+            r = c.get(f"/download/{jid}")
+            check("download is the clean master", which(r.data), "CLEAN")
+            check("one credit spent", accounts.balance("payer@example.com"), 1)
+
+            print("\n  re-downloading the same job:")
+            r = c.get(f"/download/{jid}")
+            check("still clean", which(r.data), "CLEAN")
+            check("but not charged twice", accounts.balance("payer@example.com"), 1)
+
+            print("\n  a second, different job:")
+            A.JOBS["other-job"] = dict(A.JOBS[jid])
+            r = c.get("/download/other-job")
+            check("clean", which(r.data), "CLEAN")
+            check("charged again", accounts.balance("payer@example.com"), 0)
+
+            print("\n  now out of credits:")
+            A.JOBS["third-job"] = dict(A.JOBS[jid])
+            r = c.get("/download/third-job")
+            check("falls back to watermarked", which(r.data), "WATERMARKED")
+            check("balance still 0", accounts.balance("payer@example.com"), 0)
+
+        print("\npreview never spends a credit:")
+        accounts.grant("watcher@example.com", 1, source="test")
+        with A.app.test_client() as c:
+            with c.session_transaction() as s:
+                s["vid"] = "vc3"
+                s["account"] = "watcher@example.com"
+            install("vc3")
+            check("preview watermarked", which(c.get(f"/preview/{jid}").data), "WATERMARKED")
+            check("balance untouched", accounts.balance("watcher@example.com"), 1)
+
         print("\nanother visitor's job:")
         with A.app.test_client() as c:
             with c.session_transaction() as s:
@@ -116,6 +170,21 @@ def main():
             r = c.get(f"/download/{jid}")
             check("still owns it after upgrade", r.status_code, 200)
             check("and now gets the master", which(r.data), "CLEAN")
+
+        print("\nsigning out keeps your jobs reachable:")
+        accounts.grant("inout@example.com", 1, source="test")
+        with A.app.test_client() as c:
+            with c.session_transaction() as s:
+                s["vid"] = "vc4"
+            install("vc4")
+            check("owns it anonymously", c.get(f"/download/{jid}").status_code, 200)
+            with c.session_transaction() as s:      # stands in for the OAuth callback
+                s["account"] = "inout@example.com"
+            check("owns it signed in", c.get(f"/download/{jid}").status_code, 200)
+            c.post("/logout")
+            r = c.get(f"/download/{jid}")
+            check("still owns it after signing out", r.status_code, 200)
+            check("and is back to watermarked", which(r.data), "WATERMARKED")
 
         print("\nlegacy owner strings (jobs created before ownership was un-prefixed):")
         for stored in ("anon:v6", "operator:v6", "v6"):

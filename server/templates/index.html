@@ -258,6 +258,33 @@
         .save-theme-row input { flex: 1; }
         .hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
         .preview-empty { color: var(--text-muted); font-size: 14px; text-align: center; padding: 40px 10px; }
+
+        /* --- account / credits --- */
+        .acct-link {
+            all: unset; cursor: pointer; color: var(--text-muted); font-size: 12px;
+            white-space: nowrap; text-decoration: none;
+        }
+        .acct-link:hover { color: var(--text); }
+        .acct-email {
+            font-size: 12px; color: var(--text-muted); max-width: 160px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .acct-credits {
+            font-size: 12px; font-weight: 700; color: var(--accent2);
+            background: rgba(124,58,237,0.1); border-radius: 999px; padding: 3px 10px;
+        }
+        /* Sits under the finished video: says plainly what you're about to get,
+           because "Download MP4" giving you a watermarked file with no warning
+           is the kind of surprise that reads as a bug. */
+        .export-note {
+            margin-top: 12px; font-size: 12px; color: var(--text-muted); line-height: 1.6;
+        }
+        .export-note a, .export-note button.link {
+            all: unset; cursor: pointer; color: var(--accent2); font-weight: 600;
+            text-decoration: underline;
+        }
+        .coupon-row { display: none; gap: 8px; margin-top: 10px; justify-content: center; }
+        .coupon-row input { flex: 0 1 190px; }
     </style>
 </head>
 <body>
@@ -291,6 +318,15 @@
                 </div>
             </div>
             <div style="display:flex; gap:14px; align-items:center; flex-shrink:0; white-space:nowrap;">
+                {% if signed_in %}
+                <span class="acct-credits" id="acctCredits" title="Credits remaining">…</span>
+                <span class="acct-email" title="{{ account }}">{{ account }}</span>
+                <form method="POST" action="{{ url_for('logout') }}" style="margin:0;">
+                    <button type="submit" class="acct-link">Sign out</button>
+                </form>
+                {% elif sign_in_available %}
+                <a class="acct-link" href="{{ url_for('auth_google') }}">Sign in with Google</a>
+                {% endif %}
                 {% if personal_mode %}
                 <a href="{{ url_for('analytics_page') }}" style="color:var(--text-muted); font-size:12px; text-decoration:none; white-space:nowrap;">Analytics</a>
                 <form method="POST" action="{{ url_for('revoke_operator') }}" style="margin:0;">
@@ -435,6 +471,12 @@
         <div class="video-wrap" id="downloadBox">
             <video id="previewPlayer" controls playsinline></video>
             <a id="downloadLink" href="#">Download MP4</a>
+            <div class="export-note" id="exportNote"></div>
+            <div class="coupon-row" id="couponRow">
+                <input type="text" id="couponCode" placeholder="Have a code?">
+                <button type="button" class="secondary" id="couponBtn">Redeem</button>
+            </div>
+            <div class="hint" id="couponHint"></div>
             <div class="save-theme-box" id="saveThemeBox">
                 <div class="save-theme-row">
                     <input type="text" id="saveThemeName" placeholder="Name this theme to reuse it">
@@ -800,6 +842,7 @@ function pollStatus() {
                 downloadBox.style.display = "block";
                 document.getElementById("downloadLink").href = `/download/${currentJobId}`;
                 document.getElementById("previewPlayer").src = `/preview/${currentJobId}`;
+                refreshCredits();
                 renderPaletteAndSave();
                 playChime();
                 if (notifyOnDone) {
@@ -926,6 +969,70 @@ function skipUpload(row) {
 // submit handler, so the form fell back to a native GET.
 loadThemes();
 refreshLogoPreview();
+
+// --- credits ---------------------------------------------------------------
+// The export note exists so "Download MP4" never surprises anyone: a button
+// that silently hands back a watermarked file reads as a bug, not a free tier.
+async function refreshCredits() {
+    const note = document.getElementById("exportNote");
+    const couponRow = document.getElementById("couponRow");
+    const badge = document.getElementById("acctCredits");
+    if (!note) return;
+
+    let c;
+    try {
+        const url = currentJobId ? `/credits?job_id=${encodeURIComponent(currentJobId)}` : "/credits";
+        c = await (await fetch(url)).json();
+    } catch (e) {
+        note.textContent = "";
+        return;
+    }
+
+    if (badge) badge.textContent = c.balance === 1 ? "1 credit" : `${c.balance} credits`;
+    couponRow.style.display = c.signed_in && c.balance === 0 && !c.operator ? "flex" : "none";
+
+    if (c.operator) {
+        note.textContent = "Operator — exports are clean.";
+    } else if (c.paid_for_job) {
+        note.textContent = "You've already paid for this one — downloading again is free.";
+    } else if (c.signed_in && c.balance > 0) {
+        note.textContent = `Downloading uses 1 credit. You have ${c.balance}.`;
+    } else if (c.signed_in) {
+        note.innerHTML = "You're out of credits, so this download will be watermarked.";
+    } else if (c.sign_in_available) {
+        note.innerHTML = 'This download will be watermarked. '
+            + '<a href="/auth/google">Sign in</a> to use a credit for a clean copy.';
+    } else {
+        note.textContent = "This download will be watermarked.";
+    }
+}
+
+const couponBtn = document.getElementById("couponBtn");
+if (couponBtn) {
+    couponBtn.addEventListener("click", async () => {
+        const input = document.getElementById("couponCode");
+        const hint = document.getElementById("couponHint");
+        const code = (input.value || "").trim();
+        if (!code) return;
+        couponBtn.disabled = true;
+        try {
+            const res = await fetch("/credits/redeem", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code }),
+            });
+            const data = await res.json();
+            hint.textContent = data.message || data.error || "";
+            if (data.ok) { input.value = ""; refreshCredits(); }
+        } catch (e) {
+            hint.textContent = "Couldn't reach the server — try again.";
+        } finally {
+            couponBtn.disabled = false;
+        }
+    });
+}
+
+refreshCredits();
 </script>
 </body>
 </html>

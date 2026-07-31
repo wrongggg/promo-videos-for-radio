@@ -30,3 +30,4 @@ server/static/preview/*
 !server/static/preview/README.md
 !server/static/preview/cover-a.jpg
 !server/static/preview/cover-b.jpg
+server/credits.jsonl

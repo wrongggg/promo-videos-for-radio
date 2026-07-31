@@ -7,3 +7,4 @@ static-ffmpeg
 numpy
 pycryptodomex
 gunicorn
+authlib

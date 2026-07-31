@@ -76,24 +76,11 @@ def is_station() -> bool:
     return bool(session.get("station")) or is_operator()
 
 
-# --------------------------------------------------------------------------
-# entitlement (clean, un-watermarked export)
-# --------------------------------------------------------------------------
-
-def can_download_clean() -> bool:
-    """Whether this session may download the un-watermarked master.
-
-    THIS IS THE SEAM FOR BILLING. When the credit ledger lands, this becomes
-    "does the signed-in account have a credit to spend on this job" -- and the
-    spend should be recorded against the job, not the session, so re-downloading
-    a video already paid for stays free.
-
-    Until then only the operator gets clean exports. Everyone else can still
-    generate and download, they just get the watermarked cut -- which is the
-    intended free tier, not a punishment: those videos going out with the
-    wordmark on them is the marketing.
-    """
-    return is_operator()
+# Entitlement to the clean export used to live here as can_download_clean().
+# It moved to app._clean_export_allowed once the credit ledger landed: the
+# decision now needs the signed-in account *and* the job id (spending is
+# idempotent per job, so a re-download is free), neither of which this module
+# should know about.
 
 
 def token_matches(token: str) -> bool:

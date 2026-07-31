@@ -6,12 +6,14 @@ import traceback
 import uuid
 from functools import wraps
 
+from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 import access
+import accounts
 import analytics
 import audio_analysis
 import compose
@@ -82,6 +84,31 @@ app.secret_key = _load_or_create_secret_key()
 # cookie `Secure` handling). Trust one proxy hop for proto/host.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 JOBS = {}
+
+# Google sign-in. Optional: with no credentials configured the app runs exactly
+# as it did before, everyone anonymous and watermarked. That keeps local dev and
+# the free tier working without anyone having to touch a Google Cloud console.
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+oauth = OAuth(app)
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    oauth.register(
+        name="google",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+
+def sign_in_available() -> bool:
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
+
+def current_account() -> str | None:
+    """The signed-in email, or None. Signing in is never required to generate --
+    it only decides whether credits can be spent on a clean export."""
+    return session.get("account")
 
 def admin_required(view):
     @wraps(view)
@@ -449,6 +476,75 @@ def _run_render_stage(job_id):
         analytics.record_job_done(job_id, "failed")
 
 
+@app.route("/auth/google")
+def auth_google():
+    if not sign_in_available():
+        return "Google sign-in isn't configured (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET).", 503
+    session["post_login_redirect"] = request.args.get("next") or url_for("index")
+    return oauth.google.authorize_redirect(url_for("auth_google_callback", _external=True))
+
+
+@app.route("/auth/google/callback")
+def auth_google_callback():
+    if not sign_in_available():
+        return "Google sign-in isn't configured.", 503
+    try:
+        token = oauth.google.authorize_access_token()
+    except Exception:
+        # A stale/replayed callback (back button, expired state) must land the
+        # visitor back on a working page, not a 500.
+        return redirect(url_for("index", signin="failed"))
+
+    userinfo = token.get("userinfo") or {}
+    email = userinfo.get("email")
+    if not email or not userinfo.get("email_verified"):
+        return redirect(url_for("index", signin="unverified"))
+
+    # Deliberately NOT session.clear(). The old sign-in did, and here that would
+    # discard "vid" -- the id every job is owned by -- so anyone who generated a
+    # promo and then signed in to export it would lose the job they came to buy.
+    # Only the operator flag is dropped, since that is granted per browser by a
+    # token and shouldn't silently ride along into a different account.
+    session.pop("operator", None)
+    session["account"] = accounts.normalize(email)
+    session.permanent = True
+    return redirect(session.pop("post_login_redirect", None) or url_for("index"))
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    """Signs out without touching "vid", so the jobs made in this browser are
+    still reachable afterwards."""
+    session.pop("account", None)
+    return redirect(url_for("index"))
+
+
+@app.route("/credits")
+def credits_status():
+    """Balance for the header. Also reports whether sign-in is even available,
+    so the UI can hide the button rather than offer a 503."""
+    account = current_account()
+    payload = {"signed_in": bool(account), "account": account,
+               "sign_in_available": sign_in_available(), "operator": access.is_operator()}
+    payload.update(accounts.summary(account) if account else
+                   {"balance": 0, "expiring": 0, "next_expiry": None, "videos_paid_for": 0})
+    # Whether this particular video is already paid for, so the UI can say
+    # "already yours" instead of threatening to charge again for a re-download.
+    job_id = request.args.get("job_id")
+    payload["paid_for_job"] = bool(account and job_id and accounts.has_paid_for(account, job_id))
+    return jsonify(payload)
+
+
+@app.route("/credits/redeem", methods=["POST"])
+def redeem_coupon():
+    account = current_account()
+    if not account:
+        return jsonify({"error": "Sign in to redeem a code."}), 401
+    code = (request.get_json(force=True, silent=True) or {}).get("code", "")
+    ok, message = accounts.redeem(account, code)
+    return jsonify({"ok": ok, "message": message, "balance": accounts.balance(account)}), (200 if ok else 400)
+
+
 @app.route("/o/<token>")
 def grant_operator(token):
     """The operator's private door. Visit once per browser; the session flag
@@ -494,6 +590,9 @@ def index():
         station_mode=access.is_station(),
         station_logo_url=url_for("static", filename=os.path.basename(compose.DEFAULT_LOGO_PATH)),
         max_manual_tracks=MAX_MANUAL_TRACKS_NON_ADMIN,
+        signed_in=bool(current_account()),
+        account=current_account(),
+        sign_in_available=sign_in_available(),
     )
 
 
@@ -748,16 +847,33 @@ def preview_video(job_id):
     return send_file(_served_path(job, clean=False))
 
 
+def _clean_export_allowed(job_id: str) -> bool:
+    """Whether to hand over the un-watermarked master -- and the point where a
+    credit is actually spent.
+
+    One credit buys one clean export. accounts.spend is idempotent per job, so
+    re-downloading a video this account already paid for costs nothing; that is
+    why the job id is threaded all the way down here rather than the decision
+    being made from the session alone.
+    """
+    if access.is_operator():
+        return True
+    account = current_account()
+    if not account:
+        return False
+    return accounts.spend(account, job_id)
+
+
 @app.route("/download/<job_id>")
 def download(job_id):
-    """The export. Entitled sessions get the clean master; everyone else gets
-    the same watermarked cut they were watching."""
+    """The export. A credit (or operator status) gets the clean master;
+    everyone else gets the same watermarked cut they were watching."""
     job = JOBS.get(job_id)
     if not _owns_job(job):
         return jsonify({"error": "not your job"}), 403
     if job["status"] != "done":
         return jsonify({"error": "not ready"}), 400
-    clean = access.can_download_clean()
+    clean = _clean_export_allowed(job_id)
     analytics.record_download(job_id, access.visitor_id())
     suffix = "" if clean else "-watermarked"
     return send_file(
