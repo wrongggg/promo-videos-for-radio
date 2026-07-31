@@ -35,10 +35,19 @@ def _env(name: str) -> str:
     return os.environ.get(name) or ""
 
 
-# Jobs per IP per rolling 24h for anonymous visitors. Generous enough that a
-# radio producer making promos all afternoon never notices, low enough that a
-# scraper can't run up an API bill. The operator is exempt.
-DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "25"))
+# Jobs per IP per rolling 24h for anonymous visitors. The operator is exempt.
+#
+# This was 25 back when generating was the whole product and the only risk was a
+# scraper running up an Anthropic bill. Now that a free render is the marketing
+# for a paid export, the number that matters is "enough to be convinced, not
+# enough to never need an account": a weekly show makes one promo a week, so
+# three a day is already generous, and anyone who genuinely wants more is the
+# person we want signing in.
+#
+# Deliberately still per-IP and not per-account: this cap has to hold for
+# visitors who have not signed in, which is exactly when we know least about
+# them. Raise it with DAILY_JOB_LIMIT if a station behind one NAT complains.
+DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "3"))
 _WINDOW = 24 * 3600
 
 _lock = threading.Lock()

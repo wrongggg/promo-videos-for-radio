@@ -1,7 +1,9 @@
 import json
 import os
 import secrets
+import shutil
 import threading
+import time
 import traceback
 import uuid
 from functools import wraps
@@ -35,6 +37,17 @@ RENDERS_DIR = os.path.join(DATA_DIR, "renders")
 THEMES_PATH = os.path.join(DATA_DIR, "themes.json")
 ENV_PATH = os.path.join(PROJECT_DIR, ".env")
 os.makedirs(RENDERS_DIR, exist_ok=True)
+
+# How long a finished job's files stay on disk. Nothing cleaned up renders/
+# before this, and a finished job leaves roughly 37 MB there: a ~19 MB master, a
+# watermarked copy of it, and the per-track clips that were downloaded to build
+# them. On a mounted volume that is billed and it grows without bound -- it was
+# on track to become the single largest running cost of the whole tool.
+#
+# A week is well past the point anyone comes back for a promo about an episode
+# that has already aired. Set 0 to keep everything forever.
+RENDER_RETENTION_DAYS = float(os.environ.get("RENDER_RETENTION_DAYS", "7"))
+_prune_lock = threading.Lock()
 
 DEFAULT_SHOW_NAME = "Pop Lock"
 VIDEO_RATIO_TARGET = 0.6
@@ -123,6 +136,62 @@ def admin_required(view):
 
 def _log(job, message):
     job["log"].append(message)
+
+
+def _is_job_dir(name: str) -> bool:
+    """Job directories are named with uuid4. Anything else in renders/ was put
+    there by hand -- theme experiments, a keeper -- and must survive pruning."""
+    try:
+        uuid.UUID(name)
+        return True
+    except ValueError:
+        return False
+
+
+def prune_old_renders() -> int:
+    """Deletes finished jobs' files once they're past RENDER_RETENTION_DAYS.
+    Returns how many directories went. Never raises: losing a cleanup pass is
+    survivable, taking down a render because of one is not.
+
+    Only jobs that are actually finished are eligible. Skipping everything still
+    in JOBS would be wrong in a long-lived process -- JOBS never evicts, so every
+    job made since the last restart would be protected forever and the directory
+    would grow exactly as it does now.
+    """
+    if RENDER_RETENTION_DAYS <= 0:
+        return 0
+    cutoff = time.time() - RENDER_RETENTION_DAYS * 86400
+    removed = 0
+    with _prune_lock:
+        try:
+            names = os.listdir(RENDERS_DIR)
+        except OSError:
+            return 0
+        for name in names:
+            if not _is_job_dir(name):
+                continue
+            job = JOBS.get(name)
+            if job is not None and job.get("status") not in ("done", "failed"):
+                continue
+            path = os.path.join(RENDERS_DIR, name)
+            try:
+                if not os.path.isdir(path) or os.path.getmtime(path) >= cutoff:
+                    continue
+                shutil.rmtree(path)
+                # Drop the tracking entry too, so a download attempt afterwards
+                # gets a clean "no such job" rather than send_file blowing up on
+                # a path that is no longer there.
+                JOBS.pop(name, None)
+                removed += 1
+            except OSError:
+                continue
+    return removed
+
+
+# A pass at import as well as after each render: a container that has been idle
+# (or asleep) for a week would otherwise sit on a full disk until somebody
+# happened to generate something.
+prune_old_renders()
 
 
 def _load_saved_themes():
@@ -468,6 +537,10 @@ def _run_render_stage(job_id):
         job["watermarked_path"] = watermarked
         _log(job, "Done!")
         analytics.record_job_done(job_id, "done")
+        # Piggy-backing cleanup on renders means disk gets reclaimed in
+        # proportion to how hard the tool is being used, with no scheduler and
+        # no extra process to babysit.
+        prune_old_renders()
     except Exception as e:
         job["status"] = "failed"
         job["error"] = str(e)
