@@ -117,6 +117,19 @@ def main():
             check("still owns it after upgrade", r.status_code, 200)
             check("and now gets the master", which(r.data), "CLEAN")
 
+        print("\nlegacy owner strings (jobs created before ownership was un-prefixed):")
+        for stored in ("anon:v6", "operator:v6", "v6"):
+            with A.app.test_client() as c:
+                with c.session_transaction() as s:
+                    s["vid"] = "v6"
+                install(stored)
+                check(f"owner={stored!r} still matches", c.get(f"/download/{jid}").status_code, 200)
+        with A.app.test_client() as c:
+            with c.session_transaction() as s:
+                s["vid"] = "v7"
+            install("anon:someone-else")
+            check("but a different id still refused", c.get(f"/download/{jid}").status_code, 403)
+
         print("\nlegacy job with no watermarked copy:")
         with A.app.test_client() as c:
             with c.session_transaction() as s:

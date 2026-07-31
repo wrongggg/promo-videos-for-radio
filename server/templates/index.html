@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Radio Promo Video Generator</title>
+    <title>Rotation — promo videos for radio</title>
+    <!-- Inline SVG favicon: no extra file to serve, and it stays in sync with
+         the wordmark mark below since both are the same drawing. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23d6336c'/%3E%3Cstop offset='1' stop-color='%237c3aed'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23fff' stroke-width='3.5' opacity='.55'/%3E%3Ccircle cx='32' cy='32' r='8.5' fill='none' stroke='%23fff' stroke-width='3.5'/%3E%3Ccircle cx='32' cy='32' r='2.6' fill='%23fff'/%3E%3C/svg%3E">
     <style>
         :root {
             --bg: #f5f5f7;
@@ -37,7 +40,7 @@
         .blob2 { width: 32vw; height: 32vw; background: radial-gradient(circle, #a78bfa 0%, rgba(167,139,250,0) 68%); bottom: -8%; right: -2%; animation: drift2 32s ease-in-out infinite; }
         .blob3 { width: 26vw; height: 26vw; background: radial-gradient(circle, #e879f9 0%, rgba(232,121,249,0) 68%); top: 34%; right: 24%; animation: drift3 22s ease-in-out infinite; opacity: 0.3; }
         @media (prefers-reduced-motion: reduce) {
-            .blob { animation: none; }
+            .blob, .brand-mark .grooves { animation: none; }
         }
         @keyframes drift1 {
             0%, 100% { transform: translate(0, 0) scale(1); }
@@ -85,6 +88,19 @@
         h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.3px; }
         .subtitle { color: var(--text-muted); margin: 0 0 26px; font-size: 14px; }
 
+        /* --- brand lockup --- */
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-mark { width: 40px; height: 40px; flex-shrink: 0; display: block; }
+        .brand-mark .grooves { transform-origin: 32px 32px; animation: spin 14s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .wordmark {
+            font-size: 27px; font-weight: 700; margin: 0; letter-spacing: -0.6px; line-height: 1.05;
+            background: linear-gradient(96deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }
+        .brand .subtitle { margin: 3px 0 0; font-size: 13.5px; }
+        .brand-head { margin-bottom: 26px; }
+
         .form-group { margin-bottom: 18px; }
         label {
             display: block; margin-bottom: 7px; font-weight: 600; font-size: 11px;
@@ -115,6 +131,12 @@
         select { appearance: none; -webkit-appearance: none; cursor: pointer; }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+        /* Pace / Language / Logo. The two selects are short values, so they get
+           narrow fixed columns and the logo control takes the rest. */
+        .row-bottom {
+            display: grid; grid-template-columns: minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.6fr);
+            gap: 12px; align-items: start;
+        }
 
         /* segmented control */
 {{ theme_preview_css|safe }}
@@ -247,10 +269,26 @@
 
 <div class="layout">
     <div class="panel">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-                <h1>Radio Promo Video Generator</h1>
-                <p class="subtitle">Paste a tracklist, get a 9:16 promo video.</p>
+        <div class="brand-head" style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div class="brand">
+                <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="var(--accent)"/>
+                            <stop offset="1" stop-color="var(--accent2)"/>
+                        </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" rx="16" fill="url(#brandGrad)"/>
+                    <g class="grooves" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round">
+                        <path d="M32 15a17 17 0 1 1-12.02 4.98" opacity=".55"/>
+                        <circle cx="32" cy="32" r="8.5"/>
+                    </g>
+                    <circle cx="32" cy="32" r="2.6" fill="#fff"/>
+                </svg>
+                <div>
+                    <h1 class="wordmark">Rotation</h1>
+                    <p class="subtitle">Music showcase reel for your radio show or event, ready to share.</p>
+                </div>
             </div>
             <div style="display:flex; gap:14px; align-items:center; flex-shrink:0; white-space:nowrap;">
                 {% if personal_mode %}
@@ -275,9 +313,9 @@
             </div>
 
             <div class="form-group">
-                <label>Tracklist (one per line, "Artist - Title")</label>
+                <label>Tracklist</label>
                 <textarea id="tracklistInput" name="tracklist" required placeholder="Four Tet - Baby&#10;Bicep - Glue&#10;Overmono - So U Kno"></textarea>
-                <p class="hint">Format: <strong>Artist - Title</strong>, e.g. "Four Tet - Baby". Artist must come first.</p>
+                <p class="hint">One per line, as <strong>Artist - Title</strong> — artist first.</p>
             </div>
 
             {% if personal_mode %}
@@ -299,15 +337,6 @@
                 <div class="form-group" id="numStandoutGroup" style="display:none;">
                     <label title="Number of standout tracks">Tracks</label>
                     <input type="number" name="num_standout" value="5" min="2" max="15">
-                </div>
-                <div class="form-group">
-                    <label>Pace</label>
-                    <select name="pace">
-                        <option value="chill">Chill</option>
-                        <option value="normal" selected>Normal</option>
-                        <option value="fast">Fast</option>
-                        <option value="hyper">Hyper</option>
-                    </select>
                 </div>
             </div>
 
@@ -339,9 +368,18 @@
                 <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
             </div>
 
-            <div class="row">
+            <div class="row-bottom">
                 <div class="form-group">
-                    <label>On-screen language</label>
+                    <label>Pace</label>
+                    <select name="pace">
+                        <option value="chill">Chill</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="fast">Fast</option>
+                        <option value="hyper">Hyper</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Language</label>
                     <select name="language" id="languageInput">
                         {% for l in language_choices %}
                         <option value="{{ l.code }}"{% if l.code == 'en' %} selected{% endif %}>{{ l.label }}</option>
@@ -872,7 +910,10 @@ function skipUpload(row) {
             pollStatus();
         })
         .catch((err) => {
-            status.textContent = "Failed — try again";
+            // Show what the server actually said. A generic "Failed" hid a
+            // 403 "not your job" behind the same text as a network blip,
+            // which made a real bug look like a flaky click.
+            status.textContent = err.message ? `Failed — ${err.message}` : "Failed — try again";
             row.querySelector("input").disabled = false;
             row.querySelector(".skip-btn").disabled = false;
         });

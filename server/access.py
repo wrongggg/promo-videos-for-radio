@@ -126,10 +126,11 @@ def owner_id() -> str:
     change when the session's privileges change.
 
     visitor_id() folds the operator/anon distinction into the string, which is
-    right for analytics and wrong for ownership: the moment a session gained
-    (or lost) a privilege, its id changed and it was locked out of every job it
-    had already created. That is precisely the paid flow -- generate a promo,
-    then pay, then download -- so ownership keys off this bare id instead."""
+    right for analytics and wrong for ownership: the moment a session gained or
+    lost a privilege its id changed and it was locked out of every job it had
+    already created -- a 403 on upload, skip, preview and download. It is also
+    exactly the paid flow (generate a promo, then pay, then download), so
+    ownership keys off this bare id instead."""
     vid = session.get("vid")
     if not vid:
         vid = secrets.token_hex(8)

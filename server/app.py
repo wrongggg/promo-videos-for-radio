@@ -624,7 +624,15 @@ def start():
 
 
 def _owns_job(job) -> bool:
-    return job is not None and job.get("owner") == access.owner_id()
+    """Ownership keys off the bare browser id, not the analytics label.
+
+    The stored value is split on ':' so jobs created before this fix -- whose
+    owner was recorded as "anon:<id>" or "operator:<id>" -- still match after a
+    deploy, instead of every in-flight job 403ing."""
+    if job is None:
+        return False
+    stored = (job.get("owner") or "").split(":", 1)[-1]
+    return stored == access.owner_id()
 
 
 @app.route("/status/<job_id>")
