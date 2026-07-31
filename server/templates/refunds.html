@@ -1,0 +1,67 @@
+{% extends "legal_base.html" %}
+{% block title %}Refund Policy{% endblock %}
+{% block heading %}Refund Policy{% endblock %}
+{% block body %}
+
+<p>We want you to only pay for videos you actually want. This policy explains
+when you can get your money back and how to ask.</p>
+
+<h2>Try it before you pay</h2>
+<p>You do not need to pay to find out whether {{ brand_name }} works for your show.
+Generating a video is free and always has been — you can watch the finished
+result in full before spending anything. A credit is only spent when you download
+a video <em>without</em> the watermark.</p>
+
+<h2>Unused credits</h2>
+<p>If you change your mind, we will refund any credits you have bought and not
+yet spent, in full, for <strong>30 days</strong> after purchase. No explanation
+needed.</p>
+
+<h2>Spent credits</h2>
+<p>A credit is spent when you download a watermark-free video, at which point you
+have the file. Those credits are not normally refundable. That said, if something
+went wrong — the video was broken, the wrong tracks were used, the export
+failed — contact us and we will refund the credit or replace it. We would rather
+fix it than argue about it.</p>
+
+<h2>Subscriptions</h2>
+<ul>
+  <li>You can cancel at any time. Cancelling stops future renewals; you keep
+      access and your remaining credits until the end of the period you already
+      paid for.</li>
+  <li>If you cancel within <strong>30 days</strong> of your first payment and
+      have not spent any credits from it, we will refund that payment in full.</li>
+  <li>We do not automatically refund part-used periods after that, but if you
+      were charged for a renewal you did not intend and have not used, write to
+      us — we will refund it.</li>
+</ul>
+
+<h2>Failed renders</h2>
+<p>If a video fails to render, you are not charged. Credits are only spent on a
+successful watermark-free download, so there is nothing to refund.</p>
+
+<h2>Statutory rights</h2>
+<p>If you are a consumer in the EU or UK, you have a statutory right to withdraw
+from a purchase within 14 days. Because credits are digital content supplied
+immediately, that right ends once you spend a credit — but it applies in full to
+credits you have not spent, and this policy is more generous than the minimum in
+any case. Nothing here affects rights you have under the consumer law of your
+country.</p>
+
+<h2>How to request a refund</h2>
+<p>Purchases are processed by our reseller <strong>Paddle.com Market Ltd</strong>,
+which acts as the merchant of record and issues refunds.</p>
+<ul>
+  <li>{% if support_email %}Email us at
+      <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %}
+      Email us{% endif %} with the address you signed in with and roughly when
+      you bought. We will arrange it with Paddle.</li>
+  <li>Or contact Paddle directly at
+      <a href="https://paddle.net" rel="noopener">paddle.net</a>, which is the
+      buyer support portal shown on your receipt.</li>
+</ul>
+<p>We aim to answer within 3 business days. Approved refunds go back to your
+original payment method; how quickly it appears is up to your bank, typically
+within 5–10 business days.</p>
+
+{% endblock %}

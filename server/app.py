@@ -49,6 +49,15 @@ os.makedirs(RENDERS_DIR, exist_ok=True)
 RENDER_RETENTION_DAYS = float(os.environ.get("RENDER_RETENTION_DAYS", "7"))
 _prune_lock = threading.Lock()
 
+# Branding, in one place because it appears in the wordmark, the legal pages and
+# (via tools/make_watermark.py) burned into every free video. The name is not
+# finally settled, so nothing hardcodes it.
+BRAND_NAME = os.environ.get("BRAND_NAME", "Rotation")
+# Paddle's domain review requires the seller's legal name in the T&Cs and a
+# working contact address on the site. Both must be set before submitting.
+LEGAL_ENTITY_NAME = os.environ.get("LEGAL_ENTITY_NAME", "")
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")
+
 DEFAULT_SHOW_NAME = "Pop Lock"
 VIDEO_RATIO_TARGET = 0.6
 MAX_EXTRA_FETCH_ATTEMPTS = 8
@@ -116,6 +125,17 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
 
 def sign_in_available() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
+
+@app.context_processor
+def inject_brand():
+    """Available to every template, so the name lives in one place."""
+    return {
+        "brand_name": BRAND_NAME,
+        "legal_entity_name": LEGAL_ENTITY_NAME,
+        "support_email": SUPPORT_EMAIL,
+        "retention_days": int(RENDER_RETENTION_DAYS),
+    }
 
 
 def current_account() -> str | None:
@@ -547,6 +567,28 @@ def _run_render_stage(job_id):
         _log(job, f"ERROR: {e}")
         traceback.print_exc()
         analytics.record_job_done(job_id, "failed")
+
+
+# Paddle's domain review requires terms, a refund policy and a privacy policy,
+# each reachable from the site's navigation rather than buried. LAST_UPDATED is
+# a constant so the date reflects when the wording actually changed, not when
+# the container last restarted.
+LEGAL_LAST_UPDATED = "31 July 2026"
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html", page="terms", last_updated=LEGAL_LAST_UPDATED)
+
+
+@app.route("/refunds")
+def refunds():
+    return render_template("refunds.html", page="refunds", last_updated=LEGAL_LAST_UPDATED)
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html", page="privacy", last_updated=LEGAL_LAST_UPDATED)
 
 
 @app.route("/auth/google")

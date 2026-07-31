@@ -285,6 +285,16 @@
         }
         .coupon-row { display: none; gap: 8px; margin-top: 10px; justify-content: center; }
         .coupon-row input { flex: 0 1 190px; }
+
+        /* Paddle's domain review wants terms, refunds and privacy reachable from
+           navigation rather than buried, so they sit in a real footer. */
+        .site-footer {
+            display: flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+            align-items: center; padding: 22px 20px 8px; font-size: 12px;
+            color: var(--text-muted);
+        }
+        .site-footer a { color: var(--text-muted); text-decoration: none; }
+        .site-footer a:hover { color: var(--text); text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -313,7 +323,7 @@
                     <circle cx="32" cy="32" r="2.6" fill="#fff"/>
                 </svg>
                 <div>
-                    <h1 class="wordmark">Rotation</h1>
+                    <h1 class="wordmark">{{ brand_name }}</h1>
                     <p class="subtitle">Music showcase reel for your radio show or event, ready to share.</p>
                 </div>
             </div>
@@ -487,6 +497,14 @@
         </div>
     </div>
 </div>
+
+<footer class="site-footer">
+    <a href="{{ url_for('terms') }}">Terms</a>
+    <a href="{{ url_for('refunds') }}">Refunds</a>
+    <a href="{{ url_for('privacy') }}">Privacy</a>
+    {% if support_email %}<a href="mailto:{{ support_email }}">Contact</a>{% endif %}
+    {% if legal_entity_name %}<span>© {{ legal_entity_name }}</span>{% endif %}
+</footer>
 
 <script>
 const PERSONAL_MODE = {{ "true" if personal_mode else "false" }};

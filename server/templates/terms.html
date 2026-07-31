@@ -1,0 +1,106 @@
+{% extends "legal_base.html" %}
+{% block title %}Terms and Conditions{% endblock %}
+{% block heading %}Terms and Conditions{% endblock %}
+{% block body %}
+
+<p>These terms govern your use of {{ brand_name }} (the “Service”), operated by
+{{ legal_entity_name or "[LEGAL_ENTITY_NAME not set]" }} (“we”, “us”). By using the
+Service you agree to them. If you do not agree, please don’t use the Service.</p>
+
+<h2>1. What the Service does</h2>
+<p>{{ brand_name }} turns a list of tracks into a short vertical promo video for a
+radio show, mix, podcast episode or event. You supply a tracklist and some
+details; we find matching artwork, short audio previews and video from public
+and licensed music catalogue APIs, and assemble them into a video you can
+download.</p>
+
+<h2>2. Accounts</h2>
+<p>You can generate videos without an account. Signing in with Google is only
+needed to hold credits and download videos without a watermark. You are
+responsible for activity under your account and for keeping access to your email
+address secure. One person or organisation per account; don’t share credentials.</p>
+
+<h2>3. Credits, plans and the watermark</h2>
+<ul>
+  <li>Videos generated without credits are free and are exported with a
+      {{ brand_name }} watermark across the frame.</li>
+  <li><strong>One credit buys one watermark-free export.</strong> Generating a video
+      never costs a credit, so a render you don’t like costs you nothing.</li>
+  <li>Downloading a video you have already paid for again does not cost another
+      credit.</li>
+  <li>Credits included with a subscription are valid for that billing period and
+      do not roll over. Credits bought as a one-off pack, or granted by a code,
+      do not expire.</li>
+  <li>Credits have no cash value, are not transferable between accounts, and
+      cannot be exchanged for money except as described in our
+      <a href="{{ url_for('refunds') }}">Refund Policy</a>.</li>
+</ul>
+<p>You may not remove, crop, obscure or otherwise circumvent the watermark on a
+free export, or attempt to obtain a watermark-free file without spending a
+credit.</p>
+
+<h2>4. Your content</h2>
+<p>You keep ownership of what you provide — tracklists, show names, and any logo
+you upload. You grant us only the permission needed to run the Service: to
+process that material, and to store it for as long as your video is retained
+(see <a href="{{ url_for('privacy') }}">Privacy</a>).</p>
+<p>By uploading a logo or other image you confirm you have the right to use it.
+Don’t upload anything you don’t have permission to use.</p>
+
+<h2>5. Music, artwork and third-party material</h2>
+<p>Videos are assembled from short previews and artwork supplied by third-party
+music catalogue services, including the Apple iTunes Search API, Deezer,
+MusicBrainz and the Cover Art Archive. We do not own that material and we do not
+grant you any rights in it. Your use of a finished video must comply with those
+providers’ terms and with copyright law in your country.</p>
+<p>{{ brand_name }} is a tool for promoting shows and events. It is your
+responsibility to make sure that how and where you publish a video — including
+any licence you need from rights holders or a collecting society — is lawful. We
+provide no clearance, licence or legal assurance for any use of the output.</p>
+
+<h2>6. Acceptable use</h2>
+<p>Don’t use the Service to: break the law or infringe anyone’s rights; produce
+misleading, hateful or harassing material; attempt to overload, probe or
+circumvent rate limits and access controls; scrape or resell the Service; or
+present the output as an official release of an artist or label you don’t
+represent.</p>
+
+<h2>7. Availability</h2>
+<p>The Service is provided on an “as is” and “as available” basis. It is a small,
+independently run product: there is no uptime guarantee, features may change,
+and rendering can fail. If a render fails you are not charged, because credits
+are only spent on a successful watermark-free download.</p>
+
+<h2>8. Liability</h2>
+<p>To the fullest extent permitted by law, we are not liable for indirect or
+consequential loss, lost profits, lost bookings, or loss of data. Our total
+liability for any claim relating to the Service is limited to the amount you paid
+us in the twelve months before the claim arose. Nothing here limits liability
+that cannot lawfully be limited.</p>
+
+<h2>9. Payments</h2>
+<p>Purchases are handled by our reseller Paddle.com Market Ltd, which acts as the
+merchant of record. Paddle’s own terms apply to the transaction, and Paddle is
+responsible for billing, invoicing and applicable sales tax or VAT. We never
+receive or store your card details.</p>
+
+<h2>10. Suspension and termination</h2>
+<p>You can stop using the Service at any time. We may suspend or close an account
+that breaches these terms. If we close your account without cause, we will refund
+any unused credits you paid for.</p>
+
+<h2>11. Changes</h2>
+<p>We may update these terms. Material changes will be reflected in the “last
+updated” date above, and continued use after a change means you accept it.</p>
+
+<h2>12. Governing law</h2>
+<p>These terms are governed by the laws of the State of Israel, and the competent
+courts of Israel have exclusive jurisdiction — except where consumer protection
+law in your country of residence gives you the right to bring proceedings
+locally.</p>
+
+<h2>13. Contact</h2>
+<p>{% if support_email %}Questions: <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+{% else %}[SUPPORT_EMAIL not set]{% endif %}</p>
+
+{% endblock %}
