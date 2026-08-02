@@ -34,6 +34,62 @@ THEMES_PATH = os.path.join(DATA_DIR, "themes.json")
 ENV_PATH = os.path.join(PROJECT_DIR, ".env")
 os.makedirs(RENDERS_DIR, exist_ok=True)
 
+# The renderer serves the composition with PROJECT_DIR as its document root, so
+# every media src in index.html has to name a path *inside* the project. With
+# DATA_DIR on a mounted volume the job media sits outside it, and the obvious
+# relpath produces "../data/renders/<job>/track0_audio.m4a" -- which the
+# renderer's lint rejects (invalid_parent_traversal_in_asset_path) and Studio
+# preview 404s on. Bridging the volume back in as PROJECT_DIR/renders makes the
+# hosted src identical to the local-dev one: "renders/<job>/track0_audio.m4a".
+RENDERS_LINK = os.path.join(PROJECT_DIR, "renders")
+
+
+def _bridge_renders_dir() -> bool:
+    """Expose RENDERS_DIR at PROJECT_DIR/renders. No-op in local dev, where
+    DATA_DIR is the project dir and the two are already the same path."""
+    if os.path.realpath(RENDERS_LINK) == os.path.realpath(RENDERS_DIR):
+        return True
+    if os.path.islink(RENDERS_LINK):
+        os.unlink(RENDERS_LINK)  # stale link from an earlier DATA_DIR
+    elif os.path.exists(RENDERS_LINK):
+        # A leftover real directory from a run without DATA_DIR set. Never
+        # delete it -- it may hold someone's renders -- but say so loudly,
+        # because every composition built from here on carries broken paths.
+        print(f"WARNING: {RENDERS_LINK} is a real directory but DATA_DIR points at "
+              f"{DATA_DIR}. Move it aside so the volume can be linked in; until then "
+              f"compositions will reference media above the project root.", flush=True)
+        return False
+    try:
+        os.symlink(RENDERS_DIR, RENDERS_LINK)
+    except OSError as e:
+        # A read-only project dir or a filesystem without symlinks. Degraded,
+        # not fatal: renders still work (the renderer copies out-of-project
+        # assets), but lint errors and Studio preview 404s come back.
+        print(f"WARNING: could not link {RENDERS_DIR} to {RENDERS_LINK} ({e}); "
+              f"compositions will reference media above the project root.", flush=True)
+        return False
+    return True
+
+
+RENDERS_BRIDGED = _bridge_renders_dir()
+
+
+def _composition_path(path):
+    """A media path as the composition must reference it: relative to
+    PROJECT_DIR, never escaping it. Job media is addressed through the
+    RENDERS_LINK bridge; anything already in the project (the bundled logo)
+    by plain relpath."""
+    if not path:
+        return path
+    if not os.path.isabs(path):
+        return path  # already project-relative (e.g. compose.DEFAULT_LOGO_PATH)
+    real = os.path.realpath(path)
+    root = os.path.realpath(RENDERS_DIR)
+    if RENDERS_BRIDGED and (real == root or real.startswith(root + os.sep)):
+        return os.path.join("renders", os.path.relpath(real, root))
+    return os.path.relpath(path, PROJECT_DIR)
+
+
 DEFAULT_SHOW_NAME = "Pop Lock"
 VIDEO_RATIO_TARGET = 0.6
 MAX_EXTRA_FETCH_ATTEMPTS = 8
@@ -317,10 +373,15 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
             if t.artist.lower() not in chosen_artists
         ]
 
+        # Paths stay absolute in job state. Everything on this side reads them
+        # off disk, and the cwd differs between local dev (the project dir) and
+        # the container (gunicorn runs with --chdir server), so a relative path
+        # here silently fails os.path.exists in _analyze_scene_audio. They are
+        # made document-root-relative once, in _run_render_stage.
         standout = [{"track": r["track"], "media": {
-            "video": os.path.relpath(r["media"]["video"], PROJECT_DIR) if r["media"]["video"] else None,
-            "audio": os.path.relpath(r["media"]["audio"], PROJECT_DIR) if r["media"]["audio"] else None,
-            "image": os.path.relpath(r["media"]["image"], PROJECT_DIR) if r["media"]["image"] else None,
+            "video": r["media"]["video"],
+            "audio": r["media"]["audio"],
+            "image": r["media"]["image"],
         }} for r in resolved]
 
         needs_upload = [
@@ -414,17 +475,22 @@ def _run_render_stage(job_id):
         _analyze_scene_audio(job)
         visuals.install_vendor(PROJECT_DIR)
         _log(job, "Building composition...")
+        # Absolute job paths become document-root-relative here and nowhere
+        # else -- this is the boundary between "paths we read" and "paths the
+        # browser fetches". See _composition_path.
+        standout = [{**item, "media": {k: _composition_path(v) for k, v in item["media"].items()}}
+                    for item in job["standout"]]
         html = compose.build_composition_html(
-            job["show_name"], job["episode_label"], job["standout"], job["remaining"],
+            job["show_name"], job["episode_label"], standout, job["remaining"],
             job["theme"], job["scene_duration"], language=job.get("language", "en"),
-            logo_path=job.get("logo_path"),
+            logo_path=_composition_path(job.get("logo_path")),
         )
         with open(os.path.join(PROJECT_DIR, "index.html"), "w") as f:
             f.write(html)
 
         job["status"] = "rendering"
         _log(job, "Rendering MP4 (this can take a minute)...")
-        output_rel = os.path.relpath(os.path.join(job["job_dir"], "output.mp4"), PROJECT_DIR)
+        output_rel = _composition_path(os.path.join(job["job_dir"], "output.mp4"))
         compose.render_video(PROJECT_DIR, output_rel, quality="standard")
 
         job["status"] = "done"
@@ -656,7 +722,7 @@ def upload(job_id, track_index):
     dest = os.path.join(job["job_dir"], f"track{track_index}_audio{ext}")
     file.save(dest)
 
-    job["standout"][track_index]["media"]["audio"] = os.path.relpath(dest, PROJECT_DIR)
+    job["standout"][track_index]["media"]["audio"] = dest
     job["needs_upload"] = [u for u in job["needs_upload"] if u["index"] != track_index]
     _log(job, f"Received manual audio for track {track_index}")
 
@@ -701,7 +767,7 @@ def skip_upload(job_id, track_index):
         if last_standout["media"]["audio"]:
             _extend_closing_audio(job, job["resolved"][-1], job["job_dir"], job["scene_duration"], allow_youtube=job.get("allow_youtube", False), cookie_file=job.get("cookie_file"))
             if job["resolved"][-1]["media"]["audio"]:
-                last_standout["media"]["audio"] = os.path.relpath(job["resolved"][-1]["media"]["audio"], PROJECT_DIR)
+                last_standout["media"]["audio"] = job["resolved"][-1]["media"]["audio"]
 
     if not job["needs_upload"]:
         job["status"] = "ready_to_render"
