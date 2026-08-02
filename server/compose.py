@@ -1,13 +1,13 @@
 import html
+import json
 import math
 import os
+import re
 import subprocess
 
 import languages
 import styles
 import visuals
-
-HYPERFRAMES_VERSION = "0.7.70"
 
 OUTRO_DURATION = 5
 # The operator's own mark. Only used when the requesting session is the
@@ -19,6 +19,30 @@ DEFAULT_LOGO_PATH = "server/static/kz-logo.png"
 # DEFAULT_LOGO_PATH already is. Absolute filesystem paths in a src attribute resolve
 # against the document's origin and 404.
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _pinned_hyperframes_version() -> str:
+    """The renderer version, read from package.json rather than duplicated here.
+
+    The pin exists so this project re-renders identically over time, and
+    `npx hyperframes@latest upgrade --project .` is how it moves -- but that
+    command only rewrites package.json. A second copy of the version in this
+    file is a copy the upgrade silently leaves behind, which is how the server
+    ends up rendering on a version nobody chose. There is no fallback default
+    on purpose: a pin we cannot read is a bug to fix at startup, not to paper
+    over with a stale guess."""
+    with open(os.path.join(PROJECT_DIR, "package.json")) as f:
+        scripts = json.load(f).get("scripts") or {}
+    match = re.search(r"hyperframes@(\d+\.\d+\.\d+)", scripts.get("render", ""))
+    if not match:
+        raise RuntimeError(
+            "No pinned hyperframes version in package.json's render script. "
+            "Expected something like: npx --yes hyperframes@0.7.88 render"
+        )
+    return match.group(1)
+
+
+HYPERFRAMES_VERSION = _pinned_hyperframes_version()
 
 
 def _rel(path: str) -> str:
@@ -563,15 +587,49 @@ def build_composition_html(
 """
 
 
+class RenderError(RuntimeError):
+    """A render that failed, carrying only the part worth showing the user.
+    The full CLI log goes to the server log."""
+
+
+# The renderer aborts a capture that makes no frame progress for this long. Its
+# 60s default is sized for a workstation; a shared-vCPU container doing software
+# WebGL can need longer than that just to produce frame 0, and dying there
+# throws away the whole job. Raising it costs a healthy render nothing -- the
+# guard only fires when nothing is moving at all.
+RENDER_STALL_TIMEOUT_MS = os.environ.get("HF_DE_STALL_MS") or "300000"
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
+def _render_failure_reason(log: str) -> str:
+    """One line out of the CLI's several hundred. The renderer prints its own
+    cause on the line after "Render failed"; fall back to the last thing it
+    said rather than inventing a reason."""
+    lines = [_ANSI_RE.sub("", ln).strip() for ln in log.splitlines()]
+    lines = [ln for ln in lines if ln]
+    for i, line in enumerate(lines):
+        if "Render failed" in line:
+            cause = lines[i + 1] if i + 1 < len(lines) else ""
+            return cause or line
+    return lines[-1] if lines else "the renderer exited without saying why"
+
+
 def render_video(project_dir: str, output_rel_path: str, quality: str = "standard") -> str:
     """Runs the pinned hyperframes CLI against project_dir/index.html, returns the absolute output path."""
     cmd = [
         "npx", "--yes", f"hyperframes@{HYPERFRAMES_VERSION}", "render",
         "-q", quality, "-o", output_rel_path,
     ]
-    result = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True)
+    env = {**os.environ, "HF_DE_STALL_MS": RENDER_STALL_TIMEOUT_MS}
+    result = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True, env=env)
     if result.returncode != 0:
-        raise RuntimeError(f"hyperframes render failed:\n{result.stdout}\n{result.stderr}")
+        # The whole log is what an operator needs and what nobody else can
+        # read -- a beta tester should not get 200 lines of render trace in an
+        # alert box, which is exactly what used to happen.
+        print(f"hyperframes render failed (exit {result.returncode}) for {output_rel_path}:\n"
+              f"{result.stdout}\n{result.stderr}", flush=True)
+        raise RenderError(_render_failure_reason(f"{result.stdout}\n{result.stderr}"))
     return os.path.join(project_dir, output_rel_path)
 
 

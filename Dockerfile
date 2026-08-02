@@ -13,8 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Pre-warm HyperFrames' own Chromium download during the image build (a
 # network-dependent step) rather than on the first real render request.
+# The version is read out of package.json, never written here: pre-warming a
+# version the server does not run just moves the download back into the first
+# render, and a hardcoded copy here is one `hyperframes upgrade` away from
+# being wrong (the upgrade only rewrites package.json).
 COPY package.json ./
-RUN npx --yes hyperframes@0.7.70 --version || true
+RUN npx --yes "hyperframes@$(node -p "require('./package.json').scripts.render.match(/hyperframes@([0-9.]+)/)[1]")" --version || true
 
 COPY requirements.txt ./
 RUN python3 -m venv /opt/venv \

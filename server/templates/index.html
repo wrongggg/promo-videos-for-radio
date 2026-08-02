@@ -237,6 +237,21 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .uploads-box { margin-top: 20px; display: none; }
+        /* Render failures used to go out as an alert() containing the whole
+           renderer log. The reason belongs on the page, where it can be read
+           twice and copied -- a tester reporting this is the only diagnostic
+           channel there is. */
+        .error-box {
+            display: none; margin-top: 20px; padding: 14px 16px; border-radius: 14px;
+            border: 1px solid rgba(214,51,108,0.28); background: rgba(214,51,108,0.06);
+        }
+        .error-box .error-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+        .error-box .error-reason {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+            line-height: 1.5; word-break: break-word; user-select: text;
+        }
+        .error-box .error-ref { font-size: 11px; color: var(--text-muted); margin-top: 8px; user-select: text; }
+        .error-box button { margin-top: 12px; }
         .upload-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .upload-row .upload-track { flex: 1; font-size: 13px; }
         .upload-row .upload-status { flex: none; font-size: 11px; color: var(--text-muted); }
@@ -430,6 +445,13 @@
         <div class="uploads-box" id="uploadsBox">
             <label>Some tracks need an audio file</label>
             <div id="uploadRows"></div>
+        </div>
+
+        <div class="error-box" id="errorBox">
+            <div class="error-title">That render didn't finish</div>
+            <div class="error-reason" id="errorReason"></div>
+            <div class="error-ref" id="errorRef"></div>
+            <button type="button" class="secondary" id="copyErrorBtn">Copy details</button>
         </div>
 
         <div class="video-wrap" id="downloadBox">
@@ -737,6 +759,7 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
     activeUploadRows = {};
     downloadBox.style.display = "none";
     saveThemeBox.style.display = "none";
+    document.getElementById("errorBox").style.display = "none";
     spinner.style.display = "block";
     document.getElementById("statusText").textContent = "Starting...";
 
@@ -809,11 +832,55 @@ function pollStatus() {
                 clearInterval(pollInterval);
                 spinner.style.display = "none";
                 btn.disabled = false;
-                alert("Failed: " + job.error);
+                showRenderError(job.error);
             }
         })
         .catch(() => {});
 }
+
+let lastErrorReason = "";
+
+// The job id is the whole point of the copy button: it is what ties a tester's
+// screenshot to the full renderer log on the server, which is where the actual
+// cause lives. The reason line alone is rarely enough to act on.
+function renderErrorReport() {
+    return [
+        "Radio promo render failed",
+        "Reason: " + (lastErrorReason || "unknown"),
+        "Job: " + (currentJobId || "unknown"),
+        "When: " + new Date().toISOString(),
+        "Browser: " + navigator.userAgent,
+    ].join("\n");
+}
+
+function showRenderError(reason) {
+    lastErrorReason = reason || "The renderer stopped without saying why.";
+    document.getElementById("errorReason").textContent = lastErrorReason;
+    document.getElementById("errorRef").textContent = "Job " + (currentJobId || "unknown");
+    document.getElementById("copyErrorBtn").textContent = "Copy details";
+    document.getElementById("errorBox").style.display = "block";
+}
+
+document.getElementById("copyErrorBtn").addEventListener("click", function () {
+    const btn = this;
+    // navigator.clipboard needs a secure context; a tester on plain http, or
+    // one who denies the permission, still gets the text selected so ctrl-C
+    // works. Failing silently here would waste the only bug report we get.
+    const done = () => { btn.textContent = "Copied"; };
+    const fallback = () => {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById("errorBox"));
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = "Press Ctrl/Cmd-C to copy";
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(renderErrorReport()).then(done, fallback);
+    } else {
+        fallback();
+    }
+});
 
 // The palette swatches under the finished video were decoration -- the video
 // itself already shows the colours. Only the (operator-only) save-theme box
