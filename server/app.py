@@ -22,6 +22,7 @@ import compose
 import curator
 import languages
 import media_finder
+import paddle
 import styles
 import visuals
 from track import Track, parse_tracklist
@@ -648,6 +649,57 @@ def credits_status():
     job_id = request.args.get("job_id")
     payload["paid_for_job"] = bool(account and job_id and accounts.has_paid_for(account, job_id))
     return jsonify(payload)
+
+
+@app.route("/paddle/webhook", methods=["POST"])
+def paddle_webhook():
+    """Paddle's notification endpoint. This is the only way credits are created
+    by a payment, so it is the one route where being strict matters more than
+    being helpful.
+
+    The body is read raw and verified before it is parsed: Paddle signs the exact
+    bytes it sent, so round-tripping through json.loads/dumps first would change
+    the whitespace and fail every signature.
+    """
+    secret = paddle.webhook_secret()
+    if not secret:
+        # Refuse rather than accept unverified events. An unconfigured secret
+        # with a permissive endpoint is a free credit generator for anyone who
+        # finds the URL.
+        return jsonify({"error": "webhook not configured"}), 503
+
+    raw = request.get_data()
+    if not paddle.verify_signature(raw, request.headers.get("Paddle-Signature", ""), secret):
+        return jsonify({"error": "bad signature"}), 403
+
+    try:
+        event = json.loads(raw)
+    except json.JSONDecodeError:
+        return jsonify({"error": "malformed body"}), 400
+
+    try:
+        result = paddle.handle_event(event)
+    except Exception as e:
+        # A 500 makes Paddle retry, which is right for a transient fault and
+        # harmless for a permanent one because grants are deduplicated.
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+    print(f"[paddle] {event.get('event_type')} -> {result}", flush=True)
+    return jsonify(result), 200
+
+
+@app.route("/credits/checkout")
+def credits_checkout():
+    """What the page needs to open a Paddle checkout. Never exposes the webhook
+    secret -- the client token is public by design."""
+    return jsonify({
+        "configured": paddle.is_configured(),
+        "environment": paddle.env(),
+        "client_token": paddle.client_token(),
+        "prices": paddle.price_map(),
+        "account": current_account(),
+    })
 
 
 @app.route("/credits/redeem", methods=["POST"])

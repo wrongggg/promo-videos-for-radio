@@ -285,6 +285,13 @@
         }
         .coupon-row { display: none; gap: 8px; margin-top: 10px; justify-content: center; }
         .coupon-row input { flex: 0 1 190px; }
+        .buy-row { display: none; gap: 8px; margin-top: 12px; justify-content: center; flex-wrap: wrap; }
+        .buy-row button {
+            all: unset; cursor: pointer; background: var(--accent2); color: #fff;
+            font-weight: 700; font-size: 13px; padding: 9px 18px; border-radius: 12px;
+        }
+        .buy-row button:hover { filter: brightness(1.08); }
+        .buy-row button:disabled { opacity: .5; cursor: default; }
 
         /* Paddle's domain review wants terms, refunds and privacy reachable from
            navigation rather than buried, so they sit in a real footer. */
@@ -482,6 +489,7 @@
             <video id="previewPlayer" controls playsinline></video>
             <a id="downloadLink" href="#">Download MP4</a>
             <div class="export-note" id="exportNote"></div>
+            <div class="buy-row" id="buyRow"></div>
             <div class="coupon-row" id="couponRow">
                 <input type="text" id="couponCode" placeholder="Have a code?">
                 <button type="button" class="secondary" id="couponBtn">Redeem</button>
@@ -1008,6 +1016,7 @@ async function refreshCredits() {
 
     if (badge) badge.textContent = c.balance === 1 ? "1 credit" : `${c.balance} credits`;
     couponRow.style.display = c.signed_in && c.balance === 0 && !c.operator ? "flex" : "none";
+    renderBuyButtons(c);
 
     if (c.operator) {
         note.textContent = "Operator — exports are clean.";
@@ -1048,6 +1057,96 @@ if (couponBtn) {
             couponBtn.disabled = false;
         }
     });
+}
+
+// --- Paddle checkout -------------------------------------------------------
+// Paddle.js is fetched lazily and only when Paddle is actually configured, so a
+// local dev run (or a deploy before the account is verified) doesn't reach out
+// to a CDN for a script it will never use.
+let paddleReady = null;
+
+function loadPaddle(cfg) {
+    if (paddleReady) return paddleReady;
+    paddleReady = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
+        s.onload = () => {
+            try {
+                if (cfg.environment !== "production") Paddle.Environment.set(cfg.environment);
+                Paddle.Initialize({
+                    token: cfg.client_token,
+                    eventCallback: (e) => {
+                        // The webhook is what actually grants credits, and it can
+                        // land after the buyer is already back on the page, so
+                        // poll for a few seconds rather than reading once.
+                        if (e.name === "checkout.completed") pollForCredits();
+                    },
+                });
+                resolve(true);
+            } catch (err) { reject(err); }
+        };
+        s.onerror = () => reject(new Error("Paddle.js failed to load"));
+        document.head.appendChild(s);
+    });
+    return paddleReady;
+}
+
+async function pollForCredits() {
+    const before = (await (await fetch("/credits")).json()).balance;
+    for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        const now = (await (await fetch("/credits")).json()).balance;
+        if (now !== before) { refreshCredits(); return; }
+    }
+    // Paddle has taken the money either way; the webhook may just be slow.
+    document.getElementById("couponHint").textContent =
+        "Payment received — your credits will appear shortly. Refresh if they don't.";
+    refreshCredits();
+}
+
+async function renderBuyButtons(credits) {
+    const row = document.getElementById("buyRow");
+    if (!row) return;
+    let cfg;
+    try {
+        cfg = await (await fetch("/credits/checkout")).json();
+    } catch (e) { return; }
+
+    // Nothing to offer if Paddle isn't set up, or if they aren't signed in --
+    // a purchase has to attach to an account or the credits have nowhere to go.
+    if (!cfg.configured || !cfg.account || credits.operator) {
+        row.style.display = "none";
+        return;
+    }
+
+    const entries = Object.entries(cfg.prices);
+    row.innerHTML = "";
+    for (const [priceId, n] of entries.sort((a, b) => a[1] - b[1])) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = `Buy ${n} credits`;
+        b.addEventListener("click", async () => {
+            b.disabled = true;
+            try {
+                await loadPaddle(cfg);
+                Paddle.Checkout.open({
+                    items: [{ priceId, quantity: 1 }],
+                    customer: { email: cfg.account },
+                    // Echoed back on the webhook. This, not the email Paddle
+                    // collects, is what decides which account gets the credits --
+                    // people pay with a different address than they sign in with.
+                    customData: { account: cfg.account },
+                });
+            } catch (e) {
+                document.getElementById("couponHint").textContent =
+                    "Couldn't open checkout — try again.";
+            } finally {
+                b.disabled = false;
+            }
+        });
+        row.appendChild(b);
+    }
+    row.style.display = entries.length ? "flex" : "none";
 }
 
 refreshCredits();

@@ -172,6 +172,34 @@ def spend(account: str, job_id: str) -> bool:
         return True
 
 
+def has_grant_from(account: str, source: str) -> bool:
+    """Whether this account already received a grant tagged with this source."""
+    if not normalize(account) or not source:
+        return False
+    return any(e.get("type") == "grant" and e.get("source") == source
+               for e in _events_for(account))
+
+
+def grant_once(account: str, credits: int, expires_at: float | None = None, source: str = "") -> bool:
+    """grant(), but a no-op if a grant with this source already exists.
+    Returns True if credits were actually added.
+
+    This is what makes payment webhooks safe. Paddle retries a delivery until it
+    gets a 2xx -- a timeout, a deploy mid-request, or a slow disk all produce a
+    second copy of an event that already succeeded. Keyed on the source string
+    (the Paddle event or transaction id), a replay is silently ignored instead of
+    handing out the credits twice.
+    """
+    account = normalize(account)
+    if not source:
+        raise ValueError("grant_once requires a source to deduplicate on")
+    with _lock:
+        if has_grant_from(account, source):
+            return False
+        grant(account, credits, expires_at=expires_at, source=source)
+        return True
+
+
 def summary(account: str) -> dict:
     """Balance plus the soonest expiry, for showing "3 credits, 2 expire Aug 30"."""
     now = time.time()
@@ -228,10 +256,6 @@ def redeem(account: str, code: str) -> tuple[bool, str]:
     if not amount:
         return False, "That code isn't valid."
 
-    source = f"coupon:{code}"
-    with _lock:
-        if any(e.get("type") == "grant" and e.get("source") == source
-               for e in _events_for(account)):
-            return False, "You've already used that code."
-        grant(account, amount, expires_at=None, source=source)
+    if not grant_once(account, amount, expires_at=None, source=f"coupon:{code}"):
+        return False, "You've already used that code."
     return True, f"Added {amount} credits."
