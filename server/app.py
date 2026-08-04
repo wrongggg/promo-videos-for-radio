@@ -90,6 +90,9 @@ def _composition_path(path):
     return os.path.relpath(path, PROJECT_DIR)
 
 
+# The operator's own show. Purely a UI convenience now -- it pre-fills the
+# field for a station session and is never substituted server-side, so clearing
+# the box really does mean "no show name" (see /start).
 DEFAULT_SHOW_NAME = "Pop Lock"
 VIDEO_RATIO_TARGET = 0.6
 MAX_EXTRA_FETCH_ATTEMPTS = 8
@@ -394,7 +397,7 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
 
         job["standout"] = standout
         job["remaining"] = remaining
-        job["show_name"] = show_name or DEFAULT_SHOW_NAME
+        job["show_name"] = show_name
         job["episode_label"] = episode_label
         job["job_dir"] = job_dir
         job["scene_duration"] = scene_duration
@@ -526,6 +529,25 @@ def grant_station(token):
     return redirect(url_for("index"))
 
 
+@app.route("/kzradio")
+def kzradio():
+    """The station's front door, under a name you can say out loud.
+
+    Identical to /s/<STATION_TOKEN> in what it grants -- the station session,
+    which means the KZ Radio mark is pre-selected as the logo -- but with a
+    memorable URL instead of a secret one, so it can go in a bio or be told to
+    someone over the phone.
+
+    That is a deliberate trade, and it is the whole of the trade: a guessable
+    URL means anyone who tries /kzradio gets the KZ mark offered as a default
+    on their own promo. Nothing else follows from a station session -- no
+    operator perks, no AI curation, no YouTube source (see access.py) -- and
+    the token route stays for anyone who wants the unguessable version."""
+    analytics.record_visit("/kzradio", access.visitor_id())
+    access.grant_station()
+    return redirect(url_for("index"))
+
+
 @app.route("/o/revoke", methods=["POST"])
 def revoke_operator():
     access.revoke_operator()
@@ -599,17 +621,14 @@ def start():
         }), 429
 
     tracklist_text = request.form.get("tracklist", "")
-    # The show name is on screen for the whole promo, so there is no sensible
-    # generic default -- and defaulting to the operator's own show would put
-    # "Pop Lock" on a stranger's video. Station sessions keep it as a
-    # convenience; everyone else has to say what their show is called.
+    # Show name and episode label are both optional and neither has a default.
+    # There is no sensible generic value for a name that sits on screen for the
+    # whole promo, and substituting one behind the user's back is worse than
+    # leaving it out: it either puts the operator's own show ("Pop Lock") on a
+    # stranger's video, or overrides someone who deliberately cleared the field.
+    # An empty field simply renders nothing -- see compose._header_html.
     show_name = request.form.get("show_name", "").strip()
-    if not show_name:
-        if access.is_station():
-            show_name = DEFAULT_SHOW_NAME
-        else:
-            return jsonify({"error": "Add your show name first."}), 400
-    episode_label = request.form.get("episode_label", "")
+    episode_label = request.form.get("episode_label", "").strip()
     num_standout = max(2, min(15, int(request.form.get("num_standout", 5))))
     pace = request.form.get("pace", "normal")
     theme_mode = request.form.get("theme_mode", "auto")

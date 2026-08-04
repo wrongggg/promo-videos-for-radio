@@ -83,21 +83,51 @@ html, body {
 .orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0; z-index: 2; }
 .orb-a { width: 620px; height: 620px; top: 10%; left: 6%; }
 .orb-b { width: 520px; height: 520px; bottom: 10%; right: 6%; }
+/* 250px, not the 110px this started at, because these promos are posted to
+   Instagram Stories and Instagram draws its own chrome over the top of the
+   frame -- the progress bar, then the avatar/username/timestamp row, which
+   together reach roughly 130px into a 1920px-tall video. At 110px the show
+   name sat directly under the username and was half unreadable. 250px is
+   Instagram's own documented top safe area, and it matches .outro-brand's
+   13% (~250px), so the header and the closing card now agree. */
 .header {
   position: absolute; top: 0; left: 0; width: 1080px; z-index: 30;
-  padding: 110px 60px 0;
+  padding: 250px 60px 0;
+  /* Own stacking context, so the ::before below can sit behind the header text
+     with z-index: -1 and still stay in front of the artwork underneath. */
+  isolation: isolate;
 }
 .header-inner {
   display: flex; align-items: flex-start; justify-content: space-between; width: 100%;
-  opacity: 0;
+  opacity: 0; position: relative;
+}
+/* The header's own scrim. At the old 110px the scene scrim (0.35 alpha at the
+   top edge, ramping to 0.10 by 38%) was doing this job; at 250px it is down to
+   ~0.27 and white type over a bright album cover stopped clearing the 4.5:1
+   contrast floor. This band is sized to the header rather than the frame, and
+   it hangs off #header-inner so it fades in and out on the same tween the text
+   does -- painted on .header instead, it would still be sitting over the top
+   of the closing card after the header has gone. */
+.header-inner::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  left: -60px; right: -60px; top: -250px; bottom: -46px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.52) 62%,
+              rgba(0,0,0,0.45) 88%, rgba(0,0,0,0) 100%);
 }
 .header-show {
   font-size: 32px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;
   text-shadow: 0 3px 14px rgba(0,0,0,0.85);
 }
+/* The 0.7 opacity this used to carry was already failing the contrast check
+   (3.5:1 against a 4.5:1 floor) over busy artwork, and dropping the header to
+   250px made it marginally worse -- lower down the scrim is lighter, since it
+   ramps from 0.35 at the top edge to 0.10 at 38%. 0.9 plus a tighter, darker
+   shadow keeps the label subordinate to the show name without relying on
+   transparency to do it. */
 .header-episode {
   font-size: 19px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase;
-  opacity: 0.7; margin-top: 4px; text-shadow: 0 3px 14px rgba(0,0,0,0.85);
+  opacity: 0.9; margin-top: 4px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.95), 0 3px 16px rgba(0,0,0,0.8);
 }
 .header-logo { height: 32px; opacity: 0.9; filter: brightness(0) invert(1) drop-shadow(0 3px 10px rgba(0,0,0,0.7)); }
 .hero-container {
@@ -367,24 +397,36 @@ HERO_HANDOFF_START = 1.9
 HERO_HANDOFF_DURATION = 0.85
 # Offsets computed from the hero's on-screen position (centered, ~19% from top,
 # 104px/32px type) to the header's actual resting position (60px from left,
-# ~110px from top, 32px/19px type) -- NOT arbitrary numbers. Recompute both if
-# either element's CSS position/size changes.
-HERO_TO_HEADER_SHOW = {"x": -400, "y": -300, "scale": 0.31}
-HERO_TO_HEADER_EPISODE = {"x": -400, "y": -370, "scale": 0.6}
+# 250px from top, 32px/19px type) -- NOT arbitrary numbers. Recompute both if
+# either element's CSS position/size changes. They last moved when .header's
+# padding-top went 110px -> 250px to clear Instagram's story chrome, which is a
+# pure vertical translation of the target, so both y values gained the same 140.
+HERO_TO_HEADER_SHOW = {"x": -400, "y": -160, "scale": 0.31}
+HERO_TO_HEADER_EPISODE = {"x": -400, "y": -230, "scale": 0.6}
 
 
 def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float, outro_start: float | None = None, logo_path: str | None = None) -> tuple[str, str]:
+    # Show name and episode label are both optional, and an empty one renders
+    # nothing at all rather than an empty box -- an empty .header-show still
+    # occupies a line, which pushed the episode label down to where the show
+    # name should be. With all three gone there is no header to draw.
+    show_name = (show_name or "").strip()
+    episode_label = (episode_label or "").strip()
+    if not (show_name or episode_label or logo_path):
+        return "", ""
     # Alignment follows the show/episode name's own script, not the on-screen
     # language toggle -- an English show name shouldn't right-align just
     # because Hebrew is selected for the UI strings elsewhere.
     rtl = ' dir="rtl"' if _looks_hebrew(show_name) or _looks_hebrew(episode_label) else ""
     logo_html = f'<img class="header-logo" src="{_esc(_rel(logo_path))}" alt="" />' if logo_path else ""
+    show_html = f'<div id="header-show" class="header-show">{_esc(show_name)}</div>' if show_name else ""
+    episode_html = f'<div id="header-episode" class="header-episode">{_esc(episode_label)}</div>' if episode_label else ""
     header_html = f"""
       <div id="header" class="clip header" data-start="0" data-duration="{total_duration}" data-track-index="20">
         <div id="header-inner" class="header-inner">
           <div{rtl}>
-            <div id="header-show" class="header-show">{_esc(show_name)}</div>
-            <div id="header-episode" class="header-episode">{_esc(episode_label)}</div>
+            {show_html}
+            {episode_html}
           </div>
           {logo_html}
         </div>
@@ -405,28 +447,52 @@ def _header_html(show_name: str, episode_label: str, total_duration: float, fade
     return header_html, header_js
 
 
-def _hero_html(show_name: str, episode_label: str) -> tuple[str, str]:
+def _hero_html(show_name: str, episode_label: str) -> tuple[str, str] | None:
     """Big centered show/episode reveal shown only at the very start of scene 0,
     then flies up and shrinks toward the header's corner as it fades — reads as
     the same text handing off to the persistent header rather than two unrelated
-    elements swapping."""
+    elements swapping.
+
+    Returns None when there is nothing to reveal (both fields are optional), so
+    scene 0 simply opens on the artwork. Every tween below is gated on its own
+    target existing: GSAP warns on a missing selector and `npm run check` reads
+    that warning as a finding."""
+    show_name = (show_name or "").strip()
+    episode_label = (episode_label or "").strip()
+    if not (show_name or episode_label):
+        return None
     rtl = ' dir="rtl"' if _looks_hebrew(show_name) or _looks_hebrew(episode_label) else ""
+    show_html = f'<div id="hero-show" class="hero-show">{_esc(show_name)}</div>' if show_name else ""
+    episode_html = f'<div id="hero-episode" class="hero-episode">{_esc(episode_label)}</div>' if episode_label else ""
     hero_html = f"""
         <div class="hero-container"{rtl}>
-          <div id="hero-show" class="hero-show">{_esc(show_name)}</div>
-          <div id="hero-episode" class="hero-episode">{_esc(episode_label)}</div>
+          {show_html}
+          {episode_html}
         </div>
     """
     handoff_end = HERO_HANDOFF_START + HERO_HANDOFF_DURATION
     s = HERO_TO_HEADER_SHOW
     e = HERO_TO_HEADER_EPISODE
-    hero_js = f"""
-      tl.fromTo("#hero-show", {{ opacity: 0, y: 50, scale: 0.85 }}, {{ opacity: 1, y: 0, scale: 1, duration: 0.9, ease: "back.out(1.6)" }}, 0.15)
-        .fromTo("#hero-episode", {{ opacity: 0, y: 24 }}, {{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, 0.4)
-        .to("#hero-show", {{ opacity: 0, x: {s['x']}, y: {s['y']}, scale: {s['scale']}, duration: {HERO_HANDOFF_DURATION}, ease: "power2.inOut" }}, {HERO_HANDOFF_START})
-        .to("#hero-episode", {{ opacity: 0, x: {e['x']}, y: {e['y']}, scale: {e['scale']}, duration: {HERO_HANDOFF_DURATION}, ease: "power2.inOut" }}, {HERO_HANDOFF_START + 0.06})
-        .set("#hero-show, #hero-episode", {{ opacity: 0 }}, {handoff_end});
-    """
+    tweens = []
+    if show_name:
+        tweens.append(
+            f'.fromTo("#hero-show", {{ opacity: 0, y: 50, scale: 0.85 }}, {{ opacity: 1, y: 0, scale: 1, duration: 0.9, ease: "back.out(1.6)" }}, 0.15)'
+        )
+    if episode_label:
+        tweens.append(
+            f'.fromTo("#hero-episode", {{ opacity: 0, y: 24 }}, {{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, 0.4)'
+        )
+    if show_name:
+        tweens.append(
+            f'.to("#hero-show", {{ opacity: 0, x: {s["x"]}, y: {s["y"]}, scale: {s["scale"]}, duration: {HERO_HANDOFF_DURATION}, ease: "power2.inOut" }}, {HERO_HANDOFF_START})'
+        )
+    if episode_label:
+        tweens.append(
+            f'.to("#hero-episode", {{ opacity: 0, x: {e["x"]}, y: {e["y"]}, scale: {e["scale"]}, duration: {HERO_HANDOFF_DURATION}, ease: "power2.inOut" }}, {HERO_HANDOFF_START + 0.06})'
+        )
+    present = ", ".join(sel for sel, on in (("#hero-show", show_name), ("#hero-episode", episode_label)) if on)
+    tweens.append(f'.set("{present}", {{ opacity: 0 }}, {handoff_end})')
+    hero_js = "\n      tl" + "\n        ".join(tweens) + ";\n    "
     return hero_html, hero_js
 
 
@@ -450,14 +516,19 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
           <p id="also-featuring" class="also-featuring-list">{items}</p>
         """
     logo_html = f'<img id="outro-logo" class="outro-logo" src="{_esc(_rel(logo_path))}" alt="" />' if logo_path else ""
+    # Both optional, same rule as the header: nothing typed, nothing drawn.
+    show_name = (show_name or "").strip()
+    episode_label = (episode_label or "").strip()
+    show_html = f'<div id="outro-show" class="outro-show">{_esc(show_name)}</div>' if show_name else ""
+    episode_html = f'<div id="outro-episode" class="outro-episode">{_esc(episode_label)}</div>' if episode_label else ""
     scene_html = f"""
       <div id="outro" class="clip scene" style="{bg_style}" data-start="{start}" data-duration="{duration}" data-track-index="0">
         <div id="outro-orb-a" class="orb orb-a" style="background: {pal['orb1']};"></div>
         <div id="outro-orb-b" class="orb orb-b" style="background: {pal['orb2']};"></div>
         <div class="outro-brand">
           {logo_html}
-          <div id="outro-show" class="outro-show">{_esc(show_name)}</div>
-          <div id="outro-episode" class="outro-episode">{_esc(episode_label)}</div>
+          {show_html}
+          {episode_html}
         </div>
         <div class="outro-meta">
           {also_html}
@@ -476,15 +547,29 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
         '{ opacity: 0.9, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.7)" }, '
         f'{start + 0.15})'
     ) if logo_path else ""
+    # Same reason the logo tween is conditional: an absent target is a GSAP
+    # warning and a `npm run check` finding, not a silent no-op.
+    show_tween = (
+        f'\n        .fromTo("#outro-show", {{ opacity: 0, y: 24 }}, '
+        f'{{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, {start + 0.3})'
+    ) if show_name else ""
+    episode_tween = (
+        f'\n        .fromTo("#outro-episode", {{ opacity: 0, y: 16 }}, '
+        f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.45})'
+    ) if episode_label else ""
+    # #outro-title and #also-featuring only exist when there are other artists
+    # to list -- also_html is empty otherwise.
+    also_tweens = (
+        f'\n        .fromTo("#outro-title", {{ opacity: 0, y: 40 }}, '
+        f'{{ opacity: 1, y: 0, duration: 1, ease: "power3.out" }}, {start + 0.65})'
+        f'\n        .fromTo("#also-featuring", {{ opacity: 0, y: 30 }}, '
+        f'{{ opacity: 1, y: 0, duration: 1.1, ease: "power3.out" }}, {start + 0.95})'
+    ) if also_html else ""
     scene_js = f"""
       tl.fromTo("#outro-orb-a, #outro-orb-b", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.4 }}, {start})
         .to("#outro-orb-a", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#outro-orb-b", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
-        {logo_tween}
-        .fromTo("#outro-show", {{ opacity: 0, y: 24 }}, {{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, {start + 0.3})
-        .fromTo("#outro-episode", {{ opacity: 0, y: 16 }}, {{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.45})
-        .fromTo("#outro-title", {{ opacity: 0, y: 40 }}, {{ opacity: 1, y: 0, duration: 1, ease: "power3.out" }}, {start + 0.65})
-        .fromTo("#also-featuring", {{ opacity: 0, y: 30 }}, {{ opacity: 1, y: 0, duration: 1.1, ease: "power3.out" }}, {start + 0.95});
+        {logo_tween}{show_tween}{episode_tween}{also_tweens};
     """
     return scene_html, scene_js
 
@@ -545,7 +630,12 @@ def build_composition_html(
     cursor += OUTRO_DURATION
 
     total_duration = cursor
-    header_fade_in_at = HERO_HANDOFF_START + HERO_HANDOFF_DURATION - 0.25
+    # The header normally waits for the hero to finish flying into it. With no
+    # show name and no episode label there is no hero to wait for, so a
+    # logo-only header just fades in near the top instead of hanging back for
+    # nearly three seconds of nothing.
+    has_hero = bool((show_name or "").strip() or (episode_label or "").strip())
+    header_fade_in_at = HERO_HANDOFF_START + HERO_HANDOFF_DURATION - 0.25 if has_hero else 0.3
     header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at,
                                          outro_start=total_duration - OUTRO_DURATION,
                                          logo_path=logo_path)
@@ -563,7 +653,7 @@ def build_composition_html(
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=1080, height=1920" />
-    <title>{_esc(show_name)} Promo</title>
+    <title>{_esc(show_name.strip() + " Promo") if (show_name or "").strip() else "Promo"}</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>{BASE_CSS}{visuals.CSS}{styles.text_css(style)}</style>
   </head>

@@ -503,32 +503,44 @@ def _patch_thumb(patch: str, a1: str, a2: str) -> str:
 # keeps the preview honest: it is generated from the style definition, so it
 # cannot drift from what renders.
 #
-# The loop shows two covers and one hand-over, using that style's real
-# transition kind and entrance family.
-PREVIEW_SECS = 2.6
+# The loop shows two covers and TWO hand-overs -- A to B at a quarter of the
+# way through and B back to A at three quarters -- so it genuinely rotates
+# rather than playing once and snapping. The first version had a single
+# hand-over: track B arrived at ~34% and then sat there for the remaining
+# two-thirds of the loop before the whole thing cut back to track A, which read
+# as a preview that had stalled and then glitched.
+#
+# Every window below is symmetric about that: each cover holds the screen for
+# the same span, and the state at 100% is by construction the state at 0%, so
+# there is no seam to see when the loop wraps.
+PREVIEW_SECS = 4.6
 
-# Cover hand-over, per transition kind. The window is 45%-62% of the loop.
-_COVER_KEYFRAMES = {
-    "fade": ("0%,22% { opacity: 1; transform: none; }"
-             " 34%,100% { opacity: 0; transform: none; }",
-             "0%,22% { opacity: 0; }"
-             " 34%,100% { opacity: 1; }"),
-    "slide": ("0%,22% { opacity: 1; transform: translateX(0); }"
-              " 34%,100% { opacity: 1; transform: translateX(-100%); }",
-              "0%,22% { opacity: 1; transform: translateX(100%); }"
-              " 34%,100% { opacity: 1; transform: translateX(0); }"),
-    "zoom": ("0%,22% { opacity: 1; transform: scale(1); }"
-             " 34%,100% { opacity: 0; transform: scale(0.8); }",
-             "0%,22% { opacity: 0; transform: scale(1.4); }"
-             " 34%,100% { opacity: 1; transform: scale(1); }"),
-    "spin": ("0%,22% { opacity: 1; transform: rotate(0deg) scale(1); }"
-             " 34%,100% { opacity: 0; transform: rotate(12deg) scale(0.85); }",
-             "0%,22% { opacity: 0; transform: rotate(-14deg) scale(0.72); }"
-             " 34%,100% { opacity: 1; transform: rotate(0deg) scale(1); }"),
+# Where each cover sits when it is not the one on screen: `in` is the pose it
+# animates FROM on the way in, `out` the pose it animates TO on the way out.
+# Both hand-overs are built from this one pair, so a cover always leaves the
+# way the next one arrives -- a slide always travels the same direction, a zoom
+# always pushes through rather than alternating in and out.
+_COVER_STATES = {
+    "fade":  {"in": "opacity: 0; transform: none;",
+              "out": "opacity: 0; transform: none;"},
+    "slide": {"in": "opacity: 1; transform: translateX(100%);",
+              "out": "opacity: 1; transform: translateX(-100%);"},
+    "zoom":  {"in": "opacity: 0; transform: scale(1.4);",
+              "out": "opacity: 0; transform: scale(0.8);"},
+    "spin":  {"in": "opacity: 0; transform: rotate(-14deg) scale(0.72);",
+              "out": "opacity: 0; transform: rotate(12deg) scale(0.85);"},
     # A hard cut: no interpolation, so the steps() timing does the work.
-    "swap": ("0%,27% { opacity: 1; } 27.01%,100% { opacity: 0; }",
-             "0%,27% { opacity: 0; } 27.01%,100% { opacity: 1; }"),
+    "swap":  {"in": "opacity: 0; transform: none;",
+              "out": "opacity: 0; transform: none;"},
 }
+_COVER_ON = "opacity: 1; transform: none;"
+
+# A cover parked off-stage has to get from its exit pose back to its entry pose
+# before its next turn. steps(1, end) on that one segment makes the reset a cut
+# instead of a tween -- without it "slide" spends a third of the loop drifting
+# from translateX(-100%) back to translateX(100%), straight across the tile, in
+# the wrong direction.
+_SNAP = " animation-timing-function: steps(1, end);"
 
 # How the text bars arrive. Char-based entrances get a per-bar delay so the
 # preview reads as a stagger rather than a single move.
@@ -569,35 +581,52 @@ def thumbnail_css() -> str:
     ]
     for key, st in STYLES.items():
         kind = TRANSITIONS.get(st.get("transition", "fade"), TRANSITIONS["fade"])["kind"]
-        a_kf, b_kf = _COVER_KEYFRAMES.get(kind, _COVER_KEYFRAMES["fade"])
+        cover = _COVER_STATES.get(kind, _COVER_STATES["fade"])
+        c_in, c_out = cover["in"], cover["out"]
         ent = st["entrance"]
         ease = "steps(1, end)" if kind == "swap" else "cubic-bezier(.4,0,.2,1)"
         t_ease = "steps(1, end)" if ent == "type" else "cubic-bezier(.2,.7,.3,1)"
 
-        out.append(f"@keyframes tpa-{key} {{ {a_kf} }}")
-        out.append(f"@keyframes tpb-{key} {{ {b_kf} }}")
+        # Covers. A holds 82%->18% (across the wrap), hands over 18-32%, is
+        # parked 32-67%, resets at 67-68% and comes back 68-82%. B is the same
+        # cycle half a loop out of phase, so the two just keep trading places.
+        out.append(
+            f"@keyframes tpa-{key} {{ 0%,18% {{ {_COVER_ON} }} 32% {{ {c_out} }}"
+            f" 67% {{ {c_out}{_SNAP} }} 68% {{ {c_in} }}"
+            f" 82%,100% {{ {_COVER_ON} }} }}"
+        )
+        out.append(
+            f"@keyframes tpb-{key} {{ 0% {{ {c_out} }} 17% {{ {c_out}{_SNAP} }}"
+            f" 18% {{ {c_in} }} 32%,68% {{ {_COVER_ON} }}"
+            f" 82%,100% {{ {c_out} }} }}"
+        )
 
         frm = _TEXT_FROM.get(ent, _TEXT_FROM["fade"])
-        # Track A: enters, holds, clears out as the cover hands over at 30-45%.
+        # Text, on the same two hand-overs but sequenced rather than crossed:
+        # each track's exit finishes exactly where the other's entrance starts
+        # (25% and 75%), because a style with a card paints that card from the
+        # block's own background -- two blocks on screen at once means one
+        # card sitting over the other's words.
+        #
+        # The 73%/23% keyframes exist to hold GONE right up to the reset. The
+        # jump from there to `frm` happens at opacity 0, so the entrance still
+        # starts from its proper pose without that pose being visible first.
         out.append(
-            f"@keyframes tpta-{key} {{ 0% {{ {frm} }} 12% {{ {_SETTLED} }}"
-            f" 22% {{ {_SETTLED} }} 31%,100% {{ {_GONE} }} }}"
+            f"@keyframes tpta-{key} {{ 0%,15% {{ {_SETTLED} }} 25%,73% {{ {_GONE} }}"
+            f" 75% {{ {frm} }} 85%,100% {{ {_SETTLED} }} }}"
         )
-        # Track B: hidden until the hand-over, then the same entrance, so both
-        # tracks arrive the way the theme actually animates.
         out.append(
-            f"@keyframes tptb-{key} {{ 0%,33% {{ {_GONE} }} 34% {{ {frm} }}"
-            f" 48%,100% {{ {_SETTLED} }} }}"
+            f"@keyframes tptb-{key} {{ 0%,23% {{ {_GONE} }} 25% {{ {frm} }}"
+            f" 35%,65% {{ {_SETTLED} }} 75%,100% {{ {_GONE} }} }}"
         )
 
-        # Visibility of the whole block, not just its text. A style with a card
-        # paints that card from the block's own background, so gating only the
-        # characters left block B's panel sitting on top of block A's words and
-        # washing them out.
+        # Visibility of the whole block, not just its text -- see the card note
+        # above. Stepped, so exactly one of the two is ever on: A owns 75%->25%
+        # across the wrap, B owns 25%->75%.
         out.append(f"@keyframes tpva-{key} {{ 0%,24% {{ opacity: 1; }}"
-                   f" 32%,100% {{ opacity: 0; }} }}")
-        out.append(f"@keyframes tpvb-{key} {{ 0%,32% {{ opacity: 0; }}"
-                   f" 34%,100% {{ opacity: 1; }} }}")
+                   f" 25%,74% {{ opacity: 0; }} 75%,100% {{ opacity: 1; }} }}")
+        out.append(f"@keyframes tpvb-{key} {{ 0%,24% {{ opacity: 0; }}"
+                   f" 25%,74% {{ opacity: 1; }} 75%,100% {{ opacity: 0; }} }}")
 
         # Two triggers: :hover for the mouse, a `.previewing` class for keyboard
         # focus and touch, where there is no hover state at all.

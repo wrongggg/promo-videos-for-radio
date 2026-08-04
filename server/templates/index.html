@@ -107,6 +107,12 @@
             color: var(--text-muted); letter-spacing: 0.3px; text-transform: uppercase;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
+        /* Says "you can leave this blank" without shouting it in caps like the
+           label it sits inside. Leave one empty and that text simply doesn't
+           appear in the video. */
+        .optional {
+            font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .6;
+        }
         input[type="text"], input[type="number"], textarea, select {
             width: 100%; padding: 12px 14px; border-radius: 14px;
             border: 1px solid var(--border-soft); background: rgba(0,0,0,0.035);
@@ -318,11 +324,11 @@
         <form id="startForm">
             <div class="row">
                 <div class="form-group">
-                    <label>Show name</label>
-                    <input type="text" name="show_name" required placeholder="{% if station_mode %}{{ default_show_name }}{% else %}Your show name{% endif %}"{% if station_mode %} value="{{ default_show_name }}"{% endif %}>
+                    <label>Show name <span class="optional">optional</span></label>
+                    <input type="text" name="show_name" placeholder="{% if station_mode %}{{ default_show_name }}{% else %}Your show name{% endif %}"{% if station_mode %} value="{{ default_show_name }}"{% endif %}>
                 </div>
                 <div class="form-group">
-                    <label>Episode name</label>
+                    <label>Episode name <span class="optional">optional</span></label>
                     <input type="text" name="episode_label" placeholder="Episode 42">
                 </div>
             </div>
