@@ -162,6 +162,39 @@
             filter: brightness(0) invert(1);
         }
         #logoToggle button { display: inline-flex; align-items: center; justify-content: center; }
+        /* Controls for a logo that is already chosen. The file input's native
+           "Choose File / No file chosen" is the right affordance for picking a
+           logo and the wrong one for having picked one -- it reads as though
+           nothing is set even while the mark is sitting in the chip beside it,
+           which is exactly how a station session looked on first load. */
+        /* The icons sit on the same row as the Show/None control and stretch to
+           its height, so the three read as one strip of controls. On their own
+           line underneath they looked like an afterthought bolted below. */
+        .logo-controls { display: flex; align-items: stretch; gap: 8px; }
+        .logo-controls .segmented { flex: 1; min-width: 0; }
+        .icon-row { display: flex; align-items: stretch; gap: 6px; flex: none; }
+        .icon-btn {
+            position: relative; flex: none;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 38px; padding: 0;
+            border: 1px solid var(--border-soft); border-radius: 14px;
+            background: rgba(0,0,0,0.035); color: var(--text-muted); cursor: pointer;
+            transition: background .12s, color .12s;
+        }
+        .icon-btn:hover { background: rgba(0,0,0,0.075); color: var(--text); }
+        .icon-btn[data-danger]:hover { background: rgba(214,51,108,0.10); color: var(--accent); }
+        .icon-btn svg { width: 15px; height: 15px; display: block; }
+        /* Its own tooltip rather than a native title=, which waits about a
+           second before appearing -- too slow to answer "what does this icon
+           do?" while the pointer is already moving away again. */
+        .icon-btn::after {
+            content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%;
+            transform: translateX(-50%); white-space: nowrap; z-index: 5;
+            background: #1c1c1e; color: #fff; font-size: 11px; font-weight: 600;
+            padding: 4px 8px; border-radius: 6px; pointer-events: none;
+            opacity: 0; transition: opacity .12s;
+        }
+        .icon-btn:hover::after, .icon-btn:focus-visible::after { opacity: 1; }
         .theme-grid {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
             gap: 10px;
@@ -409,15 +442,29 @@
                 </div>
                 <div class="form-group">
                     <label>Logo</label>
-                    <div class="segmented" id="logoToggle">
-                        <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>
-                            <span class="logo-chip" id="logoChipWrap" hidden><img id="logoChip" alt=""></span>
-                            <span>Show</span>
-                        </button>
-                        <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
+                    <div class="logo-controls">
+                        <div class="segmented" id="logoToggle">
+                            <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>
+                                <span class="logo-chip" id="logoChipWrap" hidden><img id="logoChip" alt=""></span>
+                                <span>Show</span>
+                            </button>
+                            <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
+                        </div>
+                        <div class="icon-row" id="logoChosenGroup" style="display:none;">
+                            <button type="button" class="icon-btn" id="logoReplaceBtn" data-tip="Replace logo" aria-label="Replace logo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>
+                                </svg>
+                            </button>
+                            <button type="button" class="icon-btn" id="logoRemoveBtn" data-danger data-tip="Remove logo" aria-label="Remove logo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3.5 6h17"/><path d="M9 6V3.8h6V6"/><path d="M6 6l1 14.2h10L18 6"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}show{% else %}none{% endif %}">
-                    <div id="logoUploadGroup" style="display:none; margin-top:8px;">
+                    <div id="logoPickGroup" style="display:none; margin-top:8px;">
                         <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
                         <p class="hint">Square or wide PNG, transparent background. Max 2&nbsp;MB.</p>
                     </div>
@@ -503,16 +550,27 @@ if (PERSONAL_MODE) {
 const STATION_LOGO_URL = "{{ station_logo_url }}";
 const STATION_MODE = {{ "true" if station_mode else "false" }};
 
+function setLogoTip(name) {
+    const btn = document.getElementById("logoReplaceBtn");
+    btn.dataset.tip = "Replace " + name;
+    btn.setAttribute("aria-label", "Replace logo (" + name + ")");
+}
+
 function refreshLogoPreview() {
     const on = document.getElementById("useLogoInput").value === "show";
     const chip = document.getElementById("logoChip");
     const chipWrap = document.getElementById("logoChipWrap");
     const file = document.getElementById("logoInput").files[0];
+    // A logo counts as chosen when there is actually one to show: the user's
+    // own upload, or the station mark a station session starts with.
+    const chosen = on && (file || STATION_MODE);
 
-    // Upload is offered whenever Show is on. A station session gets the station
-    // mark by default and can still override it with their own file; everyone
-    // else has only the upload, so the same rule serves both.
-    document.getElementById("logoUploadGroup").style.display = on ? "block" : "none";
+    // Picking a logo and having one are different states, so they get different
+    // controls -- the file input only appears while there is nothing to show.
+    // It stays in the DOM either way (a display:none input still submits its
+    // file), and Replace reaches it through .click().
+    document.getElementById("logoPickGroup").style.display = (on && !chosen) ? "block" : "none";
+    document.getElementById("logoChosenGroup").style.display = chosen ? "flex" : "none";
 
     if (!on) { chipWrap.hidden = true; return; }
     if (file) {
@@ -521,13 +579,39 @@ function refreshLogoPreview() {
         chip.dataset.blob = url;
         chip.src = url;
         chipWrap.hidden = false;
+        // Which logo is loaded is already answered by the chip in the Show
+        // button; the name only needs to be reachable, not laid out, so it
+        // rides along in the tooltip rather than taking a line of its own.
+        setLogoTip(file.name);
     } else if (STATION_MODE) {
         chip.src = STATION_LOGO_URL;
         chipWrap.hidden = false;
+        setLogoTip("Station logo");
     } else {
         chipWrap.hidden = true;
     }
 }
+
+document.getElementById("logoReplaceBtn").addEventListener("click", () => {
+    document.getElementById("logoInput").click();
+});
+
+document.getElementById("logoRemoveBtn").addEventListener("click", () => {
+    const input = document.getElementById("logoInput");
+    const chip = document.getElementById("logoChip");
+    input.value = "";
+    if (chip.dataset.blob) {
+        URL.revokeObjectURL(chip.dataset.blob);
+        delete chip.dataset.blob;
+    }
+    // Remove means no logo, whether the mark came from an upload or from the
+    // station default. Clearing only the upload and silently revealing the
+    // station's underneath would leave a logo on screen right after the user
+    // asked for it to go; switching Show back on brings the default back.
+    document.getElementById("useLogoInput").value = "none";
+    setActive(document.getElementById("logoToggle"), "none");
+    refreshLogoPreview();
+});
 
 document.getElementById("logoToggle").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
