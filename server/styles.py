@@ -252,28 +252,6 @@ STYLES = {
         "align": "left", "anchor": "bottom", "bottom_gap": 190,
         "entrance": "snap", "transition": "swap", "patch": "bars", "scrim": "heavy",
     },
-    "editorial": {
-        "label": "Liner Notes",
-        "blurb": "Monospaced and left-aligned like a sleeve credit. Quiet, factual, text-forward.",
-        "font": "mono",
-        "primary": {"max_size": 86, "weight": 600, "case": "none", "spacing": -1, "line": 1.14},
-        "secondary": {"size": 29, "weight": 500, "case": "uppercase", "spacing": 5},
-        "trivia": {"size": 30, "weight": 400},
-        "color": WHITE, "panel": None,
-        "align": "left", "anchor": "bottom", "bottom_gap": 240,
-        "entrance": "slide", "transition": "fade", "patch": "grain", "scrim": "heavy",
-    },
-    "ambient": {
-        "label": "Slow Ambient",
-        "blurb": "Airy letter-spaced serif that drifts in, centred high, over soft flow. For downtempo, jazz and classical.",
-        "font": "serif",
-        "primary": {"max_size": 90, "weight": 400, "case": "none", "spacing": 1, "line": 1.18},
-        "secondary": {"size": 28, "weight": 400, "case": "uppercase", "spacing": 12},
-        "trivia": {"size": 30, "weight": 400},
-        "color": WHITE, "panel": None,
-        "align": "center", "anchor": "center", "bottom_gap": 0,
-        "entrance": "drift", "transition": "fade", "patch": "flow", "scrim": "soft",
-    },
     "terminal": {
         "label": "Terminal",
         "blurb": "Titles type themselves out character by character in mono, over scrolling bars. Deliberately machine-like.",
@@ -284,17 +262,6 @@ STYLES = {
         "color": WHITE, "panel": None,
         "align": "left", "anchor": "bottom", "bottom_gap": 250,
         "entrance": "type", "transition": "swap", "patch": "bars", "scrim": "heavy",
-    },
-    "carousel": {
-        "label": "Carousel",
-        "blurb": "Artwork slides across like a deck of covers while titles push in from the side. Restless and modern.",
-        "font": "grotesque",
-        "primary": {"max_size": 98, "weight": 800, "case": "none", "spacing": -1, "line": 1.05},
-        "secondary": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 6},
-        "trivia": {"size": 30, "weight": 400},
-        "color": WHITE, "panel": None,
-        "align": "left", "anchor": "bottom", "bottom_gap": 225,
-        "entrance": "slide", "transition": "slide", "patch": "flow", "scrim": "soft",
     },
     "kinetic": {
         "label": "Kinetic",
@@ -307,29 +274,6 @@ STYLES = {
         "align": "center", "anchor": "bottom", "bottom_gap": 235,
         "entrance": "spin", "transition": "spin", "patch": "kaleid", "scrim": "heavy",
     },
-    "flipboard": {
-        "label": "Flipboard",
-        "blurb": "Letters flip over like an airport board, covers cut hard between tracks. Crisp and rhythmic.",
-        "font": "condensed",
-        "primary": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.92},
-        "secondary": {"size": 36, "weight": 400, "case": "uppercase", "spacing": 8},
-        "trivia": {"size": 30, "weight": 500},
-        "color": WHITE, "panel": None,
-        "align": "left", "anchor": "bottom", "bottom_gap": 210,
-        "entrance": "flip", "transition": "swap", "patch": "bars", "scrim": "heavy",
-    },
-    "confetti": {
-        "label": "Confetti",
-        "blurb": "Letters fly in from all directions and settle; artwork zooms through. Playful and chaotic.",
-        "font": "grotesque",
-        "primary": {"max_size": 92, "weight": 900, "case": "none", "spacing": -1, "line": 1.04},
-        "secondary": {"size": 30, "weight": 700, "case": "uppercase", "spacing": 5},
-        "trivia": {"size": 29, "weight": 500},
-        "color": INK,
-        "panel": {"bg": "rgba(255,255,255,0.95)", "pad": "50px 56px", "radius": 22},
-        "align": "left", "anchor": "bottom", "bottom_gap": 205,
-        "entrance": "scatter", "transition": "zoom", "patch": "kaleid", "scrim": "light",
-    },
     "tidal": {
         "label": "Tidal",
         "blurb": "Letters rise on an elastic swell, one after another, over slow haze. Big but unhurried.",
@@ -341,10 +285,243 @@ STYLES = {
         "align": "center", "anchor": "bottom", "bottom_gap": 240,
         "entrance": "wave", "transition": "fade", "patch": "haze", "scrim": "soft",
     },
+
+    # --- added when the five near-duplicates came out -----------------------
+    #
+    # Each of these takes one of the entrances the cut styles were using, which
+    # is deliberate: Liner Notes, Slow Ambient, Carousel, Flipboard and Confetti
+    # were redundant as *looks*, but "slide", "drift", "flip" and "scatter" are
+    # motions and there was no reason to lose them. Every entrance in ENTRANCES
+    # except the plain "fade" fallback is now on exactly one style.
+    "stack": {
+        "label": "Stack",
+        "blurb": "Artist set enormous and broken over several lines, leading crushed, filling the frame edge to edge. The loudest thing here.",
+        "font": "display",
+        "primary": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": -2, "line": 0.86},
+        "secondary": {"size": 34, "weight": 400, "case": "uppercase", "spacing": 6},
+        "trivia": {"size": 30, "weight": 500},
+        "color": WHITE, "panel": None,
+        "align": "left", "anchor": "bottom", "bottom_gap": 190,
+        "entrance": "scatter", "transition": "zoom", "patch": "kaleid", "scrim": "heavy",
+    },
+    "masthead": {
+        "label": "Masthead",
+        "blurb": "One line of condensed caps stretched across the full width and centred, letters flipping into place. A cover line, not a caption.",
+        "font": "condensed",
+        "primary": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 3, "line": 0.94},
+        "secondary": {"size": 34, "weight": 400, "case": "uppercase", "spacing": 9},
+        "trivia": {"size": 30, "weight": 400},
+        "color": WHITE, "panel": None,
+        "align": "center", "anchor": "bottom", "bottom_gap": 255,
+        "entrance": "flip", "transition": "swap", "patch": "haze", "scrim": "heavy",
+    },
+    "swiss": {
+        "label": "Swiss",
+        "blurb": "Restraint as the whole idea: one weight, tight tracking, a lot of empty frame. Lets the sleeve carry it.",
+        "font": "grotesque",
+        "primary": {"max_size": 84, "weight": 500, "case": "none", "spacing": -1.5, "line": 1.1},
+        "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 4},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE, "panel": None,
+        "align": "left", "anchor": "bottom", "bottom_gap": 270,
+        "entrance": "slide", "transition": "slide", "patch": "grain", "scrim": "soft",
+    },
+    "plate": {
+        "label": "Plate",
+        "blurb": "High-contrast serif in black on a white card, centred and unhurried. The fashion-title register.",
+        "font": "serif",
+        "primary": {"max_size": 104, "weight": 400, "case": "none", "spacing": 0, "line": 1.12},
+        "secondary": {"size": 28, "weight": 400, "case": "uppercase", "spacing": 11},
+        "trivia": {"size": 29, "weight": 400},
+        "color": INK,
+        # Square corners, unlike Poppy's rounded card -- a printed plate, not a
+        # sticker, and it keeps the two white-card styles from converging.
+        "panel": {"bg": "rgba(255,255,255,0.96)", "pad": "58px 62px", "radius": 0},
+        "align": "center", "anchor": "bottom", "bottom_gap": 215,
+        "entrance": "drift", "transition": "fade", "patch": "flow", "scrim": "light",
+    },
+    "index": {
+        "label": "Index",
+        "blurb": "Mono type stamped into a hard black block, set like a catalogue card. Minimal without being small.",
+        "font": "mono",
+        "primary": {"max_size": 80, "weight": 600, "case": "uppercase", "spacing": -0.5, "line": 1.14},
+        "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 5},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE,
+        # The inverse of Poppy's card. It is what separates this from Terminal,
+        # which is the same family in the same corner with no block behind it.
+        "panel": {"bg": "rgba(9,9,12,0.90)", "pad": "50px 54px", "radius": 0},
+        "align": "left", "anchor": "bottom", "bottom_gap": 235,
+        "entrance": "stamp", "transition": "swap", "patch": "bars", "scrim": "light",
+    },
 }
 
 DEFAULT_STYLE = "classic"
 STYLE_KEYS = tuple(STYLES.keys())
+
+
+# --------------------------------------------------------------------------
+# Layout -- where the artwork sits
+#
+# Until this existed there was exactly one answer, and it was a bad one for the
+# subject: album art is square, the frame is 9:16, and both media layers were
+# 1080x1920 `object-fit: cover`. A square sleeve was therefore scaled 1.78x,
+# had 44% of its width cropped off, was drawn at reduced opacity and then put
+# under a scrim. The one thing a music promo is about was the one thing you
+# could not see -- and with only one layout, every style was the same picture
+# with different type on it.
+#
+# Layout is orthogonal to style: a theme picks one of each. Geometry is quoted
+# in real 1080x1920 render pixels rather than percentages, because that is the
+# only coordinate system the composition actually has.
+#
+#   art          the box the sleeve is drawn into. None means the full frame.
+#   backdrop     a blown-up, blurred copy of the same image behind it, so the
+#                colour reaches the edges without cropping the sleeve itself.
+#   field        a flat colour behind everything, by palette.field() mode.
+#                Not every layout is tinted -- "white" keeps one genuinely
+#                clean, and "complement" sets the sleeve against its opposite
+#                so a warm cover does not produce a warm everything.
+#   scrim        the old under-text gradient. Only useful when type sits over
+#                artwork; over a flat field it just dirties the colour.
+#   text         where the artist/title block goes. None defers to the style's
+#                own anchor, which is what keeps "bleed" identical to before.
+#   text_on_field  whether that block lands on the flat colour rather than on
+#                the picture. Decides the type colour -- see _resolve_text.
+LAYOUTS = {
+    "bleed": {
+        "label": "Full bleed",
+        "blurb": "Artwork across the whole frame, dimmed, type over the top. Suits dark cinematic covers.",
+        "art_rect": None, "art_opacity": 0.88, "backdrop": False, "field": None,
+        "scrim": True, "text_rect": None, "text_on_field": False,
+    },
+    "canvas": {
+        "label": "Canvas",
+        "blurb": "The sleeve whole and sharp, over a blurred blow-up of itself. Nothing cropped.",
+        "art_rect": (100, 470, 880, 880),
+        "art_opacity": 1.0, "backdrop": True, "field": None,
+        "scrim": False, "text_rect": (1430, 330), "text_on_field": False,
+    },
+    "press": {
+        "label": "Press",
+        "blurb": "Sleeve flush to the top edge, hard cut to a flat field drawn from it. Type sits in the field.",
+        "art_rect": (0, 0, 1080, 1080),
+        "art_opacity": 1.0, "backdrop": False, "field": "derived",
+        "scrim": False, "text_rect": (1200, 520), "text_on_field": True,
+    },
+    "gallery": {
+        "label": "Gallery",
+        "blurb": "A small sleeve held high on plain white, wide even margins, type far below. Almost all air.",
+        "art_rect": (230, 340, 620, 620),
+        "art_opacity": 1.0, "backdrop": False, "field": "white",
+        "scrim": False, "text_rect": (1130, 560), "text_on_field": True,
+    },
+    "offset": {
+        "label": "Bleed off",
+        "blurb": "Sleeve oversized and pushed off the right edge. Deliberately off-balance.",
+        "art_rect": (250, 400, 1180, 1180),
+        "art_opacity": 1.0, "backdrop": False, "field": "derived",
+        "scrim": False, "text_rect": (1650, 210), "text_on_field": True,
+    },
+    "split": {
+        "label": "Split",
+        "blurb": "One hard horizontal cut. Picture above, a field in the opposite colour below, type filling it.",
+        "art_rect": (0, 0, 1080, 1056),
+        "art_opacity": 1.0, "backdrop": False, "field": "complement",
+        "scrim": False, "text_rect": (1150, 560), "text_on_field": True,
+    },
+    "strip": {
+        "label": "Strip",
+        "blurb": "The sleeve as a full-width band with colour holding it top and bottom.",
+        "art_rect": (0, 410, 1080, 1080),
+        "art_opacity": 1.0, "backdrop": False, "field": "derived",
+        "scrim": False, "text_rect": (1550, 300), "text_on_field": True,
+    },
+}
+
+# Geometry is declared once as numbers and the CSS is generated from it, so the
+# picker's thumbnails are drawn from the same rectangles the renderer uses. A
+# second hand-written copy of these positions is how a preview starts quietly
+# lying about what you are going to get.
+for _lay in LAYOUTS.values():
+    _r = _lay["art_rect"]
+    _lay["art"] = f"left:{_r[0]}px; top:{_r[1]}px; width:{_r[2]}px; height:{_r[3]}px;" if _r else None
+    _t = _lay["text_rect"]
+    _lay["text"] = f"top:{_t[0]}px; height:{_t[1]}px;" if _t else None
+
+DEFAULT_LAYOUT = "bleed"
+LAYOUT_KEYS = tuple(LAYOUTS.keys())
+
+
+def layout(key: str | None) -> dict:
+    return LAYOUTS.get(key or "", LAYOUTS[DEFAULT_LAYOUT])
+
+
+# Stand-in field colours for the picker. The real ones are sampled from each
+# sleeve at render time (see palette.field); these only have to show which
+# layout tints its ground, which leaves it white, and which flips to the
+# opposite hue.
+_FIELD_SWATCH = {
+    "derived": "#122c3a",
+    "complement": "#3a2012",
+    "white": "#f4f4f0",
+    "ink": "#0b0b0d",
+    None: "#0a0a0f",
+}
+
+
+def layout_thumb(key: str) -> str:
+    """A 120x213 diagram of where the sleeve and the type land.
+
+    Drawn from art_rect / text_rect, so it cannot drift from the composition.
+    Deliberately a diagram and not a rendering: what a layout decides is
+    position, and a tiny picture of a cover would hide that behind the cover."""
+    lay = LAYOUTS.get(key, LAYOUTS[DEFAULT_LAYOUT])
+    W, H = 120, 213
+    sx, sy = W / 1080, H / 1920
+    field = _FIELD_SWATCH.get(lay.get("field"), "#0a0a0f")
+    light = lay.get("field") == "white"
+    parts = [f'<rect width="{W}" height="{H}" fill="{field}"/>']
+
+    if lay.get("backdrop"):
+        # The blurred blow-up, as a soft wash rather than an edge.
+        parts.append(f'<rect width="{W}" height="{H}" fill="url(#lgb{key})"/>')
+
+    r = lay["art_rect"]
+    if r is None:
+        parts.append(f'<rect width="{W}" height="{H}" fill="url(#lga{key})" opacity="0.85"/>')
+    else:
+        x, y, w, h = r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" '
+                     f'fill="url(#lga{key})"/>')
+
+    # Two bars for the artist/title lockup, always together -- they are one
+    # block in every layout, never split across the artwork.
+    bar = "#111214" if light else "#ffffff"
+    if lay["text_rect"]:
+        ty = lay["text_rect"][0] * sy + 6
+    else:
+        ty = H - 42
+    parts.append(f'<rect x="9" y="{ty:.1f}" width="58" height="7" rx="1" fill="{bar}" opacity="0.92"/>')
+    parts.append(f'<rect x="9" y="{ty + 11:.1f}" width="34" height="4" rx="1" fill="{bar}" opacity="0.6"/>')
+
+    defs = (
+        f'<defs>'
+        f'<linearGradient id="lga{key}" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0%" stop-color="#8f9aa8"/><stop offset="100%" stop-color="#2b3038"/>'
+        f'</linearGradient>'
+        f'<radialGradient id="lgb{key}" cx="50%" cy="45%" r="70%">'
+        f'<stop offset="0%" stop-color="#5c6470"/><stop offset="100%" stop-color="#14161a"/>'
+        f'</radialGradient>'
+        f'</defs>'
+    )
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" '
+            f'height="{H}" role="img" aria-label="{lay["label"]} layout">{defs}{"".join(parts)}</svg>')
+
+
+def layout_choices() -> list[dict]:
+    return [{"key": k, "label": v["label"], "blurb": v["blurb"], "thumb": layout_thumb(k)}
+            for k, v in LAYOUTS.items()]
 
 
 def get(key: str | None) -> dict:
@@ -889,24 +1066,56 @@ def _case_css(value: str) -> str:
     return "none" if value == "none" else value
 
 
-def text_css(style: dict) -> str:
+def resolve_text(style: dict, lay: dict, field_is_light: bool) -> tuple[str, dict | None, bool]:
+    """(colour, panel, needs_shadow) for the artist/title block.
+
+    A style carries a text colour and the layout carries a background, and the
+    two can contradict each other: Swiss is white type, Gallery is a white
+    field, and white-on-white is not a look. Whichever the user picked, the
+    pair has to resolve to something readable, so the layout wins wherever the
+    type has left the artwork.
+
+    Over a flat field the shadow and the panel both go too. Both exist to hold
+    type apart from unpredictable imagery; on a solid colour the shadow only
+    smears it and a card is a card sitting on nothing."""
+    if not lay.get("text_on_field"):
+        return style["color"], style.get("panel"), True
+
+    # A card is part of a style's identity -- Poppy, Plate and Index are their
+    # cards -- so it only comes off when the field has made it pointless. Which
+    # way a card runs is told by the style's text colour: white type means a
+    # dark card, ink type means a light one.
+    panel = style.get("panel")
+    dark_card = bool(panel) and style["color"] == WHITE
+    if field_is_light:
+        # Black block on white reads beautifully; a white block on off-white is
+        # a rectangle nobody can see.
+        return (WHITE, panel, False) if dark_card else (INK, None, False)
+    if panel:
+        return style["color"], panel, False
+    # No card, and ink type would vanish into a dark field.
+    return WHITE, None, False
+
+
+def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False) -> str:
     """CSS for the text roles. Sizes for the title are a ceiling -- compose.py
     steps it down for long titles."""
+    lay = lay or LAYOUTS[DEFAULT_LAYOUT]
     font = FONTS[style["font"]]
     # The artist name is the promo's headline and the track title sits under
     # it, in every theme. Someone scrolling recognises the artist first -- it is
     # how a gig poster or a festival lineup is set -- and the hierarchy is a
     # product decision, so it does not vary per theme.
     primary, secondary, trivia = style["primary"], style["secondary"], style["trivia"]
-    color = style["color"]
+    color, panel, needs_shadow = resolve_text(style, lay, field_is_light)
     align = style["align"]
     items = "center" if align == "center" else "flex-start"
 
     # Black type gets no shadow (it sits on its own light panel); white type
-    # gets a soft one so it survives a bright patch of artwork.
-    shadow = "none" if color == INK else "0 4px 26px rgba(0,0,0,0.72)"
+    # gets a soft one so it survives a bright patch of artwork. Over a flat
+    # colour field neither applies -- see resolve_text.
+    shadow = "0 4px 26px rgba(0,0,0,0.72)" if (needs_shadow and color != INK) else "none"
 
-    panel = style.get("panel")
     if panel:
         panel_css = (
             f"background: {panel['bg']}; padding: {panel['pad']}; "
@@ -915,7 +1124,15 @@ def text_css(style: dict) -> str:
     else:
         panel_css = ""
 
-    if style["anchor"] == "center":
+    # The layout places the block whenever it has an opinion; only "bleed"
+    # leaves it to the style, which is what keeps that layout pixel-identical
+    # to what shipped before any of this existed.
+    if lay.get("text"):
+        # Absolute against .scene, which means .scene's 60px padding no longer
+        # applies and has to be restated here or the type runs to the bleed.
+        position_css = ("position: absolute; left: 0; right: 0; margin: 0; "
+                        "padding: 0 60px; justify-content: center; " + lay["text"])
+    elif style["anchor"] == "center":
         position_css = "justify-content: center; margin: 0;"
     else:
         position_css = f"margin-top: auto; margin-bottom: {style['bottom_gap']}px;"

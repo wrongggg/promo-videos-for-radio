@@ -428,6 +428,19 @@
                 <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
             </div>
 
+            <div class="form-group">
+                <label>Layout <span class="label-note">— where the artwork sits</span></label>
+                <div class="theme-grid" id="layoutGrid">
+                    {% for l in layout_choices %}
+                    <button type="button" class="theme-card{% if l.key == default_layout %} selected{% endif %}" data-layout="{{ l.key }}" title="{{ l.blurb }}">
+                        <span class="theme-thumb">{{ l.thumb|safe }}</span>
+                        <span class="theme-name">{{ l.label }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                <input type="hidden" id="layoutInput" name="layout" value="{{ default_layout }}">
+            </div>
+
             <div class="row-bottom">
                 <div class="form-group">
                     <label>Pace</label>
@@ -708,6 +721,16 @@ function selectThemeCard(mode) {
     if (saved) saved.value = "";
     return matched;
 }
+
+// Layout is a separate axis from style -- a theme picks one of each -- so it
+// gets its own picker rather than multiplying out into the style list.
+document.querySelectorAll("#layoutGrid .theme-card").forEach((card) => {
+    card.addEventListener("click", () => {
+        document.querySelectorAll("#layoutGrid .theme-card")
+            .forEach((c) => c.classList.toggle("selected", c === card));
+        document.getElementById("layoutInput").value = card.dataset.layout;
+    });
+});
 
 document.querySelectorAll("#themeGrid .theme-card").forEach((card) => {
     card.addEventListener("click", () => selectThemeCard(card.dataset.mode));

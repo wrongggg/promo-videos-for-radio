@@ -47,9 +47,14 @@ CSS = """
 }
 /* Artwork rides above the synth. transform is written every frame by the
    driver (Ken Burns + a bass-driven breath), so no CSS transition here --
-   a transition would make the result depend on real elapsed time. */
+   a transition would make the result depend on real elapsed time.
+
+   Sized to its .art-box wrapper rather than to the frame: the box is what a
+   layout moves and resizes, and it clips, so the Ken Burns push stays inside
+   whatever shape the layout asked for. For the full-bleed layout the box is
+   the whole frame and this resolves to exactly the old 1080x1920. */
 .art-media {
-  position: absolute; top: 0; left: 0; width: 1080px; height: 1920px;
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   object-fit: cover; z-index: 1; opacity: 0;
   transform-origin: center center; will-change: transform, opacity;
 }
@@ -106,7 +111,8 @@ def canvas_html() -> str:
     return '<canvas id="hydra-bg" width="1080" height="1920"></canvas>\n'
 
 
-def art_html(index: int, start: float, duration: float, src: str) -> str:
+def art_html(index: int, start: float, duration: float, src: str,
+             box_css: str | None = None) -> str:
     """Deliberately NOT a `class="clip"` timed element.
 
     The framework shows and hides clips by writing opacity at clip boundaries,
@@ -114,13 +120,20 @@ def art_html(index: int, start: float, duration: float, src: str) -> str:
     element every frame -- last writer wins, and which one that is varies. The
     artwork is instead a persistent element (like the synth canvas) whose
     visibility the driver owns outright, from the same baked data that drives
-    everything else."""
-    return f'<img id="art-{index}" class="art-media" src="{src}" />\n'
+    everything else.
+
+    `box_css` is the layout's geometry for the wrapper. The wrapper is a plain
+    div, never a clip, so it adds no second owner of visibility -- it only
+    positions and clips."""
+    box = box_css or "top:0; left:0; width:1080px; height:1920px;"
+    return (f'<div class="art-box" style="{box}">'
+            f'<img id="art-{index}" class="art-media" src="{src}" />'
+            f'</div>\n')
 
 
 def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
                patch: str = "haze", accent_hex: str = "#8844ff",
-               transition: str = "fade") -> str:
+               transition: str = "fade", art_opacity: float = 0.88) -> str:
     """`scenes`: [{index, start, duration, analysis, has_art}] where `analysis`
     is the dict from audio_analysis.analyze (or None).
 
@@ -163,6 +176,10 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
   var TOTAL  = {round(total_duration, 3)};
   var ACCENT = {{ r: {r}, g: {g}, b: {b} }};
   var TRANS  = {{ kind: "{trans["kind"]}", secs: {trans["secs"]} }};
+  // Full-bleed artwork is a backdrop and gets held down so type stays legible
+  // over it. A layout that frames the sleeve is showing it as the subject, so
+  // it runs at full strength -- see styles.LAYOUTS art_opacity.
+  var ART_OP = {round(art_opacity, 3)};
 
   var canvas = document.getElementById("hydra-bg");
   var hydra = null, h = null;
@@ -336,7 +353,7 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
 
       // The arriving cover sits above the departing one.
       el.style.zIndex = (t < s.start + TRANS.secs) ? "2" : "1";
-      el.style.opacity = (0.88 * st.op).toFixed(4);
+      el.style.opacity = (ART_OP * st.op).toFixed(4);
       el.style.transform =
         "scale(" + scale.toFixed(4) + ") translate(" +
         x.toFixed(2) + "px, " + y.toFixed(2) + "px)" +

@@ -145,34 +145,11 @@ PRESET_THEMES = {
             {"bg1": "#0d1a2a", "bg2": "#020508", "accent": "#4dabf7", "accent2": "#ffffff", "orb1": "#1c5aa0", "orb2": "#5c5c5c"},
         ],
     },
-    "editorial": {
-        "style": "editorial", "motion": "calm", "frame": "film-grain",
-        "palettes": [
-            {"bg1": "#1c1a17", "bg2": "#050403", "accent": "#d8cfc0", "accent2": "#8a8378", "orb1": "#3d382f", "orb2": "#6b6459"},
-            {"bg1": "#17191c", "bg2": "#030405", "accent": "#c8cdd4", "accent2": "#7c838c", "orb1": "#32373d", "orb2": "#5c636b"},
-        ],
-    },
-    "ambient": {
-        "style": "ambient", "motion": "calm", "frame": "vignette-heavy",
-        "palettes": [
-            {"bg1": "#0a1f2a", "bg2": "#010507", "accent": "#8fd4e8", "accent2": "#c9e9f2", "orb1": "#2a6b85", "orb2": "#5ca3bd"},
-            {"bg1": "#141a2a", "bg2": "#030509", "accent": "#a8b8e0", "accent2": "#d6def0", "orb1": "#3a4a7a", "orb2": "#6b7aa8"},
-            {"bg1": "#1a1420", "bg2": "#050308", "accent": "#c4a8d4", "accent2": "#e2d3ea", "orb1": "#5a3f6b", "orb2": "#8a6da0"},
-        ],
-    },
     "terminal": {
         "style": "terminal", "motion": "normal", "frame": "film-grain",
         "palettes": [
             {"bg1": "#0a1a0f", "bg2": "#010402", "accent": "#4ade80", "accent2": "#a7f3d0", "orb1": "#166534", "orb2": "#3f8f5f"},
             {"bg1": "#0f1a1a", "bg2": "#010404", "accent": "#5eead4", "accent2": "#ccfbf1", "orb1": "#115e59", "orb2": "#3f8f8a"},
-        ],
-    },
-    "carousel": {
-        "style": "carousel", "motion": "energetic", "frame": "clean",
-        "palettes": [
-            {"bg1": "#1a1030", "bg2": "#04020a", "accent": "#a78bfa", "accent2": "#f0abfc", "orb1": "#5b3fa8", "orb2": "#9d5fc4"},
-            {"bg1": "#0a1c30", "bg2": "#01050a", "accent": "#60a5fa", "accent2": "#a5f3fc", "orb1": "#2c5f9e", "orb2": "#4f9fc4"},
-            {"bg1": "#301020", "bg2": "#0a0206", "accent": "#fb7185", "accent2": "#fecdd3", "orb1": "#9e2c48", "orb2": "#c45f78"},
         ],
     },
     "kinetic": {
@@ -182,26 +159,47 @@ PRESET_THEMES = {
             {"bg1": "#0a2a2a", "bg2": "#02080a", "accent": "#22d3ee", "accent2": "#fb923c", "orb1": "#0e7490", "orb2": "#ea580c"},
         ],
     },
-    "flipboard": {
-        "style": "flipboard", "motion": "energetic", "frame": "vignette-heavy",
-        "palettes": [
-            {"bg1": "#141414", "bg2": "#000000", "accent": "#fbbf24", "accent2": "#ffffff", "orb1": "#57534e", "orb2": "#8a8a8a"},
-            {"bg1": "#101a24", "bg2": "#010305", "accent": "#38bdf8", "accent2": "#ffffff", "orb1": "#1e4e6e", "orb2": "#5c7a8a"},
-        ],
-    },
-    "confetti": {
-        "style": "confetti", "motion": "energetic", "frame": "clean",
-        "palettes": [
-            {"bg1": "#2e0a3d", "bg2": "#0a0210", "accent": "#fb7185", "accent2": "#fde047", "orb1": "#e11d8f", "orb2": "#facc15"},
-            {"bg1": "#0a2e3d", "bg2": "#020a10", "accent": "#34d399", "accent2": "#a78bfa", "orb1": "#0d9488", "orb2": "#8b5cf6"},
-            {"bg1": "#3d2a0a", "bg2": "#100a02", "accent": "#fb923c", "accent2": "#4ade80", "orb1": "#ea580c", "orb2": "#22c55e"},
-        ],
-    },
     "tidal": {
         "style": "tidal", "motion": "calm", "frame": "vignette-heavy",
         "palettes": [
             {"bg1": "#0a1e2e", "bg2": "#010508", "accent": "#7dd3fc", "accent2": "#e0f2fe", "orb1": "#0c4a6e", "orb2": "#3d7f9e"},
             {"bg1": "#0f1a2e", "bg2": "#020408", "accent": "#93c5fd", "accent2": "#dbeafe", "orb1": "#1e3a8a", "orb2": "#4f6fa8"},
+        ],
+    },
+    "stack": {
+        "style": "stack", "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#2d0616", "bg2": "#0a0105", "accent": "#ff2d55", "accent2": "#ffd60a", "orb1": "#c9184a", "orb2": "#ffb703"},
+            {"bg1": "#12002e", "bg2": "#04000a", "accent": "#7b2cff", "accent2": "#00f5d4", "orb1": "#5a189a", "orb2": "#06d6a0"},
+        ],
+    },
+    "masthead": {
+        "style": "masthead", "motion": "normal", "frame": "clean",
+        # Newsstand: paper white and one red, nothing else.
+        "palettes": [
+            {"bg1": "#1b1b1b", "bg2": "#000000", "accent": "#e5301c", "accent2": "#ffffff", "orb1": "#7a1a10", "orb2": "#4a4a4a"},
+            {"bg1": "#141618", "bg2": "#000000", "accent": "#ffffff", "accent2": "#e5301c", "orb1": "#3a3d40", "orb2": "#7a1a10"},
+        ],
+    },
+    "swiss": {
+        "style": "swiss", "motion": "calm", "frame": "clean",
+        "palettes": [
+            {"bg1": "#191b1e", "bg2": "#040506", "accent": "#c6ccd2", "accent2": "#8b9299", "orb1": "#343a40", "orb2": "#5b6268"},
+            {"bg1": "#141a1c", "bg2": "#030506", "accent": "#a8c4c9", "accent2": "#d5e2e4", "orb1": "#2c4448", "orb2": "#527076"},
+        ],
+    },
+    "plate": {
+        "style": "plate", "motion": "calm", "frame": "film-grain",
+        "palettes": [
+            {"bg1": "#2a1c1c", "bg2": "#080505", "accent": "#e8c4b8", "accent2": "#f5e6de", "orb1": "#7a4a42", "orb2": "#b08278"},
+            {"bg1": "#1c2027", "bg2": "#050607", "accent": "#cdd6e0", "accent2": "#eef2f6", "orb1": "#3d4756", "orb2": "#6d7a8c"},
+        ],
+    },
+    "index": {
+        "style": "index", "motion": "normal", "frame": "film-grain",
+        "palettes": [
+            {"bg1": "#16181a", "bg2": "#020303", "accent": "#f2f2ef", "accent2": "#9aa0a6", "orb1": "#2e3235", "orb2": "#565c61"},
+            {"bg1": "#1a1710", "bg2": "#040302", "accent": "#e8b923", "accent2": "#f2f2ef", "orb1": "#5c4a12", "orb2": "#8a7a3f"},
         ],
     },
 }

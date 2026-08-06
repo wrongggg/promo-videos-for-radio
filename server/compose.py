@@ -6,6 +6,7 @@ import re
 import subprocess
 
 import languages
+import palette as palette_mod
 import styles
 import visuals
 
@@ -57,6 +58,17 @@ def _rel(path: str) -> str:
     except ValueError:
         return path
     return path if rel.startswith("..") else rel
+
+
+def _abs(path: str | None) -> str | None:
+    """The filesystem path for a media src that has already been made
+    composition-relative. palette.field has to shell out to ffmpeg against a
+    real file, and by the time the composer runs, every src is relative to
+    PROJECT_DIR rather than to the process's cwd -- which differs between local
+    dev and the container, where gunicorn runs with --chdir server."""
+    if not path or os.path.isabs(path):
+        return path
+    return os.path.join(PROJECT_DIR, path)
 
 BASE_CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -195,6 +207,41 @@ html, body {
 }
 .frame-vignette-heavy { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.65) 100%); }
 .frame-glow-frame { box-shadow: inset 0 0 0 14px var(--frame-accent, #fff), inset 0 0 90px 20px var(--frame-accent, #fff); opacity: 0.4; }
+
+/* --- layout layers ------------------------------------------------------
+   The flat colour a layout sits its sleeve on. Below the artwork and above
+   the synth canvas, so a tinted layout reads as a printed ground rather than
+   as a wash over a generative backdrop. */
+.art-field { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
+/* A blown-up, heavily blurred copy of the same sleeve, so colour reaches the
+   frame edges without the sleeve itself being cropped to get there. Blurred
+   hard on purpose: at a gentler radius a cover with a pale border -- which is
+   most of them -- reads as a second rectangle floating behind the first
+   instead of as colour. */
+.art-backdrop {
+  position: absolute; top: 0; left: 0; width: 1080px; height: 1920px;
+  object-fit: cover; z-index: 1; transform: scale(1.6);
+  filter: blur(130px) saturate(1.4) brightness(0.78);
+}
+/* Darkens the backdrop and nothing else. The ordinary .scrim lives inside
+   .scene, which sits above every media layer, so using it here would dim the
+   sharp sleeve as well -- the one thing this layout exists to show. Same
+   z-index as the backdrop and emitted after it, so it paints over the blur but
+   under the .art-box at z-index 2. Without it the track title lands on
+   whatever the blurred cover happens to be doing and measures 2.9:1. */
+.art-wash {
+  position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1;
+  background: linear-gradient(180deg, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.12) 38%,
+              rgba(0,0,0,0.74) 100%);
+}
+/* The box a layout draws the sleeve into. Clips the Ken Burns push, which is
+   written on the <img> inside by the visuals runtime every frame. */
+.art-box { position: absolute; overflow: hidden; z-index: 2; }
+/* On a light field the header's white type and its dark scrim band are both
+   wrong -- the band reads as a smear across the top of a clean layout. */
+.light-frame .header-inner::before { display: none; }
+.light-frame .header-show, .light-frame .header-episode { color: #111214; text-shadow: none; }
+.light-frame .header-logo { filter: none; opacity: 0.85; }
 """
 
 # Motion presets control how much the orbs drift and how strong the Ken
@@ -254,13 +301,14 @@ def _loop_repeat(span: float, cycle: float) -> int:
 
 
 
-def _scene_html(index: int, start: float, duration: float, track: dict, media: dict, palette: dict, audio_duration: float | None = None, hero: tuple[str, str] | None = None, motion: dict | None = None, language: str = "en", style: dict | None = None) -> tuple[str, str, str]:
+def _scene_html(index: int, start: float, duration: float, track: dict, media: dict, palette: dict, audio_duration: float | None = None, hero: tuple[str, str] | None = None, motion: dict | None = None, language: str = "en", style: dict | None = None, lay: dict | None = None, field: dict | None = None) -> tuple[str, str, str]:
     """Returns (scene_div_html, media_tags_html, scene_js). Media tags must be direct
     children of the stage (siblings of .scene divs) — the framework cannot manage
     playback of <video>/<audio> nested inside another timed element."""
     scene_id = f"scene-{index}"
     pal = palette
     style = style or styles.get(None)
+    lay = lay or styles.layout(None)
     mo = motion or MOTION_STYLES["normal"]
     audio_duration = audio_duration or duration
     # Base paragraph direction matters even for a single Hebrew string: without
@@ -274,23 +322,47 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     # the flat gradient is only needed when artwork would otherwise paint over
     # a video underneath.
     has_visual = bool(media.get("video") or media.get("image"))
+    # A layout with its own colour field paints the whole frame, so the per-
+    # scene gradient underneath it would never be seen.
     bg_style = (
-        "" if has_visual
+        "" if (has_visual or field)
         else f"background: radial-gradient(circle at center, {pal['bg1']} 0%, {pal['bg2']} 100%);"
     )
 
     media_html = ""
+    # The flat field and the blurred backdrop are ordinary clips: unlike the
+    # artwork itself, nothing writes their opacity per frame, so letting the
+    # framework time them costs nothing and keeps them out of the driver.
+    if field:
+        media_html += (
+            f'<div class="clip art-field" style="background: {field["bg"]};" '
+            f'data-start="{start}" data-duration="{duration}" data-track-index="3"></div>\n'
+        )
+    if lay.get("backdrop") and media.get("image"):
+        media_html += (
+            f'<img class="clip art-backdrop" data-start="{start}" data-duration="{duration}" '
+            f'data-track-index="4" src="{_esc(_rel(media["image"]))}" />\n'
+            f'<div class="clip art-wash" data-start="{start}" data-duration="{duration}" '
+            f'data-track-index="5"></div>\n'
+        )
+
     if media.get("video"):
+        # Video cannot go inside the .art-box wrapper -- the framework manages
+        # playback only for media that are direct children of the stage -- so
+        # the layout's geometry goes straight onto the element. object-fit does
+        # the clipping the wrapper would otherwise have done.
+        box = f' style="{lay["art"]}"' if lay.get("art") else ""
         media_html += (
             f'<video id="media-{index}" class="clip bg-media" muted playsinline preload="auto" '
-            f'data-start="{start}" data-duration="{duration}" data-track-index="1" '
+            f'data-start="{start}" data-duration="{duration}" data-track-index="1"{box} '
             f'src="{_esc(_rel(media["video"]))}"></video>\n'
         )
     elif media.get("image"):
         # Artwork is animated every frame by the visuals runtime (Ken Burns +
         # bass breath), so it uses .art-media and carries no CSS transition --
         # a transition would key off real elapsed time and break determinism.
-        media_html += visuals.art_html(index, start, duration, _esc(_rel(media["image"])))
+        media_html += visuals.art_html(index, start, duration, _esc(_rel(media["image"])),
+                                       box_css=lay.get("art"))
 
     if media.get("audio"):
         media_html += (
@@ -308,11 +380,19 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     headline_markup = _split_chars(headline) if split_title else _esc(headline)
     trivia = track.get("reason", "").strip()
     trivia_html = f'<p id="trivia-{index}" class="trivia-tag">{_esc(trivia)}</p>' if trivia else ""
+    # The scrim exists to hold type apart from unpredictable imagery. Over a
+    # flat colour field there is nothing to hold it apart from, and the
+    # gradient only dirties the colour -- so layouts that own their ground
+    # drop it, along with the orbs, which read as smudges on a printed field.
+    scrim_html = '<div class="scrim"></div>' if lay.get("scrim") else ""
+    orbs_html = (
+        f'<div id="orb-a-{index}" class="orb orb-a" style="background: {pal["orb1"]};"></div>'
+        f'<div id="orb-b-{index}" class="orb orb-b" style="background: {pal["orb2"]};"></div>'
+    ) if not field else ""
     scene_html = f"""
       <div id="{scene_id}" class="clip scene" style="{bg_style}" data-start="{start}" data-duration="{duration}" data-track-index="0">
-        <div class="scrim"></div>
-        <div id="orb-a-{index}" class="orb orb-a" style="background: {pal['orb1']};"></div>
-        <div id="orb-b-{index}" class="orb orb-b" style="background: {pal['orb2']};"></div>
+        {scrim_html}
+        {orbs_html}
         {hero_html}
         <div class="meta-container"{rtl}>
           <div id="meta-{index}" class="meta-inner">
@@ -368,21 +448,31 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
             + (f'\n        .fromTo("#trivia-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else '')
         )
 
+    # Gated on the elements existing at all: GSAP warns on a missing target and
+    # `npm run check` reads that warning as a finding.
+    orb_js = (
+        f'\n        .fromTo("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.2 }}, {start})'
+        f'\n        .to("#orb-a-{index}", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})'
+        f'\n        .to("#orb-b-{index}", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})'
+    ) if not field else ""
+    orb_off_js = (
+        f'\n        .set("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {start + duration})'
+    ) if not field else ""
     scene_js = f"""
-      {entrance_js}
-        .fromTo("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.2 }}, {start})
-        .to("#orb-a-{index}", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
-        .to("#orb-b-{index}", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
+      {entrance_js}{orb_js}
         .to("#progress-{index}", {{ scaleX: 1, duration: {max(duration - 0.6, 0.5)}, ease: "linear" }}, {start + 0.3})
         .to({text_sel}, {entrance['exit']}, {exit_start})
-        .set({text_sel}, {{ opacity: 0 }}, {start + duration})
-        .set("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {start + duration});
+        .set({text_sel}, {{ opacity: 0 }}, {start + duration}){orb_off_js};
     """
     # Artwork gets no GSAP tween here. Its Ken Burns push, pan and bass-driven
     # breath are all written per frame by the visuals runtime, which owns the
     # #art-N elements outright -- a tween on the same transform would fight it,
     # and would target a #media-N element that no longer exists for stills.
-    if media.get("video"):
+    # Only full-bleed video gets the creep. A framed layout sets the video's
+    # box directly on the element (it cannot be wrapped -- see above), so there
+    # is nothing to clip a scale against and the footage would grow straight
+    # out over the field beside it.
+    if media.get("video") and not lay.get("art"):
         # Subtler zoom-only creep on video so it doesn't fight the footage's own motion.
         video_zoom = 1 + mo["zoom"]
         scene_js += f"""
@@ -596,6 +686,9 @@ def build_composition_html(
     motion = MOTION_STYLES.get(theme.get("motion", "normal"), MOTION_STYLES["normal"])
     frame = theme.get("frame", "clean")
     style = styles.get(theme.get("style"))
+    lay = styles.layout(theme.get("layout"))
+    field_mode = lay.get("field")
+    field_is_light = palette_mod.is_light(field_mode) if field_mode else False
 
     cursor = 0.0
     scenes_html = []
@@ -608,7 +701,11 @@ def build_composition_html(
         is_last = i == len(standout) - 1
         audio_duration = scene_duration + OUTRO_DURATION if is_last else None
         hero = _hero_html(show_name, episode_label) if i == 0 else None
-        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, hero=hero, motion=motion, language=language, style=style)
+        # Sampled per scene, so the field tracks each sleeve rather than one
+        # colour being chosen for the whole promo from whatever happened to be
+        # track one. Cached inside palette.field by (path, mode).
+        scene_field = palette_mod.field(_abs(item["media"].get("image")), field_mode) if field_mode else None
+        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, hero=hero, motion=motion, language=language, style=style, lay=lay, field=scene_field)
         scenes_html.append(sh)
         media_tags_html.append(mh)
         scenes_js.append(sj)
@@ -646,7 +743,16 @@ def build_composition_html(
         patch=style["patch"],
         accent_hex=palette[0]["accent"],
         transition=style.get("transition", "fade"),
+        art_opacity=lay.get("art_opacity", 0.88),
     )
+
+    # A framed layout shows the sleeve as the subject, so the video layer's
+    # backdrop dimming comes off; a light field flips the header to ink.
+    root_classes = " ".join(filter(None, [
+        "framed" if lay.get("art") else "",
+        "light-frame" if field_is_light else "",
+    ]))
+    framed_css = ".framed .bg-media { opacity: 1; }" if lay.get("art") else ""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -655,10 +761,10 @@ def build_composition_html(
     <meta name="viewport" content="width=1080, height=1920" />
     <title>{_esc(show_name.strip() + " Promo") if (show_name or "").strip() else "Promo"}</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>{BASE_CSS}{visuals.CSS}{styles.text_css(style)}</style>
+    <style>{BASE_CSS}{visuals.CSS}{styles.text_css(style, lay, field_is_light)}{framed_css}</style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="{total_duration}" data-width="1080" data-height="1920">
+    <div id="root" class="{root_classes}" data-composition-id="main" data-start="0" data-duration="{total_duration}" data-width="1080" data-height="1920">
       {visuals.canvas_html()}
       {''.join(media_tags_html)}
       {''.join(scenes_html)}
