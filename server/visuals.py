@@ -313,19 +313,27 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
         : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.035, rot: 0, blur: p * B }};
     }}
     if (k === "slide") {{
+      // Parallax, not a conveyor belt: the incoming cover crosses the full
+      // stage while the outgoing one gives way at ~60% of that speed, and a
+      // streak of blur rides the velocity and resolves as it lands.
       return entering
-        ? {{ op: p, dx: (1 - p) * 620, dy: 0, scale: 1, rot: 0 }}
-        : {{ op: 1 - p, dx: -p * 620, dy: 0, scale: 1, rot: 0 }};
+        ? {{ op: p, dx: (1 - p) * 620, dy: 0, scale: 1 + (1 - p) * 0.05, rot: 0, blur: (1 - p) * 9 }}
+        : {{ op: 1 - p, dx: -p * 380, dy: 0, scale: 1 - p * 0.04, rot: 0, blur: p * 7 }};
     }}
     if (k === "zoom") {{
+      // A focus pull: the incoming cover settles out of a defocus while the
+      // outgoing one drops away losing definition. Overshoot trimmed from
+      // 1.45x to 1.3x -- the blur now carries the sense of speed instead.
       return entering
-        ? {{ op: p, dx: 0, dy: 0, scale: 1 + (1 - p) * 0.45, rot: 0 }}
-        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.25, rot: 0 }};
+        ? {{ op: p, dx: 0, dy: 0, scale: 1 + (1 - p) * 0.3, rot: 0, blur: (1 - p) * 12 }}
+        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.16, rot: 0, blur: p * 10 }};
     }}
     if (k === "spin") {{
+      // A quarter of the old rotation. At -14deg the whole frame visibly
+      // cartwheeled; at -8deg the cover reads as swinging into place.
       return entering
-        ? {{ op: p, dx: 0, dy: 0, scale: 0.72 + p * 0.28, rot: (1 - p) * -14 }}
-        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.18, rot: p * 12 }};
+        ? {{ op: p, dx: 0, dy: 0, scale: 0.82 + p * 0.18, rot: (1 - p) * -8 }}
+        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.12, rot: p * 6 }};
     }}
     return entering ? {{ op: p, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }}
                     : {{ op: 1 - p, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }};

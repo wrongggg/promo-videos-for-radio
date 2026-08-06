@@ -429,10 +429,10 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         entrance_js = (
             f'{panel_in}fromTo("#artist-{index} .ch", {entrance["from"]}, '
             f'Object.assign({entrance["to"]}), {start + 0.25})\n'
-            f'        .fromTo("#title-{index}", {{ opacity: 0, y: 20 }}, '
-            f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.55})'
-            + (f'\n        .fromTo("#trivia-{index}", {{ opacity: 0, y: 14 }}, '
-               f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.7})' if trivia else '')
+            f'        .fromTo("#title-{index}", {{ opacity: 0, y: 18, filter: "blur(6px)" }}, '
+            f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.8, ease: "expo.out" }}, {start + 0.5})'
+            + (f'\n        .fromTo("#trivia-{index}", {{ opacity: 0, y: 14, filter: "blur(6px)" }}, '
+               f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.8, ease: "expo.out" }}, {start + 0.64})' if trivia else '')
         )
     elif has_panel:
         text_sel = f'"#meta-{index}"'
@@ -527,12 +527,17 @@ def _header_html(show_name: str, episode_label: str, total_duration: float, fade
     # a duplicate. Fade the header out just before the outro brand animates in.
     header_out = ""
     if outro_start is not None:
+        # The fade lands exactly on the outro boundary and the set right on it
+        # is the seek-safety hard kill: a non-linear seek that lands past the
+        # tween must still find the header hidden.
+        fade_out_at = max(0.0, outro_start - 0.35)
         header_out = (
             f'\n      tl.to("#header-inner", {{ opacity: 0, duration: 0.35, '
-            f'ease: "power2.in" }}, {max(0.0, outro_start - 0.3)});'
+            f'ease: "power2.in" }}, {fade_out_at});'
+            f'\n      tl.set("#header-inner", {{ opacity: 0 }}, {round(outro_start, 3)});'
         )
     header_js = f"""
-      tl.fromTo("#header-inner", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5, ease: "power2.out" }}, {fade_in_at});{header_out}
+      tl.fromTo("#header-inner", {{ opacity: 0, y: -14 }}, {{ opacity: 1, y: 0, duration: 0.6, ease: "expo.out" }}, {fade_in_at});{header_out}
     """
     return header_html, header_js
 
@@ -566,11 +571,11 @@ def _hero_html(show_name: str, episode_label: str) -> tuple[str, str] | None:
     tweens = []
     if show_name:
         tweens.append(
-            f'.fromTo("#hero-show", {{ opacity: 0, y: 50, scale: 0.85 }}, {{ opacity: 1, y: 0, scale: 1, duration: 0.9, ease: "back.out(1.6)" }}, 0.15)'
+            f'.fromTo("#hero-show", {{ opacity: 0, y: 42, scale: 0.96, filter: "blur(14px)" }}, {{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 1.0, ease: "expo.out" }}, 0.15)'
         )
     if episode_label:
         tweens.append(
-            f'.fromTo("#hero-episode", {{ opacity: 0, y: 24 }}, {{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, 0.4)'
+            f'.fromTo("#hero-episode", {{ opacity: 0, y: 20, filter: "blur(8px)" }}, {{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.85, ease: "expo.out" }}, 0.42)'
         )
     if show_name:
         tweens.append(
@@ -633,33 +638,39 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
     # Skip the tween entirely when there is no logo -- GSAP warns on a missing
     # target and the composition check treats that as a finding.
     logo_tween = (
-        '.fromTo("#outro-logo", { opacity: 0, y: -20, scale: 0.7 }, '
-        '{ opacity: 0.9, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.7)" }, '
+        '.fromTo("#outro-logo", { opacity: 0, y: -14, scale: 0.82, filter: "blur(8px)" }, '
+        '{ opacity: 0.9, y: 0, scale: 1, filter: "blur(0px)", duration: 0.7, ease: "back.out(1.6)" }, '
         f'{start + 0.15})'
     ) if logo_path else ""
     # Same reason the logo tween is conditional: an absent target is a GSAP
     # warning and a `npm run check` finding, not a silent no-op.
     show_tween = (
-        f'\n        .fromTo("#outro-show", {{ opacity: 0, y: 24 }}, '
-        f'{{ opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }}, {start + 0.3})'
+        f'\n        .fromTo("#outro-show", {{ opacity: 0, y: 22, filter: "blur(10px)" }}, '
+        f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.85, ease: "expo.out" }}, {start + 0.3})'
     ) if show_name else ""
     episode_tween = (
-        f'\n        .fromTo("#outro-episode", {{ opacity: 0, y: 16 }}, '
-        f'{{ opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }}, {start + 0.45})'
+        f'\n        .fromTo("#outro-episode", {{ opacity: 0, y: 14, filter: "blur(6px)" }}, '
+        f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.75, ease: "expo.out" }}, {start + 0.42})'
     ) if episode_label else ""
     # #outro-title and #also-featuring only exist when there are other artists
     # to list -- also_html is empty otherwise.
     also_tweens = (
-        f'\n        .fromTo("#outro-title", {{ opacity: 0, y: 40 }}, '
-        f'{{ opacity: 1, y: 0, duration: 1, ease: "power3.out" }}, {start + 0.65})'
-        f'\n        .fromTo("#also-featuring", {{ opacity: 0, y: 30 }}, '
-        f'{{ opacity: 1, y: 0, duration: 1.1, ease: "power3.out" }}, {start + 0.95})'
+        f'\n        .fromTo("#outro-title", {{ opacity: 0, y: 34, filter: "blur(10px)" }}, '
+        f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.95, ease: "expo.out" }}, {start + 0.6})'
+        f'\n        .fromTo("#also-featuring", {{ opacity: 0, y: 26, filter: "blur(8px)" }}, '
+        f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 1.05, ease: "expo.out" }}, {start + 0.85})'
     ) if also_html else ""
+    # The CTA used to just be there when the scene cut in; it now lands last,
+    # after the credits, which is also the order the eye is meant to read.
+    cta_tween = (
+        f'\n        .fromTo("#outro-cta", {{ opacity: 0, y: 14 }}, '
+        f'{{ opacity: 1, y: 0, duration: 0.7, ease: "expo.out" }}, {start + 1.15})'
+    )
     scene_js = f"""
       tl.fromTo("#outro-orb-a, #outro-orb-b", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.4 }}, {start})
         .to("#outro-orb-a", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#outro-orb-b", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
-        {logo_tween}{show_tween}{episode_tween}{also_tweens};
+        {logo_tween}{show_tween}{episode_tween}{also_tweens}{cta_tween};
     """
     return scene_html, scene_js
 

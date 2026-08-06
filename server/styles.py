@@ -57,56 +57,81 @@ INK = "#0b0b0d"
 # scattering). compose.py splits the title into <span class="ch"> for those and
 # points the tween at the spans instead of the block.
 #
-# Every value animated here is a transform or opacity. Layout properties --
-# letterSpacing, width, font-size, character count -- snap to whole device
-# pixels, so under seek-by-frame capture their ease-out tails stutter instead
-# of gliding. The linter rejects them outright.
+# Every value animated here is a transform, opacity, or a blur that resolves to
+# zero. Layout properties -- letterSpacing, width, font-size, character count --
+# snap to whole device pixels, so under seek-by-frame capture their ease-out
+# tails stutter instead of gliding. The linter rejects them outright.
+#
+# The house motion grammar, applied everywhere at once so the styles read as
+# one product:
+#   * Arrivals decelerate hard -- expo.out or power4.out -- and land inside a
+#     second. The old power1/power3 tails read as easing curves; a 2026 arrival
+#     reads as an object stopping.
+#   * Block-level entrances resolve out of a soft defocus (filter blur -> 0),
+#     the same move the artwork's dissolve already makes. Per-character tweens
+#     stay transform-only: a blur forces a compositor layer per glyph, and
+#     hosted renders die on the box's envelope, not the composition's taste.
+#   * Overshoot is a settle (back.out <= 1.7), never a wobble -- elastic and
+#     the -90-degree spin are gone.
+#   * Exits are shorter than entrances, accelerate in, and never steal focus.
 ENTRANCES = {
     "rise": {
-        "from": "{ y: 90, opacity: 0 }",
-        "to": "{ y: 0, opacity: 1, duration: 0.9, ease: 'power3.out' }",
-        "exit": "{ opacity: 0, y: -40, duration: 0.5, ease: 'power2.in' }",
+        "from": "{ y: 64, opacity: 0, filter: 'blur(12px)' }",
+        "to": "{ y: 0, opacity: 1, filter: 'blur(0px)', duration: 0.9, ease: 'expo.out' }",
+        "exit": "{ opacity: 0, y: -30, filter: 'blur(8px)', duration: 0.5, ease: 'power2.in' }",
     },
     "fade": {
-        "from": "{ opacity: 0 }",
-        "to": "{ opacity: 1, duration: 1.2, ease: 'power1.out' }",
-        "exit": "{ opacity: 0, duration: 0.6, ease: 'power1.in' }",
+        # A focus pull, not a dim: the block is already in place and simply
+        # resolves. The 1.02 scale settle is what stops it reading as a JPEG
+        # loading in.
+        "from": "{ opacity: 0, scale: 1.02, filter: 'blur(14px)' }",
+        "to": "{ opacity: 1, scale: 1, filter: 'blur(0px)', duration: 1.05, ease: 'power2.out' }",
+        "exit": "{ opacity: 0, filter: 'blur(10px)', duration: 0.55, ease: 'power1.in' }",
     },
     "slide": {
-        "from": "{ x: -120, opacity: 0 }",
-        "to": "{ x: 0, opacity: 1, duration: 0.8, ease: 'power4.out' }",
-        "exit": "{ opacity: 0, x: 90, duration: 0.45, ease: 'power3.in' }",
+        # The skew is the motion blur's partner: a few degrees of shear on the
+        # way in reads as velocity, and it must settle to exactly 0 with the x.
+        "from": "{ x: -100, opacity: 0, skewX: 6, filter: 'blur(10px)' }",
+        "to": "{ x: 0, opacity: 1, skewX: 0, filter: 'blur(0px)', duration: 0.8, ease: 'expo.out' }",
+        "exit": "{ opacity: 0, x: 64, skewX: -4, filter: 'blur(8px)', duration: 0.45, ease: 'power3.in' }",
     },
     "snap": {
-        "from": "{ scale: 1.25, opacity: 0 }",
-        "to": "{ scale: 1, opacity: 1, duration: 0.45, ease: 'power4.out' }",
-        "exit": "{ opacity: 0, scale: 0.94, duration: 0.35, ease: 'power2.in' }",
+        "from": "{ scale: 1.14, opacity: 0, filter: 'blur(10px)' }",
+        "to": "{ scale: 1, opacity: 1, filter: 'blur(0px)', duration: 0.55, ease: 'expo.out' }",
+        "exit": "{ opacity: 0, scale: 0.97, duration: 0.35, ease: 'power2.in' }",
     },
     "drift": {
-        "from": "{ y: 44, opacity: 0, scale: 1.05 }",
-        "to": "{ y: 0, opacity: 1, scale: 1, duration: 1.7, ease: 'power2.out' }",
-        "exit": "{ opacity: 0, scale: 1.03, duration: 0.85, ease: 'power1.in' }",
+        "from": "{ y: 30, opacity: 0, scale: 1.035, filter: 'blur(12px)' }",
+        "to": "{ y: 0, opacity: 1, scale: 1, filter: 'blur(0px)', duration: 1.5, ease: 'power3.out' }",
+        "exit": "{ opacity: 0, scale: 1.02, filter: 'blur(8px)', duration: 0.55, ease: 'power1.in' }",
     },
 
-    # --- per-character ---
+    # --- per-character (transform + opacity only -- see note above) ---
     "type": {
         # A hard cut per character with no ease, which is what makes it read as
         # typing rather than fading. Opacity only, so nothing reflows.
         "from": "{ opacity: 0 }",
-        "to": "{ opacity: 1, duration: 0.01, ease: 'none', stagger: 0.045 }",
-        "exit": "{ opacity: 0, duration: 0.4, ease: 'power1.in' }",
+        "to": "{ opacity: 1, duration: 0.01, ease: 'none', stagger: 0.04 }",
+        "exit": "{ opacity: 0, duration: 0.35, ease: 'power1.in' }",
         "chars": True,
     },
     "spin": {
-        "from": "{ opacity: 0, rotation: -90, scale: 0.4 }",
-        "to": "{ opacity: 1, rotation: 0, scale: 1, duration: 0.55, ease: 'back.out(2)', stagger: 0.03 }",
-        "exit": "{ opacity: 0, rotation: 25, duration: 0.4, ease: 'power2.in' }",
+        # Was a -90-degree back.out(2) cartwheel. The 2026 read of "letters
+        # spin into place" is a short tumble that settles, radiating out from
+        # the centre of the word rather than marching left to right.
+        "from": "{ opacity: 0, rotation: -18, y: 34, scale: 0.85 }",
+        "to": ("{ opacity: 1, rotation: 0, y: 0, scale: 1, duration: 0.6, "
+               "ease: 'back.out(1.7)', stagger: { each: 0.024, from: 'center' } }"),
+        "exit": "{ opacity: 0, rotation: 6, y: -20, duration: 0.4, ease: 'power2.in' }",
         "chars": True,
     },
     "flip": {
-        "from": "{ opacity: 0, rotationX: -90, y: 20 }",
-        "to": "{ opacity: 1, rotationX: 0, y: 0, duration: 0.5, ease: 'power3.out', stagger: 0.035 }",
-        "exit": "{ opacity: 0, rotationX: 45, duration: 0.4, ease: 'power2.in' }",
+        # transformPerspective is what makes the rotation read as a board tile
+        # turning instead of a letter squashing -- without it GSAP renders
+        # rotationX as a flat scaleY.
+        "from": "{ opacity: 0, rotationX: -85, y: 12, transformPerspective: 700 }",
+        "to": "{ opacity: 1, rotationX: 0, y: 0, duration: 0.7, ease: 'expo.out', stagger: 0.028 }",
+        "exit": "{ opacity: 0, rotationX: 50, duration: 0.4, ease: 'power2.in' }",
         "chars": True,
     },
     "scatter": {
@@ -116,24 +141,38 @@ ENTRANCES = {
         # GSAP takes function-based values per *property*; handing it a function
         # as the whole fromVars object silently does nothing, which is exactly
         # how this first shipped (the letters just appeared in place).
-        "from": ("{ opacity: 0, scale: 0.7,"
-                 " x: function (i) { return ((i * 37) % 17 - 8) * 11; },"
-                 " y: function (i) { return ((i * 61) % 13 - 6) * 14; },"
-                 " rotation: function (i) { return ((i * 29) % 11 - 5) * 7; } }"),
-        "to": "{ opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: 0.7, ease: 'power3.out', stagger: 0.02 }",
-        "exit": "{ opacity: 0, scale: 0.9, duration: 0.4, ease: 'power2.in' }",
+        #
+        # The offsets are deliberately tight (under ~60px) -- at the old 11-14x
+        # multipliers this was confetti; at these it reads as the word snapping
+        # into alignment from a near miss.
+        "from": ("{ opacity: 0, scale: 0.92,"
+                 " x: function (i) { return ((i * 37) % 17 - 8) * 7; },"
+                 " y: function (i) { return ((i * 61) % 13 - 6) * 9; },"
+                 " rotation: function (i) { return ((i * 29) % 11 - 5) * 4; } }"),
+        "to": "{ opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: 0.65, ease: 'power4.out', stagger: 0.016 }",
+        "exit": "{ opacity: 0, scale: 0.95, y: -16, duration: 0.4, ease: 'power2.in' }",
         "chars": True,
     },
     "wave": {
-        "from": "{ opacity: 0, y: 52 }",
-        "to": "{ opacity: 1, y: 0, duration: 0.75, ease: 'elastic.out(1, 0.6)', stagger: 0.028 }",
-        "exit": "{ opacity: 0, y: -26, duration: 0.4, ease: 'power2.in' }",
+        # The swell: each letter rises with a soft settle, and the stagger
+        # itself accelerates (ease on the stagger object) so the cascade gathers
+        # like water rather than ticking along at one rate. The old
+        # elastic.out(1, 0.6) wobbled three times per letter; one clean
+        # overshoot is bigger *and* calmer.
+        "from": "{ opacity: 0, y: 46 }",
+        "to": ("{ opacity: 1, y: 0, duration: 0.85, ease: 'back.out(1.4)', "
+               "stagger: { each: 0.03, ease: 'sine.in' } }"),
+        "exit": "{ opacity: 0, y: -22, duration: 0.45, ease: 'power2.in' }",
         "chars": True,
     },
     "stamp": {
-        "from": "{ opacity: 0, scale: 2.4, rotation: -8 }",
-        "to": "{ opacity: 1, scale: 1, rotation: 0, duration: 0.32, ease: 'power4.out' }",
-        "exit": "{ opacity: 0, scale: 1.1, duration: 0.3, ease: 'power2.in' }",
+        # A press, not a slam: the old 2.4x/-8deg arrival spent most of its
+        # travel invisible anyway (opacity ramps with the tween), so all it
+        # bought was a lurch on the last frames. 1.35x out of a defocus lands
+        # with the same weight and no camp.
+        "from": "{ opacity: 0, scale: 1.35, filter: 'blur(10px)' }",
+        "to": "{ opacity: 1, scale: 1, filter: 'blur(0px)', duration: 0.45, ease: 'expo.out' }",
+        "exit": "{ opacity: 0, scale: 1.05, filter: 'blur(6px)', duration: 0.35, ease: 'power2.in' }",
     },
 }
 
@@ -744,12 +783,14 @@ PREVIEW_SECS = 4.6
 _COVER_STATES = {
     "fade":  {"in": "opacity: 0; transform: none;",
               "out": "opacity: 0; transform: none;"},
-    "slide": {"in": "opacity: 1; transform: translateX(100%);",
-              "out": "opacity: 1; transform: translateX(-100%);"},
-    "zoom":  {"in": "opacity: 0; transform: scale(1.4);",
-              "out": "opacity: 0; transform: scale(0.8);"},
-    "spin":  {"in": "opacity: 0; transform: rotate(-14deg) scale(0.72);",
-              "out": "opacity: 0; transform: rotate(12deg) scale(0.85);"},
+    # Slide is a parallax hand-over in the renderer: the incoming cover crosses
+    # the stage while the outgoing one gives way at part speed, both fading.
+    "slide": {"in": "opacity: 0; transform: translateX(55%) scale(1.04);",
+              "out": "opacity: 0; transform: translateX(-35%);"},
+    "zoom":  {"in": "opacity: 0; transform: scale(1.3); filter: blur(4px);",
+              "out": "opacity: 0; transform: scale(0.84); filter: blur(3px);"},
+    "spin":  {"in": "opacity: 0; transform: rotate(-8deg) scale(0.82);",
+              "out": "opacity: 0; transform: rotate(6deg) scale(0.88);"},
     # A hard cut: no interpolation, so the steps() timing does the work.
     "swap":  {"in": "opacity: 0; transform: none;",
               "out": "opacity: 0; transform: none;"},
@@ -778,20 +819,22 @@ _SNAP = " animation-timing-function: steps(1, end);"
 # `from {}` wrapper so it can be placed at any point in a keyframe list -- the
 # second track has to perform its entrance partway through the loop, not at 0%.
 _TEXT_FROM = {
-    "rise":    "opacity: 0; transform: translateY(14px);",
-    "fade":    "opacity: 0;",
-    "slide":   "opacity: 0; transform: translateX(-26px);",
-    "snap":    "opacity: 0; transform: scale(1.35);",
-    "drift":   "opacity: 0; transform: translateY(9px) scale(1.05);",
+    "rise":    "opacity: 0; transform: translateY(12px); filter: blur(4px);",
+    "fade":    "opacity: 0; filter: blur(4px);",
+    "slide":   "opacity: 0; transform: translateX(-22px) skewX(6deg); filter: blur(3px);",
+    "snap":    "opacity: 0; transform: scale(1.14); filter: blur(3px);",
+    "drift":   "opacity: 0; transform: translateY(8px) scale(1.035); filter: blur(4px);",
     "type":    "opacity: 0; transform: scaleX(0);",
-    "spin":    "opacity: 0; transform: rotate(-70deg) scale(0.4);",
-    "flip":    "opacity: 0; transform: scaleY(0.1);",
-    "scatter": "opacity: 0; transform: translate(-14px, 12px) rotate(-18deg);",
-    "wave":    "opacity: 0; transform: translateY(20px);",
-    "stamp":   "opacity: 0; transform: scale(2.2) rotate(-8deg);",
+    "spin":    "opacity: 0; transform: rotate(-14deg) translateY(9px) scale(0.85);",
+    "flip":    "opacity: 0; transform: perspective(300px) rotateX(-85deg);",
+    "scatter": "opacity: 0; transform: translate(-8px, 7px) rotate(-7deg);",
+    "wave":    "opacity: 0; transform: translateY(14px);",
+    "stamp":   "opacity: 0; transform: scale(1.3); filter: blur(3px);",
 }
-_SETTLED = "opacity: 1; transform: none;"
-_GONE = "opacity: 0; transform: none;"
+# Both rest states declare filter so a blur in an entry pose interpolates from
+# a defined value instead of jumping when the keyframe list mixes the two.
+_SETTLED = "opacity: 1; transform: none; filter: blur(0px);"
+_GONE = "opacity: 0; transform: none; filter: blur(0px);"
 
 _STAGGERED = {"type", "spin", "flip", "scatter", "wave"}
 
@@ -823,7 +866,9 @@ def thumbnail_css(themes: dict | None = None) -> str:
         # sliding between states.
         ease = "steps(1, end)" if kind == "swap" else (
             "steps(4, end)" if kind == "pixelate" else "cubic-bezier(.4,0,.2,1)")
-        t_ease = "steps(1, end)" if ent == "type" else "cubic-bezier(.2,.7,.3,1)"
+        # The out-expo curve (fast arrival, long settle) that the composition's
+        # expo.out entrances use; the preview should decelerate the same way.
+        t_ease = "steps(1, end)" if ent == "type" else "cubic-bezier(.16,1,.3,1)"
 
         # Covers. A holds 82%->18% (across the wrap), hands over 18-32%, is
         # parked 32-67%, resets at 67-68% and comes back 68-82%. B is the same
@@ -894,7 +939,7 @@ def thumbnail_css(themes: dict | None = None) -> str:
             out.append(rule(f".tp-txt-{blk} .tp-ch",
                             f"animation: {kf} {PREVIEW_SECS}s {t_ease} infinite;"))
             out.append(rule(f".tp-txt-{blk} .tp-artist",
-                            f"animation: {kf} {PREVIEW_SECS}s cubic-bezier(.2,.7,.3,1) infinite;"))
+                            f"animation: {kf} {PREVIEW_SECS}s cubic-bezier(.16,1,.3,1) infinite;"))
 
         if ent in _STAGGERED:
             # On a looping animation a delay shifts the phase, which still reads
