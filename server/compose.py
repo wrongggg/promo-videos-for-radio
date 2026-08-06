@@ -90,7 +90,11 @@ html, body {
 /* Transforms don't apply to inline boxes, so per-character spans have to be
    inline-block. will-change keeps the staggered transforms on the compositor. */
 .artist-name .ch { display: inline-block; will-change: transform, opacity; }
-.artist-name .ch.sp { white-space: pre; }
+/* Adjacent inline-blocks are a break opportunity, so without this the headline
+   breaks between letters rather than between words -- see _split_chars. An
+   unsplit headline needs no equivalent: plain text already breaks only at
+   spaces, and forcing word-break here would stop CJK wrapping at all. */
+.artist-name .word { display: inline-block; white-space: nowrap; }
 .scrim { position: absolute; top: 0; left: 0; width: 1080px; height: 1920px; z-index: 1; }
 .orb { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0; z-index: 2; }
 .orb-a { width: 620px; height: 620px; top: 10%; left: 6%; }
@@ -142,18 +146,6 @@ html, body {
   text-shadow: 0 2px 8px rgba(0,0,0,0.95), 0 3px 16px rgba(0,0,0,0.8);
 }
 .header-logo { height: 32px; opacity: 0.9; filter: brightness(0) invert(1) drop-shadow(0 3px 10px rgba(0,0,0,0.7)); }
-.hero-container {
-  position: absolute; top: 19%; left: 0; width: 1080px; z-index: 25;
-  text-align: center; display: flex; flex-direction: column; align-items: center;
-}
-.hero-show {
-  font-size: 104px; font-weight: 900; text-transform: uppercase; letter-spacing: 4px;
-  text-shadow: 0 6px 30px rgba(0,0,0,0.85); opacity: 0; transform-origin: center center;
-}
-.hero-episode {
-  font-size: 32px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase;
-  opacity: 0; margin-top: 16px; text-shadow: 0 4px 18px rgba(0,0,0,0.8); transform-origin: center center;
-}
 
 
 
@@ -280,16 +272,29 @@ def _can_split_chars(text: str) -> bool:
 
 
 def _split_chars(text: str) -> str:
-    """Wrap each character in a span so GSAP can stagger them.
+    """Wrap each character in a span so GSAP can stagger them, and each word in
+    a span that refuses to break.
 
-    Spaces become their own span holding a non-breaking space, so word gaps
-    survive and the browser can still line-break between them."""
+    Every `.ch` is an inline-block, because transforms don't apply to inline
+    boxes -- and adjacent inline-blocks are a line-break opportunity. So the
+    browser will break a headline between any two letters. The previous version
+    of this made it worse by writing the word gap as `&nbsp;`: that is the one
+    position a line may *not* break, which left every position except the right
+    one available and produced "FLEETWOO / D MAC".
+
+    Words are therefore atomic (`white-space: nowrap`) and separated by an
+    ordinary space, so the only break opportunity in the headline is a real word
+    gap. A single word too wide for the frame is handled before it gets here --
+    styles.headline_size shrinks the type until it fits on one line."""
     out = []
-    for ch in text:
-        if ch == " ":
-            out.append('<span class="ch sp">&nbsp;</span>')
-        else:
-            out.append(f'<span class="ch">{html.escape(ch, quote=True)}</span>')
+    for part in re.split(r"(\s+)", text):
+        if not part:
+            continue
+        if part.isspace():
+            out.append(" ")
+            continue
+        chars = "".join(f'<span class="ch">{html.escape(c, quote=True)}</span>' for c in part)
+        out.append(f'<span class="word">{chars}</span>')
     return "".join(out)
 
 
@@ -301,7 +306,7 @@ def _loop_repeat(span: float, cycle: float) -> int:
 
 
 
-def _scene_html(index: int, start: float, duration: float, track: dict, media: dict, palette: dict, audio_duration: float | None = None, hero: tuple[str, str] | None = None, motion: dict | None = None, language: str = "en", style: dict | None = None, lay: dict | None = None, field: dict | None = None) -> tuple[str, str, str]:
+def _scene_html(index: int, start: float, duration: float, track: dict, media: dict, palette: dict, audio_duration: float | None = None, motion: dict | None = None, language: str = "en", style: dict | None = None, lay: dict | None = None, field: dict | None = None) -> tuple[str, str, str]:
     """Returns (scene_div_html, media_tags_html, scene_js). Media tags must be direct
     children of the stage (siblings of .scene divs) — the framework cannot manage
     playback of <video>/<audio> nested inside another timed element."""
@@ -370,7 +375,6 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
             f'data-track-index="2" src="{_esc(_rel(media["audio"]))}"></audio>\n'
         )
 
-    hero_html = hero[0] if hero else ""
     display_title = track["title"] + (f" ({track['album']})" if track.get("album") else "")
     entrance = styles.ENTRANCES[style["entrance"]]
     headline = track["artist"]
@@ -393,7 +397,6 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
       <div id="{scene_id}" class="clip scene" style="{bg_style}" data-start="{start}" data-duration="{duration}" data-track-index="0">
         {scrim_html}
         {orbs_html}
-        {hero_html}
         <div class="meta-container"{rtl}>
           <div id="meta-{index}" class="meta-inner">
             <p id="artist-{index}" class="artist-name" style="font-size: {headline_size}px;">{headline_markup}</p>
@@ -478,21 +481,17 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         scene_js += f"""
       tl.fromTo("#media-{index}", {{ scale: 1 }}, {{ scale: {video_zoom}, duration: {duration}, ease: "none" }}, {start});
     """
-    if hero:
-        scene_js += hero[1]
     return scene_html, media_html, scene_js
 
 
-HERO_HANDOFF_START = 1.9
-HERO_HANDOFF_DURATION = 0.85
-# Offsets computed from the hero's on-screen position (centered, ~19% from top,
-# 104px/32px type) to the header's actual resting position (60px from left,
-# 250px from top, 32px/19px type) -- NOT arbitrary numbers. Recompute both if
-# either element's CSS position/size changes. They last moved when .header's
-# padding-top went 110px -> 250px to clear Instagram's story chrome, which is a
-# pure vertical translation of the target, so both y values gained the same 140.
-HERO_TO_HEADER_SHOW = {"x": -400, "y": -160, "scale": 0.31}
-HERO_TO_HEADER_EPISODE = {"x": -400, "y": -230, "scale": 0.6}
+# The header is the only place the show name and episode label appear over the
+# scenes. There used to be a "hero" as well: the same two lines set large and
+# centered at the top of scene 0, flying up into the header as they faded. It
+# read well over a dark sleeve and badly over everything else -- centered at 19%
+# is exactly where a face or a logo tends to sit, and the promo opened by
+# covering the one image it exists to show. The header alone says the same thing
+# and never lands on the artwork.
+HEADER_FADE_IN_AT = 0.3
 
 
 def _header_html(show_name: str, episode_label: str, total_duration: float, fade_in_at: float, outro_start: float | None = None, logo_path: str | None = None) -> tuple[str, str]:
@@ -540,55 +539,6 @@ def _header_html(show_name: str, episode_label: str, total_duration: float, fade
       tl.fromTo("#header-inner", {{ opacity: 0, y: -14 }}, {{ opacity: 1, y: 0, duration: 0.6, ease: "expo.out" }}, {fade_in_at});{header_out}
     """
     return header_html, header_js
-
-
-def _hero_html(show_name: str, episode_label: str) -> tuple[str, str] | None:
-    """Big centered show/episode reveal shown only at the very start of scene 0,
-    then flies up and shrinks toward the header's corner as it fades — reads as
-    the same text handing off to the persistent header rather than two unrelated
-    elements swapping.
-
-    Returns None when there is nothing to reveal (both fields are optional), so
-    scene 0 simply opens on the artwork. Every tween below is gated on its own
-    target existing: GSAP warns on a missing selector and `npm run check` reads
-    that warning as a finding."""
-    show_name = (show_name or "").strip()
-    episode_label = (episode_label or "").strip()
-    if not (show_name or episode_label):
-        return None
-    rtl = ' dir="rtl"' if _looks_hebrew(show_name) or _looks_hebrew(episode_label) else ""
-    show_html = f'<div id="hero-show" class="hero-show">{_esc(show_name)}</div>' if show_name else ""
-    episode_html = f'<div id="hero-episode" class="hero-episode">{_esc(episode_label)}</div>' if episode_label else ""
-    hero_html = f"""
-        <div class="hero-container"{rtl}>
-          {show_html}
-          {episode_html}
-        </div>
-    """
-    handoff_end = HERO_HANDOFF_START + HERO_HANDOFF_DURATION
-    s = HERO_TO_HEADER_SHOW
-    e = HERO_TO_HEADER_EPISODE
-    tweens = []
-    if show_name:
-        tweens.append(
-            f'.fromTo("#hero-show", {{ opacity: 0, y: 42, scale: 0.96, filter: "blur(14px)" }}, {{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 1.0, ease: "expo.out" }}, 0.15)'
-        )
-    if episode_label:
-        tweens.append(
-            f'.fromTo("#hero-episode", {{ opacity: 0, y: 20, filter: "blur(8px)" }}, {{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.85, ease: "expo.out" }}, 0.42)'
-        )
-    if show_name:
-        tweens.append(
-            f'.to("#hero-show", {{ opacity: 0, x: {s["x"]}, y: {s["y"]}, scale: {s["scale"]}, duration: {HERO_HANDOFF_DURATION}, ease: "power2.inOut" }}, {HERO_HANDOFF_START})'
-        )
-    if episode_label:
-        tweens.append(
-            f'.to("#hero-episode", {{ opacity: 0, x: {e["x"]}, y: {e["y"]}, scale: {e["scale"]}, duration: {HERO_HANDOFF_DURATION}, ease: "power2.inOut" }}, {HERO_HANDOFF_START + 0.06})'
-        )
-    present = ", ".join(sel for sel, on in (("#hero-show", show_name), ("#hero-episode", episode_label)) if on)
-    tweens.append(f'.set("{present}", {{ opacity: 0 }}, {handoff_end})')
-    hero_js = "\n      tl" + "\n        ".join(tweens) + ";\n    "
-    return hero_html, hero_js
 
 
 def _outro_html(start: float, duration: float, show_name: str, episode_label: str, remaining: list[dict], pal: dict, language: str = "en", motion: dict | None = None, logo_path: str | None = None) -> tuple[str, str]:
@@ -717,12 +667,11 @@ def build_composition_html(
         pal = palette[i % len(palette)]
         is_last = i == len(standout) - 1
         audio_duration = scene_duration + OUTRO_DURATION if is_last else None
-        hero = _hero_html(show_name, episode_label) if i == 0 else None
         # Sampled per scene, so the field tracks each sleeve rather than one
         # colour being chosen for the whole promo from whatever happened to be
         # track one. Cached inside palette.field by (path, mode).
         scene_field = palette_mod.field(_abs(item["media"].get("image")), field_mode) if field_mode else None
-        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, hero=hero, motion=motion, language=language, style=style, lay=lay, field=scene_field)
+        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, motion=motion, language=language, style=style, lay=lay, field=scene_field)
         scenes_html.append(sh)
         media_tags_html.append(mh)
         scenes_js.append(sj)
@@ -744,13 +693,7 @@ def build_composition_html(
     cursor += OUTRO_DURATION
 
     total_duration = cursor
-    # The header normally waits for the hero to finish flying into it. With no
-    # show name and no episode label there is no hero to wait for, so a
-    # logo-only header just fades in near the top instead of hanging back for
-    # nearly three seconds of nothing.
-    has_hero = bool((show_name or "").strip() or (episode_label or "").strip())
-    header_fade_in_at = HERO_HANDOFF_START + HERO_HANDOFF_DURATION - 0.25 if has_hero else 0.3
-    header_html, header_js = _header_html(show_name, episode_label, total_duration, header_fade_in_at,
+    header_html, header_js = _header_html(show_name, episode_label, total_duration, HEADER_FADE_IN_AT,
                                          outro_start=total_duration - OUTRO_DURATION,
                                          logo_path=logo_path)
     scenes_js.append(header_js)

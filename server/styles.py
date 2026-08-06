@@ -476,7 +476,12 @@ LAYOUTS = {
     "gallery": {
         "label": "Gallery",
         "blurb": "A small sleeve held high on plain white, wide even margins, type far below. Almost all air.",
-        "art_rect": (230, 340, 620, 620),
+        # Held high, but not into the header. The header block runs from 250px
+        # to roughly 315px, with its scrim fading out by ~360px -- a sleeve at
+        # 340px started underneath the episode label and read as one crowded
+        # object rather than as air. 430px clears it; the sleeve loses 70px so
+        # the gap to the type below survives the move (bottom 980 vs 960).
+        "art_rect": (265, 430, 550, 550),
         "art_opacity": 1.0, "backdrop": False, "field": "white",
         "scrim": False, "text_rect": (1130, 560), "text_on_field": True,
     },
@@ -1307,6 +1312,52 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
 """
 
 
+# Mean glyph advance as a fraction of font-size, per face, as (lowercase,
+# uppercase). Measured off a real render -- A-Z and a-z at 60px, ink extent read
+# back out of the PNG -- rather than estimated, because the display faces are
+# supplied by the renderer and are not installed on the machine that composes
+# the HTML, so nothing here can measure them locally. Re-measure if FONTS
+# changes; 'mono' landing on 0.59 for both cases is the check that the real
+# faces loaded, since IBM Plex Mono is a fixed 0.6em advance.
+_ADVANCE = {
+    "grotesque": (0.53, 0.68),
+    "mono": (0.59, 0.59),
+    "serif": (0.51, 0.64),
+    "condensed": (0.29, 0.35),
+    "display": (0.61, 0.76),
+}
+
+# .artist-name's own max-width, and the binding constraint in every layout: the
+# 1080px frame less 60px of padding a side leaves 960.
+_HEADLINE_MAX_WIDTH = 950
+# .meta-inner's cap, which a panel style's padding eats into.
+_PANEL_MAX_WIDTH = 900
+# The advance figures are an alphabet mean, so a name built from wide glyphs
+# ("WOMBAT MUMMY") runs over it. Give the estimate room instead of letting a
+# name land a few pixels too wide and wrap to a second line anyway.
+_FIT_MARGIN = 0.94
+MIN_HEADLINE_SIZE = 34
+
+
+def _headline_width(style: dict) -> float:
+    """Pixels available to one line of the headline in this style."""
+    panel = style.get("panel")
+    if not panel:
+        return _HEADLINE_MAX_WIDTH
+    parts = (panel.get("pad") or "0").split()
+    horizontal = parts[1] if len(parts) > 1 else parts[0]
+    return min(_HEADLINE_MAX_WIDTH,
+               _PANEL_MAX_WIDTH - 2 * float(horizontal.rstrip("px")))
+
+
+def _text_width(style: dict, text: str, size: int) -> float:
+    """Estimated rendered width of `text` set in `style` at `size`."""
+    lower, upper = _ADVANCE[style["font"]]
+    uppercased = style["primary"]["case"] == "uppercase"
+    total = sum(size * (upper if uppercased or ch.isupper() else lower) for ch in text)
+    return total + max(0, len(text) - 1) * style["primary"]["spacing"]
+
+
 def headline_size(style: dict, text: str) -> int:
     """Step the headline down for long names so it never overflows the frame.
 
@@ -1327,4 +1378,20 @@ def headline_size(style: dict, text: str) -> int:
         factor = 0.54
     else:
         factor = 0.45
-    return max(34, int(ceiling * factor))
+    size = max(MIN_HEADLINE_SIZE, int(ceiling * factor))
+
+    # Character count alone is the wrong measure for the one case that actually
+    # overflows. "Fleetwood Mac" is 13 characters, so the table above leaves it
+    # at the style's full ceiling -- but the headline may only wrap at a space,
+    # and "FLEETWOOD" at Stack's 150px display is wider than the frame. No
+    # amount of wrapping fixes that: the line either runs off the edge or the
+    # browser goes looking for a break inside the word.
+    #
+    # So the longest word sets a hard floor on how large the type may be, and
+    # the answer to a word that does not fit is to shrink it until it does.
+    longest = max((text or "").split(), key=len, default="")
+    if longest:
+        available = _headline_width(style) * _FIT_MARGIN
+        while size > MIN_HEADLINE_SIZE and _text_width(style, longest, size) > available:
+            size -= 2
+    return size
