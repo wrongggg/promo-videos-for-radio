@@ -58,6 +58,12 @@ CSS = """
   object-fit: cover; z-index: 1; opacity: 0;
   transform-origin: center center; will-change: transform, opacity;
 }
+/* Owns the pixelate block scale and nothing else. At rest it is the box, so
+   every other transition behaves as if it were not here. */
+.art-pix {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  transform-origin: 0 0;
+}
 """
 
 
@@ -126,9 +132,14 @@ def art_html(index: int, start: float, duration: float, src: str,
     div, never a clip, so it adds no second owner of visibility -- it only
     positions and clips."""
     box = box_css or "top:0; left:0; width:1080px; height:1920px;"
+    # The .art-pix layer exists so the pixelate transition and the Ken Burns
+    # push do not have to share one `transform`. The wrapper owns the block
+    # scale (origin top-left, so shrinking and re-expanding lands back on the
+    # box exactly); the image inside keeps its own centred camera move.
     return (f'<div class="art-box" style="{box}">'
+            f'<div id="pix-{index}" class="art-pix">'
             f'<img id="art-{index}" class="art-media" src="{src}" />'
-            f'</div>\n')
+            f'</div></div>\n')
 
 
 def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
@@ -264,7 +275,7 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     // "swap" has no overlap: a hard cut on the scene boundary.
     if (T <= 0) {{
       if (t >= s.start + s.dur) return null;
-      return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0 }};
+      return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }};
     }}
 
     if (t < enterEnd) {{
@@ -280,6 +291,27 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
 
   function applyTransition(p, entering) {{
     var k = TRANS.kind;
+    if (k === "pixelate") {{
+      // Snapped to a ladder: interpolating block size looks like the picture
+      // breathing, stepping between sizes looks like pixels.
+      var LADDER = [1, 2, 3, 5, 8, 13, 21, 34];
+      var i = Math.min(LADDER.length - 1,
+                       Math.max(0, Math.round((entering ? 1 - p : p) * (LADDER.length - 1))));
+      var f = LADDER[i];
+      return entering
+        ? {{ op: Math.min(1, p * 1.6), dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, pix: f }}
+        : {{ op: Math.min(1, (1 - p) * 1.6), dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, pix: f }};
+    }}
+    if (k === "dissolve") {{
+      // Both covers are blurred and part-transparent through the middle of the
+      // window, so they genuinely mix instead of one sitting over the other.
+      // The incoming one also comes in slightly oversized and settles, which is
+      // what stops it reading as a plain defocus.
+      var B = 22;
+      return entering
+        ? {{ op: p, dx: 0, dy: 0, scale: 1 + (1 - p) * 0.09, rot: 0, blur: (1 - p) * B }}
+        : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.035, rot: 0, blur: p * B }};
+    }}
     if (k === "slide") {{
       return entering
         ? {{ op: p, dx: (1 - p) * 620, dy: 0, scale: 1, rot: 0 }}
@@ -295,8 +327,8 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
         ? {{ op: p, dx: 0, dy: 0, scale: 0.72 + p * 0.28, rot: (1 - p) * -14 }}
         : {{ op: 1 - p, dx: 0, dy: 0, scale: 1 - p * 0.18, rot: p * 12 }};
     }}
-    return entering ? {{ op: p, dx: 0, dy: 0, scale: 1, rot: 0 }}
-                    : {{ op: 1 - p, dx: 0, dy: 0, scale: 1, rot: 0 }};
+    return entering ? {{ op: p, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }}
+                    : {{ op: 1 - p, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }};
   }}
 
   window.__drawVisuals = function (t) {{
@@ -327,24 +359,39 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       var s = SCENES[k];
       var el = document.getElementById("art-" + s.i);
       if (!el) continue;
+      var pixEl = document.getElementById("pix-" + s.i);
       var st = transitionState(t, s);
       if (st === null) {{
         // Reset everything, not just opacity. Leaving a stale transform on a
         // hidden element means the DOM carries a trace of whichever frame was
         // rendered last -- invisible, but it makes the output a function of
         // render history instead of purely of t, which is exactly the property
-        // a frame-seeking renderer must be able to rely on.
+        // a frame-seeking renderer must be able to rely on. The blur and the
+        // block scale are reset here for the same reason.
         el.style.opacity = "0";
         el.style.transform = "scale(1)";
+        el.style.filter = "";
+        el.style.imageRendering = "";
         el.style.zIndex = "1";
+        if (pixEl) {{
+          pixEl.style.width = "100%";
+          pixEl.style.height = "100%";
+          pixEl.style.transform = "";
+        }}
         continue;
       }}
 
       var m = MOVES[s.i % MOVES.length];
       var e = smoothstep(s.dur > 0 ? (t - s.start) / s.dur : 0);
       var scale = (m.s0 + (m.s1 - m.s0) * e) * st.scale;
-      var x = m.x0 + (m.x1 - m.x0) * e + st.dx;
-      var y = m.y0 + (m.y1 - m.y0) * e + st.dy;
+      // The camera translate is written on the image, which sits inside the
+      // .art-pix wrapper -- so while that wrapper is scaled up by f for the
+      // pixelate transition, every pixel of pan is multiplied by f too. At the
+      // top of the ladder that turned a 22px drift into a 750px lurch. Divide
+      // it back out so the camera move looks the same at every block size.
+      var pf = st.pix || 1;
+      var x = (m.x0 + (m.x1 - m.x0) * e + st.dx) / pf;
+      var y = (m.y0 + (m.y1 - m.y0) * e + st.dy) / pf;
 
       // Reactivity is opt-in per track and deliberately tiny -- a breath on
       // top of the camera move, not a bounce. Tracks without a real low-end
@@ -358,6 +405,24 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
         "scale(" + scale.toFixed(4) + ") translate(" +
         x.toFixed(2) + "px, " + y.toFixed(2) + "px)" +
         (st.rot ? " rotate(" + st.rot.toFixed(2) + "deg)" : "");
+      el.style.filter = st.blur ? "blur(" + st.blur.toFixed(2) + "px)" : "";
+      // Lay the artwork out at 1/f of its box and scale it back up by f, with
+      // nearest-neighbour sampling: real blocks, and less rasterising than at
+      // rest rather than more.
+      if (pixEl) {{
+        var f = st.pix || 1;
+        if (f > 1) {{
+          pixEl.style.width = (100 / f).toFixed(4) + "%";
+          pixEl.style.height = (100 / f).toFixed(4) + "%";
+          pixEl.style.transform = "scale(" + f + ")";
+          el.style.imageRendering = "pixelated";
+        }} else {{
+          pixEl.style.width = "100%";
+          pixEl.style.height = "100%";
+          pixEl.style.transform = "";
+          el.style.imageRendering = "";
+        }}
+      }}
       // No audio-driven filter. Treble moved ~0.17 per frame, so driving
       // saturation from it strobed the colour.
     }}

@@ -105,8 +105,13 @@ Also choose, matching the description's mood:
   from the sleeve, so the palette above is doing less work in those:
 {layout_menu}
 
+- "transition": how the artwork changes between tracks -- one of "fade", "slide",
+  "zoom", "swap" (a hard cut), "spin", "dissolve" (the two sleeves blur through each
+  other) or "pixelate" (one breaks into blocks as the next resolves out of them).
+
 Respond with ONLY a JSON object shaped like:
-{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "...", "style": "..."}}
+{{"palettes": [...{n} palette objects...], "motion": "...", "frame": "...",
+  "style": "...", "layout": "...", "transition": "..."}}
 No other text.
 """
 
@@ -126,11 +131,6 @@ DEFAULT_THEME = {"palettes": DEFAULT_PALETTE, "motion": "normal", "frame": "clea
 # than DEFAULT_THEME so the result is a look someone actually designed.
 DEFAULT_PRESET = "classic"
 
-# The five themes the user picks between. Each pairs a visual style (type,
-# layout, animation, synth patch -- see styles.py) with a palette tuned to it,
-# so choosing "XL" changes the whole look rather than just the colours. Keyed by
-# style key; the human label and blurb live in styles.py so the picker and the
-# renderer can never disagree about what a theme is.
 # The themes the user picks between -- one list, one decision. Each pairs a
 # typographic style with a layout (where the sleeve sits) and a palette tuned
 # to both, so picking "Catalogue" changes the whole frame and not just the
@@ -155,7 +155,7 @@ PRESET_THEMES = {
         ],
     },
     "halo": {
-        "label": "Halo", "style": "classic", "layout": "canvas",
+        "label": "Halo", "style": "classic", "layout": "canvas", "transition": "dissolve",
         "motion": "calm", "frame": "clean",
         "palettes": [
             {"bg1": "#12141c", "bg2": "#04050a", "accent": "#9db4ff", "accent2": "#d5deff", "orb1": "#3a4470", "orb2": "#6b76a8"},
@@ -204,7 +204,7 @@ PRESET_THEMES = {
         ],
     },
     "terminal": {
-        "label": "Terminal", "style": "terminal", "layout": "bleed",
+        "label": "Terminal", "style": "terminal", "layout": "bleed", "transition": "pixelate",
         "motion": "normal", "frame": "film-grain",
         "palettes": [
             {"bg1": "#0a1a0f", "bg2": "#010402", "accent": "#4ade80", "accent2": "#a7f3d0", "orb1": "#166534", "orb2": "#3f8f5f"},
@@ -212,7 +212,7 @@ PRESET_THEMES = {
         ],
     },
     "catalogue": {
-        "label": "Catalogue", "style": "index", "layout": "gallery",
+        "label": "Catalogue", "style": "index", "layout": "gallery", "transition": "pixelate",
         "motion": "normal", "frame": "clean",
         "palettes": [
             {"bg1": "#16181a", "bg2": "#020303", "accent": "#f2f2ef", "accent2": "#9aa0a6", "orb1": "#2e3235", "orb2": "#565c61"},
@@ -237,7 +237,7 @@ PRESET_THEMES = {
         ],
     },
     "tide": {
-        "label": "Tide", "style": "tidal", "layout": "strip",
+        "label": "Tide", "style": "tidal", "layout": "strip", "transition": "dissolve",
         "motion": "calm", "frame": "vignette-heavy",
         "palettes": [
             {"bg1": "#0a1e2e", "bg2": "#010508", "accent": "#7dd3fc", "accent2": "#e0f2fe", "orb1": "#0c4a6e", "orb2": "#3d7f9e"},
@@ -253,7 +253,7 @@ PRESET_THEMES = {
         ],
     },
     "plate": {
-        "label": "Plate", "style": "plate", "layout": "press",
+        "label": "Plate", "style": "plate", "layout": "press", "transition": "dissolve",
         "motion": "calm", "frame": "film-grain",
         "palettes": [
             {"bg1": "#241a1a", "bg2": "#070505", "accent": "#e0bcae", "accent2": "#f6ebe4", "orb1": "#6f4239", "orb2": "#a67a6d"},
@@ -269,7 +269,7 @@ PRESET_THEMES = {
         ],
     },
     "marquee": {
-        "label": "Marquee", "style": "masthead", "layout": "strip",
+        "label": "Marquee", "style": "masthead", "layout": "strip", "transition": "pixelate",
         "motion": "normal", "frame": "vignette-heavy",
         "palettes": [
             {"bg1": "#191007", "bg2": "#050301", "accent": "#ffc300", "accent2": "#fff3c4", "orb1": "#7a5c00", "orb2": "#b08b1a"},
@@ -285,7 +285,7 @@ PRESET_THEMES = {
         ],
     },
     "nightshift": {
-        "label": "Night Shift", "style": "terminal", "layout": "canvas",
+        "label": "Night Shift", "style": "terminal", "layout": "canvas", "transition": "dissolve",
         "motion": "calm", "frame": "film-grain",
         "palettes": [
             {"bg1": "#0b1412", "bg2": "#010302", "accent": "#5eead4", "accent2": "#a7f3d0", "orb1": "#10453f", "orb2": "#2f7a71"},
@@ -326,8 +326,14 @@ def _valid_theme(data) -> dict | None:
     # land on the default rather than on nothing -- compose.styles.layout()
     # would fall back anyway, but an explicit value keeps saved JSON readable.
     lay = data.get("layout") if data.get("layout") in styles.LAYOUT_KEYS else styles.DEFAULT_LAYOUT
-    return {"palettes": palettes, "motion": motion, "frame": frame,
-            "style": style, "layout": lay}
+    trans = data.get("transition") if data.get("transition") in styles.TRANSITIONS else None
+    theme = {"palettes": palettes, "motion": motion, "frame": frame,
+             "style": style, "layout": lay}
+    # Left off entirely when unset, so the style's own choice still applies --
+    # storing a null here would look like a deliberate "no transition".
+    if trans:
+        theme["transition"] = trans
+    return theme
 
 
 def curate(tracks: list[Track], n: int = 5, previous_shows: list | None = None) -> list[dict]:
@@ -531,8 +537,9 @@ THEME_SCHEMA = {
         "frame": {"type": "string", "enum": list(FRAME_KEYS)},
         "style": {"type": "string", "enum": list(styles.STYLE_KEYS)},
         "layout": {"type": "string", "enum": list(styles.LAYOUT_KEYS)},
+        "transition": {"type": "string", "enum": list(styles.TRANSITIONS)},
     },
-    "required": ["palettes", "motion", "frame", "style", "layout"],
+    "required": ["palettes", "motion", "frame", "style", "layout", "transition"],
     "additionalProperties": False,
 }
 

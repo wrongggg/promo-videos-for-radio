@@ -687,6 +687,12 @@ def build_composition_html(
     frame = theme.get("frame", "clean")
     style = styles.get(theme.get("style"))
     lay = styles.layout(theme.get("layout"))
+    # How the artwork changes between tracks belongs to the theme, not to the
+    # typographic style: two themes can share a style and still want one to
+    # cut and the other to dissolve. Falls back to the style's own choice.
+    transition = theme.get("transition") or style.get("transition", "fade")
+    if transition not in styles.TRANSITIONS:
+        transition = "fade"
     field_mode = lay.get("field")
     field_is_light = palette_mod.is_light(field_mode) if field_mode else False
 
@@ -742,7 +748,7 @@ def build_composition_html(
         visual_scenes, total_duration,
         patch=style["patch"],
         accent_hex=palette[0]["accent"],
-        transition=style.get("transition", "fade"),
+        transition=transition,
         art_opacity=lay.get("art_opacity", 0.88),
     )
 

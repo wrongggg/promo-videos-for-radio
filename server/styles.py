@@ -146,6 +146,31 @@ TRANSITIONS = {
     "zoom":  {"secs": 0.55, "kind": "zoom"},
     "swap":  {"secs": 0.0,  "kind": "swap"},   # hard cut, no overlap
     "spin":  {"secs": 0.6,  "kind": "spin"},
+    # A soft-focus cross dissolve: the outgoing sleeve loses definition as it
+    # leaves and the incoming one resolves out of a blur, so for a moment the
+    # two are genuinely mixed rather than one being laid over the other. Given
+    # a longer window than the rest because a dissolve read at 0.55s just looks
+    # like a slow fade -- the melt needs time to be seen as a melt.
+    #
+    # Done with `filter: blur()` rather than an SVG feTurbulence threshold,
+    # which is the textbook grain dissolve and would look better: turbulence is
+    # recomputed per frame over the full 1080x1920 and is far and away the most
+    # expensive filter primitive, and renders here already die on the host's
+    # envelope rather than on anything in the composition. A GPU-composited
+    # blur costs almost nothing by comparison.
+    "dissolve": {"secs": 0.95, "kind": "dissolve"},
+    # Blocks: the outgoing sleeve degrades into fewer and fewer pixels and the
+    # incoming one resolves back out of them.
+    #
+    # Real nearest-neighbour downsampling, not a filter imitating it. The
+    # artwork is laid out at 1/f of its box and scaled back up by f with
+    # `image-rendering: pixelated`, so the browser rasterises *less* than it
+    # normally would and the upscale is a GPU blit -- this is the one
+    # transition here that is cheaper than playing the clip straight. f steps
+    # through a fixed ladder rather than sliding, because pixelation that
+    # eases between block sizes reads as a wobble; jumping between them is
+    # what makes it read as pixels.
+    "pixelate": {"secs": 0.8, "kind": "pixelate"},
 }
 
 # Hydra patches. `A` is the accent as an rgb triple; `h.time` is set absolutely
@@ -728,6 +753,15 @@ _COVER_STATES = {
     # A hard cut: no interpolation, so the steps() timing does the work.
     "swap":  {"in": "opacity: 0; transform: none;",
               "out": "opacity: 0; transform: none;"},
+    "dissolve": {"in": "opacity: 0; transform: scale(1.09); filter: blur(4px);",
+                 "out": "opacity: 0; transform: scale(0.97); filter: blur(4px);"},
+    # The renderer pixelates by laying the artwork out small and scaling it
+    # back up with nearest-neighbour sampling, which a keyframe on an SVG group
+    # cannot do. The tile approximates it with a stepped scale-and-cut instead:
+    # honest about the rhythm -- blocky, abrupt -- without claiming the exact
+    # texture at 120px wide.
+    "pixelate": {"in": "opacity: 0; transform: scale(1.14);",
+                 "out": "opacity: 0; transform: scale(1.14);"},
 }
 _COVER_ON = "opacity: 1; transform: none;"
 
@@ -777,11 +811,18 @@ def thumbnail_css(themes: dict | None = None) -> str:
     ]
     for key, theme in (themes or {}).items():
         st = get(theme.get("style"))
-        kind = TRANSITIONS.get(st.get("transition", "fade"), TRANSITIONS["fade"])["kind"]
+        # The theme's own transition wins, exactly as it does in the render --
+        # otherwise two themes sharing a style would preview identically while
+        # one of them cuts and the other dissolves.
+        tkey = theme.get("transition") or st.get("transition", "fade")
+        kind = TRANSITIONS.get(tkey, TRANSITIONS["fade"])["kind"]
         cover = _COVER_STATES.get(kind, _COVER_STATES["fade"])
         c_in, c_out = cover["in"], cover["out"]
         ent = st["entrance"]
-        ease = "steps(1, end)" if kind == "swap" else "cubic-bezier(.4,0,.2,1)"
+        # Both the hard cut and the block transition move in steps rather than
+        # sliding between states.
+        ease = "steps(1, end)" if kind == "swap" else (
+            "steps(4, end)" if kind == "pixelate" else "cubic-bezier(.4,0,.2,1)")
         t_ease = "steps(1, end)" if ent == "type" else "cubic-bezier(.2,.7,.3,1)"
 
         # Covers. A holds 82%->18% (across the wrap), hands over 18-32%, is
