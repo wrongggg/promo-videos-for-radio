@@ -136,7 +136,10 @@ def art_html(index: int, start: float, duration: float, src: str,
     # push do not have to share one `transform`. The wrapper owns the block
     # scale (origin top-left, so shrinking and re-expanding lands back on the
     # box exactly); the image inside keeps its own centred camera move.
-    return (f'<div class="art-box" style="{box}">'
+    # The id lets the composer hang its slow float tween on the box itself --
+    # the one transform owner the driver never writes (it owns the img, the
+    # pixelate transition owns .art-pix).
+    return (f'<div id="artbox-{index}" class="art-box" style="{box}">'
             f'<div id="pix-{index}" class="art-pix">'
             f'<img id="art-{index}" class="art-media" src="{src}" />'
             f'</div></div>\n')

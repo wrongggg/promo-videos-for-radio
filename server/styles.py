@@ -292,17 +292,22 @@ STYLES = {
     },
     "poppy": {
         "label": "Poppy",
-        "blurb": "Black type on a bright white card, bouncy entrances, saturated colour behind. Loud and friendly.",
+        "blurb": "Black type on a bright frosted-glass card, bouncy entrances, saturated colour behind. Loud and friendly.",
         "font": "display",
         "primary": {"max_size": 88, "weight": 400, "case": "none", "spacing": -1, "line": 1.04},
         "secondary": {"size": 29, "weight": 400, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 500},
         "color": INK,
-        # The card is what makes black type safe over arbitrary album art, and
-        # it is also what makes this style read as "pop" rather than just
-        # "bright" -- a hard white block against a saturated backdrop.
-        "panel": {"bg": "rgba(255,255,255,0.95)", "pad": "52px 58px", "radius": 28},
-        "align": "left", "anchor": "bottom", "bottom_gap": 200,
+        # The card is what makes black type safe over arbitrary album art. It
+        # used to be a solid white block; frosted glass does the same contrast
+        # job (brightness() in the backdrop filter lifts whatever is behind it
+        # above the ink's floor) while letting the artwork's colour glow
+        # through, which is what makes it read as designed rather than pasted.
+        "panel": {"bg": "rgba(255,255,255,0.62)", "pad": "52px 58px", "radius": 30,
+                  "glass": "blur(26px) saturate(1.6) brightness(1.18)",
+                  "border": "1px solid rgba(255,255,255,0.45)",
+                  "shadow": "0 24px 70px rgba(0,0,0,0.28)"},
+        "align": "left", "anchor": "bottom", "bottom_gap": 220,
         "entrance": "snap", "transition": "zoom", "patch": "kaleid", "scrim": "light",
     },
     "xl": {
@@ -313,7 +318,10 @@ STYLES = {
         "secondary": {"size": 44, "weight": 400, "case": "uppercase", "spacing": 10},
         "trivia": {"size": 32, "weight": 500},
         "color": WHITE, "panel": None,
-        "align": "left", "anchor": "bottom", "bottom_gap": 190,
+        # 220 rather than the old 190: with the scene's 60px padding the
+        # block's lowest pixel now clears Instagram's ~250px bottom overlay
+        # (reply bar) instead of sitting right on its edge.
+        "align": "left", "anchor": "bottom", "bottom_gap": 220,
         "entrance": "snap", "transition": "swap", "patch": "bars", "scrim": "heavy",
     },
     "terminal": {
@@ -365,7 +373,8 @@ STYLES = {
         "secondary": {"size": 34, "weight": 400, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 30, "weight": 500},
         "color": WHITE, "panel": None,
-        "align": "left", "anchor": "bottom", "bottom_gap": 190,
+        # 220 for the same Instagram bottom-overlay clearance as XL.
+        "align": "left", "anchor": "bottom", "bottom_gap": 220,
         "entrance": "scatter", "transition": "zoom", "patch": "kaleid", "scrim": "heavy",
     },
     "masthead": {
@@ -398,9 +407,11 @@ STYLES = {
         "secondary": {"size": 28, "weight": 400, "case": "uppercase", "spacing": 11},
         "trivia": {"size": 29, "weight": 400},
         "color": INK,
-        # Square corners, unlike Poppy's rounded card -- a printed plate, not a
-        # sticker, and it keeps the two white-card styles from converging.
-        "panel": {"bg": "rgba(255,255,255,0.96)", "pad": "58px 62px", "radius": 0},
+        # Square corners and solid white, unlike Poppy's rounded glass -- a
+        # printed plate, not a sticker, and the one card that stays opaque on
+        # purpose. Only gains a soft lift off the page.
+        "panel": {"bg": "rgba(255,255,255,0.96)", "pad": "58px 62px", "radius": 0,
+                  "shadow": "0 30px 80px rgba(0,0,0,0.25)"},
         "align": "center", "anchor": "bottom", "bottom_gap": 215,
         "entrance": "drift", "transition": "fade", "patch": "flow", "scrim": "light",
     },
@@ -414,7 +425,13 @@ STYLES = {
         "color": WHITE,
         # The inverse of Poppy's card. It is what separates this from Terminal,
         # which is the same family in the same corner with no block behind it.
-        "panel": {"bg": "rgba(9,9,12,0.90)", "pad": "50px 54px", "radius": 0},
+        # Smoked glass rather than the old opaque black slab: brightness(0.7)
+        # in the backdrop filter does the darkening the 0.90 alpha used to, so
+        # white mono type keeps its floor while the sleeve stays present.
+        "panel": {"bg": "rgba(10,10,16,0.45)", "pad": "50px 54px", "radius": 18,
+                  "glass": "blur(22px) saturate(1.25) brightness(0.7)",
+                  "border": "1px solid rgba(255,255,255,0.14)",
+                  "shadow": "0 24px 70px rgba(0,0,0,0.35)"},
         "align": "left", "anchor": "bottom", "bottom_gap": 235,
         "entrance": "stamp", "transition": "swap", "patch": "bars", "scrim": "light",
     },
@@ -448,30 +465,47 @@ STYLE_KEYS = tuple(STYLES.keys())
 #                so a warm cover does not produce a warm everything.
 #   scrim        the old under-text gradient. Only useful when type sits over
 #                artwork; over a flat field it just dirties the colour.
-#   text         where the artist/title block goes. None defers to the style's
-#                own anchor, which is what keeps "bleed" identical to before.
+#   text_bottom  the frame-pixel line the artist/title block's BOTTOM edge
+#                sits on; the block grows upward from it. Bottom-anchored on
+#                purpose: Instagram draws its reply bar over roughly the last
+#                250px of a story, so anchoring the block's lowest pixel to a
+#                line above that zone guarantees clearance no matter how tall
+#                the trivia runs -- the old (top, height)+centered box could
+#                quietly let a tall block spill into the overlay. None defers
+#                to the style's own anchor, which keeps "bleed" as before.
 #   text_on_field  whether that block lands on the flat colour rather than on
 #                the picture. Decides the type colour -- see _resolve_text.
+#   header_band  whether the show/episode header keeps its contrast band.
+#                Only layouts whose header actually sits over artwork need it;
+#                over a flat field or a dark backdrop wash it reads as a smear.
+#   float_art    a slow vertical drift on the sleeve's box, plus rounded
+#                corners. Only for boxes inset from the frame edges -- a flush
+#                band that moves reveals its own seams.
 LAYOUTS = {
     "bleed": {
         "label": "Full bleed",
         "blurb": "Artwork across the whole frame, dimmed, type over the top. Suits dark cinematic covers.",
         "art_rect": None, "art_opacity": 0.88, "backdrop": False, "field": None,
-        "scrim": True, "text_rect": None, "text_on_field": False,
+        "scrim": True, "text_bottom": None, "text_on_field": False,
+        "header_band": True, "float_art": False,
     },
     "canvas": {
         "label": "Canvas",
         "blurb": "The sleeve whole and sharp, over a blurred blow-up of itself. Nothing cropped.",
         "art_rect": (100, 470, 880, 880),
         "art_opacity": 1.0, "backdrop": True, "field": None,
-        "scrim": False, "text_rect": (1430, 330), "text_on_field": False,
+        "scrim": False, "text_bottom": 1670, "text_on_field": False,
+        "header_band": False, "float_art": True,
     },
     "press": {
         "label": "Press",
         "blurb": "Sleeve flush to the top edge, hard cut to a flat field drawn from it. Type sits in the field.",
         "art_rect": (0, 0, 1080, 1080),
         "art_opacity": 1.0, "backdrop": False, "field": "derived",
-        "scrim": False, "text_rect": (1200, 520), "text_on_field": True,
+        "scrim": False, "text_bottom": 1660, "text_on_field": True,
+        # Art runs to the top edge, so the header sits over the sleeve and
+        # keeps its band.
+        "header_band": True, "float_art": False,
     },
     "gallery": {
         "label": "Gallery",
@@ -483,28 +517,38 @@ LAYOUTS = {
         # the gap to the type below survives the move (bottom 980 vs 960).
         "art_rect": (265, 430, 550, 550),
         "art_opacity": 1.0, "backdrop": False, "field": "white",
-        "scrim": False, "text_rect": (1130, 560), "text_on_field": True,
+        "scrim": False, "text_bottom": 1650, "text_on_field": True,
+        "header_band": False, "float_art": True,
     },
     "offset": {
         "label": "Bleed off",
         "blurb": "Sleeve oversized and pushed off the right edge. Deliberately off-balance.",
-        "art_rect": (250, 400, 1180, 1180),
+        # Raised and trimmed from (250, 400, 1180): at the old rect the sleeve
+        # ran to y1580 and forced the text block down into Instagram's bottom
+        # overlay zone. Still pushed well off the right edge.
+        "art_rect": (280, 300, 1100, 1100),
         "art_opacity": 1.0, "backdrop": False, "field": "derived",
-        "scrim": False, "text_rect": (1650, 210), "text_on_field": True,
+        "scrim": False, "text_bottom": 1670, "text_on_field": True,
+        "header_band": False, "float_art": True,
     },
     "split": {
         "label": "Split",
         "blurb": "One hard horizontal cut. Picture above, a field in the opposite colour below, type filling it.",
         "art_rect": (0, 0, 1080, 1056),
         "art_opacity": 1.0, "backdrop": False, "field": "complement",
-        "scrim": False, "text_rect": (1150, 560), "text_on_field": True,
+        "scrim": False, "text_bottom": 1660, "text_on_field": True,
+        "header_band": True, "float_art": False,
     },
     "strip": {
         "label": "Strip",
         "blurb": "The sleeve as a full-width band with colour holding it top and bottom.",
-        "art_rect": (0, 410, 1080, 1080),
+        # A shorter band than the old square (0, 410, 1080, 1080): cropping the
+        # sleeve to a letterboxed band is the layout's whole idea, and ending
+        # at y1340 buys the text block room above the Instagram overlay zone.
+        "art_rect": (0, 400, 1080, 940),
         "art_opacity": 1.0, "backdrop": False, "field": "derived",
-        "scrim": False, "text_rect": (1550, 300), "text_on_field": True,
+        "scrim": False, "text_bottom": 1670, "text_on_field": True,
+        "header_band": False, "float_art": False,
     },
 }
 
@@ -515,8 +559,8 @@ LAYOUTS = {
 for _lay in LAYOUTS.values():
     _r = _lay["art_rect"]
     _lay["art"] = f"left:{_r[0]}px; top:{_r[1]}px; width:{_r[2]}px; height:{_r[3]}px;" if _r else None
-    _t = _lay["text_rect"]
-    _lay["text"] = f"top:{_t[0]}px; height:{_t[1]}px;" if _t else None
+    _b = _lay["text_bottom"]
+    _lay["text"] = f"bottom:{1920 - _b}px;" if _b else None
 
 DEFAULT_LAYOUT = "bleed"
 LAYOUT_KEYS = tuple(LAYOUTS.keys())
@@ -565,10 +609,11 @@ def layout_thumb(key: str) -> str:
                      f'fill="url(#lga{key})"/>')
 
     # Two bars for the artist/title lockup, always together -- they are one
-    # block in every layout, never split across the artwork.
+    # block in every layout, never split across the artwork. text_bottom is
+    # the block's bottom line, so the bars stack up from just above it.
     bar = "#111214" if light else "#ffffff"
-    if lay["text_rect"]:
-        ty = lay["text_rect"][0] * sy + 6
+    if lay["text_bottom"]:
+        ty = lay["text_bottom"] * sy - 24
     else:
         ty = H - 42
     parts.append(f'<rect x="9" y="{ty:.1f}" width="58" height="7" rx="1" fill="{bar}" opacity="0.92"/>')
@@ -677,15 +722,23 @@ def preview_layout_css(themes: dict | None = None) -> str:
         ink = colour == INK
         align = "center" if st["align"] == "center" else "flex-start"
         # The block sits where the layout puts it, scaled from render pixels to
-        # the tile; only full bleed falls back to the style's own anchor.
-        if lay["text_rect"]:
-            pos = f"top: {lay['text_rect'][0] / 1920 * 100:.1f}%;"
+        # the tile; only full bleed falls back to the style's own anchor. A
+        # bottom anchor here mirrors the composition's bottom-anchored block.
+        if lay["text_bottom"]:
+            pos = f"bottom: {(1920 - lay['text_bottom']) / 1920 * 100:.1f}%;"
         else:
             pos = "top: 46%;" if st["anchor"] == "center" else "bottom: 12%;"
         if panel_spec:
-            card = "rgba(255,255,255,.95)" if ink else "rgba(9,9,12,.92)"
-            panel = (f" background: {card}; border-radius: {min(panel_spec['radius'], 5)}px;"
-                     " padding: 6px 8px; margin: 0 6px;")
+            # Glass cards preview as glass -- translucent with a small real
+            # backdrop blur -- so the tile doesn't promise an opaque slab.
+            if panel_spec.get("glass"):
+                card = "rgba(255,255,255,.66)" if ink else "rgba(10,10,16,.5)"
+                glass = " backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"
+            else:
+                card = "rgba(255,255,255,.95)" if ink else "rgba(9,9,12,.92)"
+                glass = ""
+            panel = (f" background: {card}; border-radius: {min(panel_spec['radius'], 6)}px;"
+                     " padding: 6px 8px; margin: 0 6px;" + glass)
         else:
             panel = ""
         shadow = "" if ink else " text-shadow: 0 1px 4px rgba(0,0,0,.8);"
@@ -1236,9 +1289,17 @@ def resolve_text(style: dict, lay: dict, field_is_light: bool) -> tuple[str, dic
     panel = style.get("panel")
     dark_card = bool(panel) and style["color"] == WHITE
     if field_is_light:
-        # Black block on white reads beautifully; a white block on off-white is
-        # a rectangle nobody can see.
-        return (WHITE, panel, False) if dark_card else (INK, None, False)
+        if dark_card:
+            # A dark glass card has nothing to frost over a flat light field --
+            # it renders as a grey slab. Swap it for an elevated paper card:
+            # same geometry, ink type, a hairline edge and a soft drop so it
+            # reads as a card lying on the page rather than a box printed on it.
+            paper = {**panel, "bg": "rgba(255,255,255,0.92)",
+                     "border": "1px solid rgba(11,11,13,0.10)",
+                     "shadow": "0 24px 60px rgba(0,0,0,0.14)"}
+            paper.pop("glass", None)
+            return INK, paper, False
+        return INK, None, False
     if panel:
         return style["color"], panel, False
     # No card, and ink type would vanish into a dark field.
@@ -1265,9 +1326,21 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     shadow = "0 4px 26px rgba(0,0,0,0.72)" if (needs_shadow and color != INK) else "none"
 
     if panel:
+        # Optional glass keys: `glass` is a backdrop-filter list (the blur /
+        # saturate / brightness that does the contrast work the old opaque
+        # fills did), `border` a hairline that catches light on the pane's
+        # edge, `shadow` the lift off the artwork.
+        extras = ""
+        if panel.get("glass"):
+            extras += (f"backdrop-filter: {panel['glass']}; "
+                       f"-webkit-backdrop-filter: {panel['glass']}; ")
+        if panel.get("border"):
+            extras += f"border: {panel['border']}; "
+        if panel.get("shadow"):
+            extras += f"box-shadow: {panel['shadow']}; "
         panel_css = (
             f"background: {panel['bg']}; padding: {panel['pad']}; "
-            f"border-radius: {panel['radius']}px; max-width: 900px; opacity: 0;"
+            f"border-radius: {panel['radius']}px; {extras}max-width: 900px; opacity: 0;"
         )
     else:
         panel_css = ""
@@ -1278,8 +1351,11 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     if lay.get("text"):
         # Absolute against .scene, which means .scene's 60px padding no longer
         # applies and has to be restated here or the type runs to the bleed.
+        # Anchored by its bottom edge (lay["text"] is a `bottom:` rule) so the
+        # block grows upward and its lowest pixel stays out of Instagram's
+        # bottom overlay zone whatever the content height.
         position_css = ("position: absolute; left: 0; right: 0; margin: 0; "
-                        "padding: 0 60px; justify-content: center; " + lay["text"])
+                        "padding: 0 60px; " + lay["text"])
     elif style["anchor"] == "center":
         position_css = "justify-content: center; margin: 0;"
     else:

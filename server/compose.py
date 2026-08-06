@@ -127,9 +127,13 @@ html, body {
 .header-inner::before {
   content: ""; position: absolute; z-index: -1; pointer-events: none;
   left: -60px; right: -60px; top: -250px; bottom: -46px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.52) 62%,
-              rgba(0,0,0,0.45) 88%, rgba(0,0,0,0) 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.34) 55%,
+              rgba(0,0,0,0.22) 84%, rgba(0,0,0,0) 100%);
 }
+/* Layouts whose header does not sit over artwork drop the band entirely --
+   over a flat field or a dark backdrop wash it reads as a smear across the
+   top of a clean layout. styles.LAYOUTS decides via header_band. */
+.no-headband .header-inner::before { display: none; }
 .header-show {
   font-size: 32px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;
   text-shadow: 0 3px 14px rgba(0,0,0,0.85);
@@ -150,8 +154,10 @@ html, body {
 
 
 
-.progress-container { width: 320px; height: 8px; background: rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; margin-top: 30px; }
-.progress-bar { width: 100%; height: 100%; transform-origin: left center; transform: scaleX(0); }
+/* Thinner than the original 8px -- a hairline reads as chrome, a bar reads
+   as a widget -- with a faint glow so the accent colour registers at 6px. */
+.progress-container { width: 320px; height: 6px; background: rgba(255,255,255,0.16); border-radius: 3px; overflow: hidden; margin-top: 30px; }
+.progress-bar { width: 100%; height: 100%; transform-origin: left center; transform: scaleX(0); box-shadow: 0 0 14px rgba(255,255,255,0.35); }
 .outro-brand {
   position: absolute; top: 13%; left: 0; width: 1080px; z-index: 10;
   text-align: center; display: flex; flex-direction: column; align-items: center;
@@ -461,8 +467,24 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     orb_off_js = (
         f'\n        .set("#orb-a-{index}, #orb-b-{index}", {{ opacity: 0 }}, {start + duration})'
     ) if not field else ""
+    # Ambient micro-motion, the "alive" layer under the entrances: the text
+    # block breathes a few pixels over the scene and an inset sleeve box
+    # drifts against it in slow opposition. Both target elements nothing else
+    # tweens -- the breath rides .meta-container (a parent the entrances and
+    # exits never touch), the drift rides the layout's art box wrapper -- so
+    # no property is ever written by two tweens at once.
+    breath_cycle = round(max(duration / 2, 2.5), 3)
+    breath_js = (
+        f'\n        .fromTo("#scene-{index} .meta-container", {{ y: 4 }}, {{ y: -4, duration: {breath_cycle}, '
+        f'yoyo: true, repeat: {_loop_repeat(duration, breath_cycle)}, ease: "sine.inOut" }}, {start})'
+    )
+    float_cycle = round(max(duration / 1.6, 3), 3)
+    float_js = (
+        f'\n        .fromTo("#artbox-{index}", {{ y: -6 }}, {{ y: 6, duration: {float_cycle}, '
+        f'yoyo: true, repeat: {_loop_repeat(duration, float_cycle)}, ease: "sine.inOut" }}, {start})'
+    ) if (lay.get("float_art") and media.get("image") and not media.get("video")) else ""
     scene_js = f"""
-      {entrance_js}{orb_js}
+      {entrance_js}{orb_js}{breath_js}{float_js}
         .to("#progress-{index}", {{ scaleX: 1, duration: {max(duration - 0.6, 0.5)}, ease: "linear" }}, {start + 0.3})
         .to({text_sel}, {entrance['exit']}, {exit_start})
         .set({text_sel}, {{ opacity: 0 }}, {start + duration}){orb_off_js};
@@ -711,8 +733,13 @@ def build_composition_html(
     root_classes = " ".join(filter(None, [
         "framed" if lay.get("art") else "",
         "light-frame" if field_is_light else "",
+        "" if lay.get("header_band", True) else "no-headband",
     ]))
     framed_css = ".framed .bg-media { opacity: 1; }" if lay.get("art") else ""
+    if lay.get("float_art"):
+        # Rounded corners only on inset boxes -- a flush band with radii shows
+        # the field through its own corners.
+        framed_css += " .art-box { border-radius: 22px; }"
 
     return f"""<!doctype html>
 <html lang="en">
