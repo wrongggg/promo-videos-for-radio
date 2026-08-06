@@ -319,7 +319,7 @@ def _extend_closing_audio(job, last_entry, job_dir, scene_duration, allow_youtub
         _log(job, f"  could not extend closing audio ({e}) — outro may be quiet")
 
 
-def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False, logo_path=None, layout=None):
+def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False, logo_path=None):
     job = JOBS[job_id]
     job["cookie_file"] = cookie_file
     job["allow_youtube"] = allow_youtube
@@ -337,11 +337,9 @@ def _run_fetch_stage(job_id, tracklist_text, show_name, episode_label, num_stand
 
         job["status"] = "theming"
         _log(job, "Choosing a visual theme...")
-        # Copied before the layout goes on: _resolve_theme hands back the entry
-        # straight out of curator.PRESET_THEMES, and writing to that would set
-        # one job's layout on the shared preset for every job after it.
-        theme = dict(_resolve_theme(theme_mode, theme_value, tracks, job_id=job_id, model=model))
-        theme["layout"] = layout or styles.DEFAULT_LAYOUT
+        # The layout rides in the theme itself -- picking a theme is the whole
+        # decision, and there is no second control to reconcile with.
+        theme = _resolve_theme(theme_mode, theme_value, tracks, job_id=job_id, model=model)
         job["theme"] = theme
 
         if selection_mode == "manual":
@@ -567,13 +565,9 @@ def index():
     return render_template(
         "index.html", default_show_name=DEFAULT_SHOW_NAME,
         language_choices=languages.choices(),
-        theme_preview_css=styles.thumbnail_css(),
-        theme_layout_css=styles.preview_layout_css(),
-        theme_choices=styles.choices({
-            k: (t["palettes"] or [{}])[0] for k, t in curator.PRESET_THEMES.items()
-        }),
-        layout_choices=styles.layout_choices(),
-        default_layout=styles.DEFAULT_LAYOUT,
+        theme_preview_css=styles.thumbnail_css(curator.PRESET_THEMES),
+        theme_layout_css=styles.preview_layout_css(curator.PRESET_THEMES),
+        theme_choices=styles.choices(curator.PRESET_THEMES),
         personal_mode=access.is_operator(),
         station_mode=access.is_station(),
         station_logo_url=url_for("static", filename=os.path.basename(compose.DEFAULT_LOGO_PATH)),
@@ -641,11 +635,6 @@ def start():
     theme_value = request.form.get("theme_value", "")
     selection_mode = request.form.get("selection_mode", "auto")
     language = languages.normalize(request.form.get("language"))
-    # Validated against the known set rather than trusted: it reaches CSS
-    # geometry, and the picker is a form field like any other.
-    layout = request.form.get("layout", styles.DEFAULT_LAYOUT)
-    if layout not in styles.LAYOUT_KEYS:
-        layout = styles.DEFAULT_LAYOUT
     # Custom/saved themes are admin (Roni) only -- enforced here too, not just
     # hidden in the UI, since form fields can be submitted directly.
     if theme_mode in ("custom", "saved") and not is_admin_user:
@@ -702,7 +691,7 @@ def start():
 
     thread = threading.Thread(
         target=_run_fetch_stage,
-        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model, show_info, logo_path, layout),
+        args=(job_id, tracklist_text, show_name, episode_label, num_standout, pace, theme_mode, theme_value, selection_mode, manual_picks, language, personal, allow_youtube, cookie_file, use_search, model, show_info, logo_path),
         daemon=True,
     )
     thread.start()

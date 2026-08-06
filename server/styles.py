@@ -551,12 +551,13 @@ def _title_spans(title: str, per_char: bool) -> str:
     return '<span class="tp-sp"> </span>'.join(words)
 
 
-def thumbnail_markup(key: str, palette: dict | None = None) -> str:
+def thumbnail_markup(key: str, palette: dict | None = None,
+                     style_key: str | None = None, layout_key: str | None = None) -> str:
     """The full preview tile: generated SVG for the backdrop and covers, with a
     real-type text block laid over it -- one block per cover, so the words swap
     when the picture does."""
-    st = get(key)
-    svg = thumbnail_svg(key, palette)
+    st = get(style_key or key)
+    svg = thumbnail_svg(key, palette, style_key, layout_key)
     per_char = bool(ENTRANCES[st["entrance"]].get("chars"))
 
     # Scale the real type to the tile (112px wide against a 1080px frame), then
@@ -578,8 +579,8 @@ def thumbnail_markup(key: str, palette: dict | None = None) -> str:
     return svg + blocks
 
 
-def preview_layout_css() -> str:
-    """Per-style positioning and typography for the preview text block."""
+def preview_layout_css(themes: dict | None = None) -> str:
+    """Per-theme positioning and typography for the preview text block."""
     out = [
         ".theme-thumb { position: relative; }",
         ".tp-txt { position: absolute; left: 0; right: 0; display: flex;"
@@ -595,14 +596,29 @@ def preview_layout_css() -> str:
         ".tp-ch { display: inline-block; will-change: transform, opacity; }",
         ".tp-artist { display: block; opacity: .75; margin-top: 3px; letter-spacing: 1px; }",
     ]
-    for key, st in STYLES.items():
+    for key, theme in (themes or {}).items():
+        st = get(theme.get("style"))
+        lay = layout(theme.get("layout"))
         font = FONTS[st["font"]]
-        ink = st["color"] == INK
-        colour = "#0b0b0d" if ink else "#fff"
+        # Which ground the type lands on is the layout's call, not the style's
+        # -- exactly as in the rendered frame (see resolve_text). Getting this
+        # wrong here would show white-on-white in the picker for a white-type
+        # style over a white field.
+        colour, panel_spec, _ = resolve_text(st, lay, lay.get("field") == "white")
+        ink = colour == INK
         align = "center" if st["align"] == "center" else "flex-start"
-        pos = ("top: 46%;" if st["anchor"] == "center" else "bottom: 12%;")
-        panel = (" background: rgba(255,255,255,.95); border-radius: 5px;"
-                 " padding: 6px 8px; margin: 0 6px;" if st.get("panel") else "")
+        # The block sits where the layout puts it, scaled from render pixels to
+        # the tile; only full bleed falls back to the style's own anchor.
+        if lay["text_rect"]:
+            pos = f"top: {lay['text_rect'][0] / 1920 * 100:.1f}%;"
+        else:
+            pos = "top: 46%;" if st["anchor"] == "center" else "bottom: 12%;"
+        if panel_spec:
+            card = "rgba(255,255,255,.95)" if ink else "rgba(9,9,12,.92)"
+            panel = (f" background: {card}; border-radius: {min(panel_spec['radius'], 5)}px;"
+                     " padding: 6px 8px; margin: 0 6px;")
+        else:
+            panel = ""
         shadow = "" if ink else " text-shadow: 0 1px 4px rgba(0,0,0,.8);"
         case = "uppercase" if st["primary"]["case"] == "uppercase" else "none"
         out.append(
@@ -614,21 +630,24 @@ def preview_layout_css() -> str:
     return "\n".join(out)
 
 
-def choices(palettes: dict | None = None) -> list[dict]:
+def choices(themes: dict | None = None) -> list[dict]:
     """What the picker in the UI renders, thumbnail included.
 
-    `palettes` maps a style key to the palette that theme actually ships with,
-    so each thumbnail previews its own colours rather than a shared stand-in --
-    which is most of what makes the five readable at a glance."""
-    palettes = palettes or {}
-    # No blurb: the tile animates what the theme does, which says it better than
-    # a sentence, and the two together were redundant. The blurbs stay in STYLES
-    # because the custom-theme prompt still needs them to describe each style to
-    # the model (see curator.STYLE_MENU).
+    One entry per *theme*, not per style: a theme is the whole decision -- type,
+    layout and palette together -- and it is the only thing the user is asked to
+    make. Style and layout remain separate vocabularies inside this module so
+    they can be composed without duplicating geometry, but that is authoring,
+    not a second control to hand over.
+
+    No blurb: the tile animates what the theme does, which says it better than a
+    sentence. The blurbs stay in STYLES because the custom-theme prompt still
+    needs them to describe each style to the model (see curator.STYLE_MENU)."""
     return [
-        {"key": k, "label": v["label"],
-         "thumb": thumbnail_markup(k, palettes.get(k))}
-        for k, v in STYLES.items()
+        {"key": k,
+         "label": v.get("label", k.title()),
+         "thumb": thumbnail_markup(k, (v.get("palettes") or [{}])[0],
+                                   v.get("style"), v.get("layout"))}
+        for k, v in (themes or {}).items()
     ]
 
 
@@ -743,12 +762,12 @@ _GONE = "opacity: 0; transform: none;"
 _STAGGERED = {"type", "spin", "flip", "scatter", "wave"}
 
 
-def thumbnail_css() -> str:
-    """Hover-preview CSS for every style, emitted once into the page.
+def thumbnail_css(themes: dict | None = None) -> str:
+    """Hover-preview CSS for every theme, emitted once into the page.
 
     Animations are only attached on hover, so nothing runs until the user points
-    at a card -- eleven looping previews playing at once would be noise, and on
-    a long list it would burn battery for no reason."""
+    at a card -- eighteen looping previews playing at once would be noise, and
+    on a long list it would burn battery for no reason."""
     out = [
         # Transforms on SVG children need a box to resolve percentages and a
         # sane origin, or translateX(100%) means something unexpected.
@@ -756,7 +775,8 @@ def thumbnail_css() -> str:
         " transform-box: fill-box; transform-origin: center; }",
         ".theme-thumb svg .tp-b { opacity: 0; }",
     ]
-    for key, st in STYLES.items():
+    for key, theme in (themes or {}).items():
+        st = get(theme.get("style"))
         kind = TRANSITIONS.get(st.get("transition", "fade"), TRANSITIONS["fade"])["kind"]
         cover = _COVER_STATES.get(kind, _COVER_STATES["fade"])
         c_in, c_out = cover["in"], cover["out"]
@@ -927,7 +947,8 @@ def preview_image(variant: int) -> str | None:
     return "/static/" + rel.replace(os.sep, "/")
 
 
-def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
+def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str,
+               W: int | float = 120, H: int | float = 213) -> str:
     """A stand-in album cover.
 
     Used only until real cover images are dropped into static/preview -- see
@@ -936,20 +957,23 @@ def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str) -> str:
     silhouette read as a stock portrait rather than as album art, which is the
     opposite of what a cover looks like.
 
-    Two variants so a hand-over swaps to a different image, not to itself."""
-    W, H = 120, 213
+    Two variants so a hand-over swaps to a different image, not to itself.
+
+    Sized to whatever box the layout gives it -- a framed layout draws this
+    into a square a fraction of the tile, not across the whole thing, so every
+    coordinate is a fraction of W/H rather than a tile pixel."""
     v = "A" if variant == 0 else "B"
     if variant == 0:
         forms = (
-            f'<circle cx="60" cy="88" r="44" fill="{accent}" opacity="0.85"/>'
-            f'<circle cx="60" cy="88" r="44" fill="url(#cvA{key})" opacity="0.45"/>'
-            f'<path d="M0 132 Q60 104 120 138 L120 213 L0 213 Z" fill="{a2}" opacity="0.55"/>'
+            f'<circle cx="{W*.50:.1f}" cy="{H*.41:.1f}" r="{min(W, H)*.37:.1f}" fill="{accent}" opacity="0.85"/>'
+            f'<circle cx="{W*.50:.1f}" cy="{H*.41:.1f}" r="{min(W, H)*.37:.1f}" fill="url(#cvA{key})" opacity="0.45"/>'
+            f'<path d="M0 {H*.62:.1f} Q{W*.50:.1f} {H*.49:.1f} {W:.1f} {H*.65:.1f} L{W:.1f} {H:.1f} L0 {H:.1f} Z" fill="{a2}" opacity="0.55"/>'
         )
     else:
         forms = (
-            f'<path d="M0 0 L120 0 L120 118 L0 62 Z" fill="{a2}" opacity="0.9"/>'
-            f'<circle cx="74" cy="132" r="42" fill="{accent}" opacity="0.75"/>'
-            f'<rect x="0" y="150" width="120" height="10" fill="{a1}" opacity="0.8"/>'
+            f'<path d="M0 0 L{W:.1f} 0 L{W:.1f} {H*.55:.1f} L0 {H*.29:.1f} Z" fill="{a2}" opacity="0.9"/>'
+            f'<circle cx="{W*.62:.1f}" cy="{H*.62:.1f}" r="{min(W, H)*.35:.1f}" fill="{accent}" opacity="0.75"/>'
+            f'<rect x="0" y="{H*.70:.1f}" width="{W:.1f}" height="{H*.047:.1f}" fill="{a1}" opacity="0.8"/>'
         )
     return (
         f'<rect width="{W}" height="{H}" fill="url(#cv{v}{key})"/>'
@@ -973,14 +997,21 @@ Print-quality, 35mm grain, slight chromatic aberration, rich but not neon.
 def _cover_layer(variant, a1, a2, accent, key, W, H) -> str:
     src = preview_image(variant)
     if src:
-        return (f'<image href="{src}" x="0" y="0" width="{W}" height="{H}" '
+        return (f'<image href="{src}" x="0" y="0" width="{W:.1f}" height="{H:.1f}" '
                 f'preserveAspectRatio="xMidYMid slice"/>'
-                f'<rect width="{W}" height="{H}" fill="url(#vig{key})"/>')
-    return _cover_art(variant, a1, a2, accent, key)
+                f'<rect width="{W:.1f}" height="{H:.1f}" fill="url(#vig{key})"/>')
+    return _cover_art(variant, a1, a2, accent, key, W, H)
 
 
-def thumbnail_svg(key: str, palette: dict | None = None) -> str:
-    """A 120x213 (9:16) preview of one style.
+def thumbnail_svg(key: str, palette: dict | None = None,
+                  style_key: str | None = None, layout_key: str | None = None) -> str:
+    """A 120x213 (9:16) preview of one theme.
+
+    `key` identifies the theme (and namespaces the SVG ids); the style and
+    layout it is built from are passed separately. Two themes can share a
+    typographic style and differ only in where the sleeve sits, so the layout
+    has to be visible here or half the picker would be pairs of identical
+    tiles.
 
     Layered exactly like the rendered frame: synth patch at the back, artwork
     over it, scrim on top, and the text laid over that as HTML (see
@@ -990,13 +1021,23 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
 
     There are no placeholder bars any more -- the preview shows real type, so a
     stand-in for it was just clutter sitting under the actual words."""
-    st = get(key)
+    st = get(style_key or key)
+    lay = layout(layout_key)
     pal = palette or {"orb1": "#7b5cff", "orb2": "#00d4ff", "accent": "#ff2e88"}
     a1 = pal.get("orb1", "#7b5cff")
     a2 = pal.get("orb2", "#00d4ff")
     accent = pal.get("accent", "#ff2e88")
     W, H = 120, 213
     heavy = st["scrim"] == "heavy"
+
+    # The sleeve's box, in tile space, straight off the layout's own rectangle.
+    r = lay["art_rect"]
+    if r is None:
+        cx, cy, cw, ch = 0.0, 0.0, float(W), float(H)
+    else:
+        cx, cy = r[0] * W / 1080, r[1] * H / 1920
+        cw, ch = r[2] * W / 1080, r[3] * H / 1920
+    framed = r is not None
 
     defs = (
         f'<defs>'
@@ -1015,34 +1056,50 @@ def thumbnail_svg(key: str, palette: dict | None = None) -> str:
         f'<stop offset="55%" stop-color="#000" stop-opacity="0"/>'
         f'<stop offset="100%" stop-color="#000" stop-opacity="0.6"/>'
         f'</radialGradient>'
+        f'<radialGradient id="bd{key}" cx="50%" cy="42%" r="75%">'
+        f'<stop offset="0%" stop-color="{a1}" stop-opacity="0.55"/>'
+        f'<stop offset="100%" stop-color="#0a0a0f" stop-opacity="0.95"/>'
+        f'</radialGradient>'
         f'<linearGradient id="g{key}" x1="0" y1="0" x2="0" y2="1">'
         f'<stop offset="0%" stop-color="#000" stop-opacity="{0.5 if heavy else 0.25}"/>'
         f'<stop offset="40%" stop-color="#000" stop-opacity="0.10"/>'
         f'<stop offset="100%" stop-color="#000" stop-opacity="{0.92 if heavy else 0.78}"/>'
         f'</linearGradient>'
+        # Clips the pair of covers to the layout's box. It has to sit on a
+        # wrapper rather than on the covers themselves: the hand-over animation
+        # owns their `transform`, so the box cannot also be expressed there.
+        f'<clipPath id="cl{key}">'
+        f'<rect x="{cx:.2f}" y="{cy:.2f}" width="{cw:.2f}" height="{ch:.2f}"/>'
+        f'</clipPath>'
         f'</defs>'
     )
 
-    parts = [
-        f'<rect width="{W}" height="{H}" fill="#0a0a0f"/>',
+    ground = _FIELD_SWATCH.get(lay.get("field"), "#0a0a0f")
+    parts = [f'<rect width="{W}" height="{H}" fill="{ground}"/>']
+
+    if lay.get("backdrop"):
+        # Stands in for the blurred blow-up: colour reaching the edges with the
+        # sleeve itself left uncropped.
+        parts.append(f'<rect width="{W}" height="{H}" fill="url(#bd{key})"/>')
+
+    parts += [
         # Two covers: .tp-a on screen, .tp-b arriving. thumbnail_css keeps
-        # .tp-b hidden until the card is previewing.
-        # A real cover image if one has been added, otherwise the generated
-        # stand-in. preserveAspectRatio slice crops a square file to the tile
-        # the same way the renderer crops artwork to 9:16.
-        f'<g class="tp-cover tp-a" opacity="0.92">{_cover_layer(0, a1, a2, accent, key, W, H)}</g>',
-        f'<g class="tp-cover tp-b" opacity="0.92">{_cover_layer(1, a1, a2, accent, key, W, H)}</g>',
-        # The synth patch, screened lightly over the cover. Behind the cover it
-        # was invisible at tile size; at 0.42 it drowned the artwork instead,
-        # which is the opposite error -- the covers are dark, and screening a
-        # bright patch over a dark image simply replaces it. 0.2 tints the tile
-        # with each theme's patch while leaving the cover clearly the subject,
-        # which is also how the rendered frame reads. The tiles stay easy to
-        # tell apart on typography, layout and scrim regardless.
-        f'<g opacity="0.2" style="mix-blend-mode: screen">'
-        f'{_patch_thumb(st["patch"], a1, a2)}</g>',
-        f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
+        # .tp-b hidden until the card is previewing. A real cover image if one
+        # has been added, otherwise the generated stand-in.
+        f'<g clip-path="url(#cl{key})"><g transform="translate({cx:.2f},{cy:.2f})">'
+        f'<g class="tp-cover tp-a" opacity="0.95">{_cover_layer(0, a1, a2, accent, key, cw, ch)}</g>'
+        f'<g class="tp-cover tp-b" opacity="0.95">{_cover_layer(1, a1, a2, accent, key, cw, ch)}</g>'
+        f'</g></g>',
     ]
+    if not framed:
+        # The synth patch and the scrim belong to full-bleed only. Over a
+        # printed colour field they are exactly the wash those layouts exist to
+        # replace -- and screening a patch across a flat ground just dirties it.
+        parts += [
+            f'<g opacity="0.2" style="mix-blend-mode: screen">'
+            f'{_patch_thumb(st["patch"], a1, a2)}</g>',
+            f'<rect width="{W}" height="{H}" fill="url(#g{key})"/>',
+        ]
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" '
