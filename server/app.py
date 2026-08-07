@@ -479,6 +479,7 @@ def _run_render_stage(job_id):
         job["status"] = "composing"
         _analyze_scene_audio(job)
         visuals.install_vendor(PROJECT_DIR)
+        styles.install_fonts(PROJECT_DIR)
         _log(job, "Building composition...")
         # Absolute job paths become document-root-relative here and nowhere
         # else -- this is the boundary between "paths we read" and "paths the

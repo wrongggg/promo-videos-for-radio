@@ -385,9 +385,37 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     entrance = styles.ENTRANCES[style["entrance"]]
     headline = track["artist"]
     headline_size = styles.headline_size(style, headline)
+    # Style capabilities that change what the headline IS, not just how it
+    # moves. A ticker scrolls one long track, an art-fill masks the letters
+    # with the sleeve -- both are incompatible with per-character spans.
+    is_ticker = bool(style.get("ticker"))
+    art_fill = (bool(style.get("art_text")) and bool(media.get("image"))
+                and not media.get("video"))
     # The per-character effects apply to the headline, which is the artist.
-    split_title = bool(entrance.get("chars")) and _can_split_chars(headline)
+    split_title = (bool(entrance.get("chars")) and _can_split_chars(headline)
+                   and not is_ticker and not art_fill)
     headline_markup = _split_chars(headline) if split_title else _esc(headline)
+
+    artist_style = f"font-size: {headline_size}px;"
+    if art_fill:
+        # The letterforms clip this image (background-clip: text in the style's
+        # CSS); it is the same file the scene draws, so type and artwork read
+        # as one printed object.
+        artist_style += f" background-image: url('{_esc(_rel(media['image']))}');"
+    if is_ticker:
+        # Two identical halves, each the name three times over. xPercent: -50
+        # then lands exactly on the seam between them, so the scroll needs no
+        # measured width to stay seamless -- the only deterministic way to
+        # scroll text whose rendered width the composer cannot know.
+        unit = _esc(headline) + '<span class="tick-sep">&bull;</span>'
+        half = f'<span class="tick-half">{unit * 3}</span>'
+        artist_p = (f'<div class="ticker-wrap"><p id="artist-{index}" '
+                    f'class="artist-name ticker-track" style="{artist_style}">'
+                    f'{half}{half}</p></div>')
+    else:
+        fill_cls = " art-fill" if art_fill else ""
+        artist_p = (f'<p id="artist-{index}" class="artist-name{fill_cls}" '
+                    f'style="{artist_style}">{headline_markup}</p>')
     trivia = track.get("reason", "").strip()
     trivia_html = f'<p id="trivia-{index}" class="trivia-tag">{_esc(trivia)}</p>' if trivia else ""
     # The scrim exists to hold type apart from unpredictable imagery. Over a
@@ -399,13 +427,25 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         f'<div id="orb-a-{index}" class="orb orb-a" style="background: {pal["orb1"]};"></div>'
         f'<div id="orb-b-{index}" class="orb orb-b" style="background: {pal["orb2"]};"></div>'
     ) if not field else ""
+    # The magazine-cover overlap: the headline moves out of the scene onto its
+    # own layer BELOW the artwork (the .scene div sits above every media
+    # layer, so "behind the sleeve" is impossible from inside it). It becomes
+    # a sibling clip the framework times like any other; every #artist-N tween
+    # works unchanged.
+    behind = bool(lay.get("headline_behind"))
+    if behind:
+        media_html += (
+            f'<div class="clip headline-behind"{rtl} data-start="{start}" '
+            f'data-duration="{duration}" data-track-index="6">{artist_p}</div>\n'
+        )
+    meta_artist = "" if behind else artist_p
     scene_html = f"""
       <div id="{scene_id}" class="clip scene" style="{bg_style}" data-start="{start}" data-duration="{duration}" data-track-index="0">
         {scrim_html}
         {orbs_html}
         <div class="meta-container"{rtl}>
           <div id="meta-{index}" class="meta-inner">
-            <p id="artist-{index}" class="artist-name" style="font-size: {headline_size}px;">{headline_markup}</p>
+            {meta_artist}
             <h1 id="title-{index}" class="track-title">{_esc(display_title)}</h1>
             {trivia_html}
             <div class="progress-container">
@@ -426,7 +466,27 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     # first fraction of a second, which reads as a bug -- the box has to arrive
     # with its contents. Styles without a card keep the line-by-line stagger.
     has_panel = bool(style.get("panel"))
-    if split_title:
+    # Image first, then the name: when the headline hides behind the sleeve,
+    # let the artwork land alone for a beat before the big type slides in
+    # under it -- the reveal only reads as "behind" if the thing in front is
+    # already there.
+    headline_at = start + (0.7 if behind else 0.25)
+    if is_ticker:
+        # The scroll IS the entrance: the track fades up already moving and
+        # travels for the whole scene. xPercent and the exit's transforms
+        # compose independently, so nothing fights.
+        text_sel = f'"#title-{index}, #artist-{index}' + (f', #trivia-{index}"' if trivia else '"')
+        entrance_js = (
+            f'tl.fromTo("#artist-{index}", {{ opacity: 0 }}, '
+            f'{{ opacity: 1, duration: 0.6, ease: "power1.out" }}, {headline_at})\n'
+            f'        .fromTo("#artist-{index}", {{ xPercent: 0 }}, '
+            f'{{ xPercent: -50, duration: {duration}, ease: "none" }}, {start})\n'
+            f'        .fromTo("#title-{index}", {{ opacity: 0, y: 18, filter: "blur(6px)" }}, '
+            f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.8, ease: "expo.out" }}, {start + 0.5})'
+            + (f'\n        .fromTo("#trivia-{index}", {{ opacity: 0, y: 14, filter: "blur(6px)" }}, '
+               f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.8, ease: "expo.out" }}, {start + 0.64})' if trivia else '')
+        )
+    elif split_title:
         # Characters animate; the rest of the block follows normally. The panel
         # (if any) still comes in as one object so it never shows up empty.
         text_sel = (f'"#meta-{index}"' if has_panel
@@ -437,7 +497,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
                     if has_panel else 'tl.')
         entrance_js = (
             f'{panel_in}fromTo("#artist-{index} .ch", {entrance["from"]}, '
-            f'Object.assign({entrance["to"]}), {start + 0.25})\n'
+            f'Object.assign({entrance["to"]}), {headline_at})\n'
             f'        .fromTo("#title-{index}", {{ opacity: 0, y: 18, filter: "blur(6px)" }}, '
             f'{{ opacity: 1, y: 0, filter: "blur(0px)", duration: 0.8, ease: "expo.out" }}, {start + 0.5})'
             + (f'\n        .fromTo("#trivia-{index}", {{ opacity: 0, y: 14, filter: "blur(6px)" }}, '
@@ -452,7 +512,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     else:
         text_sel = f'"#title-{index}, #artist-{index}' + (f', #trivia-{index}"' if trivia else '"')
         entrance_js = (
-            f'tl.fromTo("#artist-{index}", {entrance["from"]}, Object.assign({entrance["to"]}), {start + 0.25})\n'
+            f'tl.fromTo("#artist-{index}", {entrance["from"]}, Object.assign({entrance["to"]}), {headline_at})\n'
             f'        .fromTo("#title-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.45})'
             + (f'\n        .fromTo("#trivia-{index}", {entrance["from"]}, Object.assign({{}}, {entrance["to"]}, {{ duration: 1.1 }}), {start + 0.6})' if trivia else '')
         )
@@ -478,10 +538,13 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         f'\n        .fromTo("#scene-{index} .meta-container", {{ y: 4 }}, {{ y: -4, duration: {breath_cycle}, '
         f'yoyo: true, repeat: {_loop_repeat(duration, breath_cycle)}, ease: "sine.inOut" }}, {start})'
     )
-    float_cycle = round(max(duration / 1.6, 3), 3)
+    # One slow directional pass rather than a bob: the box starts a little low
+    # and finishes a little high, easing through the middle -- the sleeve
+    # travels through the layout over the scene instead of oscillating.
+    drift = lay.get("drift_px", 10)
     float_js = (
-        f'\n        .fromTo("#artbox-{index}", {{ y: -6 }}, {{ y: 6, duration: {float_cycle}, '
-        f'yoyo: true, repeat: {_loop_repeat(duration, float_cycle)}, ease: "sine.inOut" }}, {start})'
+        f'\n        .fromTo("#artbox-{index}", {{ y: {drift} }}, {{ y: {-drift}, '
+        f'duration: {duration}, ease: "sine.inOut" }}, {start})'
     ) if (lay.get("float_art") and media.get("image") and not media.get("video")) else ""
     scene_js = f"""
       {entrance_js}{orb_js}{breath_js}{float_js}
@@ -730,9 +793,14 @@ def build_composition_html(
 
     # A framed layout shows the sleeve as the subject, so the video layer's
     # backdrop dimming comes off; a light field flips the header to ink.
+    # The ink header only makes sense when the header actually sits ON the
+    # light field. A layout whose art runs to the top edge (press, split) has
+    # a white field *below* but a sleeve *behind the header* -- ink type over
+    # arbitrary artwork fails contrast, so those keep the white header and its
+    # band. header_band doubles as "the header sits over artwork".
     root_classes = " ".join(filter(None, [
         "framed" if lay.get("art") else "",
-        "light-frame" if field_is_light else "",
+        "light-frame" if (field_is_light and not lay.get("header_band", True)) else "",
         "" if lay.get("header_band", True) else "no-headband",
     ]))
     framed_css = ".framed .bg-media { opacity: 1; }" if lay.get("art") else ""
@@ -748,7 +816,7 @@ def build_composition_html(
     <meta name="viewport" content="width=1080, height=1920" />
     <title>{_esc(show_name.strip() + " Promo") if (show_name or "").strip() else "Promo"}</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>{BASE_CSS}{visuals.CSS}{styles.text_css(style, lay, field_is_light)}{framed_css}</style>
+    <style>{styles.font_face_css(style)}{BASE_CSS}{visuals.CSS}{styles.text_css(style, lay, field_is_light)}{framed_css}</style>
   </head>
   <body>
     <div id="root" class="{root_classes}" data-composition-id="main" data-start="0" data-duration="{total_duration}" data-width="1080" data-height="1920">

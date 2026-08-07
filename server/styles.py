@@ -45,7 +45,54 @@ FONTS = {
     "serif": f"'Playfair Display', Georgia, 'Times New Roman', {_FALLBACK}, serif",
     "condensed": f"'Bebas Neue', 'Oswald', {_FALLBACK}, sans-serif",
     "display": f"'Archivo Black', 'Inter', {_FALLBACK}, system-ui, sans-serif",
+    # The two bundled faces (see FONT_FACES). Nabla is a COLRv1 colour font --
+    # the liquid-chrome 3D look ships inside the glyphs themselves, no CSS
+    # trickery -- and Instrument Serif's italic is the flowing editorial voice.
+    "chrome": f"'Nabla', 'Archivo Black', {_FALLBACK}, system-ui, sans-serif",
+    "flowy": f"'Instrument Serif', 'Playfair Display', Georgia, {_FALLBACK}, serif",
 }
+
+# Fonts the renderer cannot supply itself, shipped as project assets. The rule
+# at the top of this file stands: a family outside the renderer's set must not
+# be used without a matching @font-face -- these are those @font-faces. Files
+# live in server/static/fonts and install_fonts() copies them into each job.
+FONT_FACES = {
+    "chrome": (("Nabla", "assets/fonts/nabla.woff2", "normal"),),
+    "flowy": (("Instrument Serif", "assets/fonts/instrument-serif.woff2", "normal"),
+              ("Instrument Serif", "assets/fonts/instrument-serif-italic.woff2", "italic")),
+}
+
+_FONT_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "static", "fonts")
+
+
+def font_face_css(style: dict) -> str:
+    """@font-face rules for a style's bundled faces, or '' for renderer fonts.
+
+    font-display: block, because a flash of fallback glyphs on frame 0 would
+    bake into the render; better to hold the frame until the face is in."""
+    faces = FONT_FACES.get(style["font"]) or ()
+    return "".join(
+        f"@font-face {{ font-family: '{fam}'; src: url('{path}') format('woff2'); "
+        f"font-style: {sty}; font-weight: 400; font-display: block; }}\n"
+        for fam, path, sty in faces
+    )
+
+
+def install_fonts(project_dir: str) -> None:
+    """Copy the bundled woff2 files into the job, same contract as the Hydra
+    vendor bundle: compositions must not fetch from the network."""
+    import shutil
+    dest = os.path.join(project_dir, "assets", "fonts")
+    os.makedirs(dest, exist_ok=True)
+    try:
+        names = os.listdir(_FONT_SRC_DIR)
+    except OSError:
+        return
+    for name in names:
+        if name.endswith(".woff2"):
+            shutil.copyfile(os.path.join(_FONT_SRC_DIR, name),
+                            os.path.join(dest, name))
 
 WHITE = "#ffffff"
 INK = "#0b0b0d"
@@ -314,9 +361,13 @@ STYLES = {
     },
     "xl": {
         "label": "XL",
-        "blurb": "Type as the whole picture. Enormous condensed caps that fill the frame, hard cuts, stark bars.",
+        "blurb": "Type as the whole picture. Enormous condensed caps that fill the frame and break mid-word, hard cuts, stark bars.",
         "font": "condensed",
-        "primary": {"max_size": 210, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.88},
+        # break_all lets a long name wrap wherever it runs out of frame --
+        # the mid-word break IS the look (a magazine masthead cropped by its
+        # own page), and it is what buys the extra 30px of size.
+        "break_all": True,
+        "primary": {"max_size": 240, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.88},
         "secondary": {"size": 44, "weight": 400, "case": "uppercase", "spacing": 10},
         "trivia": {"size": 32, "weight": 500},
         "color": WHITE, "panel": None,
@@ -437,6 +488,67 @@ STYLES = {
         "align": "left", "anchor": "bottom", "bottom_gap": 235,
         "entrance": "stamp", "transition": "swap", "patch": "bars", "scrim": "light",
     },
+
+    # --- the contemporary set ----------------------------------------------
+    #
+    # Four styles that lean on capabilities the first twelve never used: a
+    # bundled colour font, a bundled italic, the artwork inside the letterforms,
+    # and a headline that moves instead of arriving.
+    "chrome": {
+        "label": "Chrome",
+        "blurb": "Liquid-metal colour type -- the chrome lives inside the glyphs -- rippling in letter by letter over saturated colour.",
+        "font": "chrome",
+        "primary": {"max_size": 118, "weight": 400, "case": "uppercase", "spacing": 2, "line": 1.04},
+        "secondary": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 6},
+        "trivia": {"size": 29, "weight": 500},
+        # Nabla carries its own colour; WHITE is only the fallback face's colour.
+        # The secondary lines drop to the grotesque -- a colour font at 30px is
+        # noise, not chrome.
+        "color": WHITE, "panel": None, "secondary_font": "grotesque",
+        "align": "center", "anchor": "bottom", "bottom_gap": 230,
+        "entrance": "wave", "transition": "zoom", "patch": "kaleid", "scrim": "soft",
+    },
+    "flux": {
+        "label": "Ink",
+        "blurb": "Flowing editorial italic, large and unhurried. The literary register -- for sleeves that read like book covers.",
+        "font": "flowy",
+        "italic": True,
+        "primary": {"max_size": 132, "weight": 400, "case": "none", "spacing": 0, "line": 1.02},
+        "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 6},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE, "panel": None, "secondary_font": "grotesque",
+        "align": "center", "anchor": "bottom", "bottom_gap": 230,
+        "entrance": "drift", "transition": "dissolve", "patch": "flow", "scrim": "soft",
+    },
+    "cutout": {
+        "label": "Cutout",
+        "blurb": "The artist's name cut out of the artwork itself -- the sleeve shows through the letters. Type and image as one object.",
+        "font": "display",
+        # compose.py fills the letterforms with the scene's own artwork via
+        # background-clip: text; the colour below is only the no-artwork
+        # fallback.
+        "art_text": True,
+        "primary": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 0, "line": 0.96},
+        "secondary": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 5},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE, "panel": None, "secondary_font": "grotesque",
+        "align": "center", "anchor": "bottom", "bottom_gap": 225,
+        "entrance": "fade", "transition": "swap", "patch": "haze", "scrim": "soft",
+    },
+    "reel": {
+        "label": "Reel",
+        "blurb": "The name as a full-width ticker, sliding through the frame for the whole scene. Motion as the typography.",
+        "font": "condensed",
+        # compose.py duplicates the name into a seamless track and scrolls it
+        # by its own width -- no measurement, deterministic at any seek.
+        "ticker": True,
+        "primary": {"max_size": 185, "weight": 400, "case": "uppercase", "spacing": 2, "line": 0.9},
+        "secondary": {"size": 32, "weight": 500, "case": "uppercase", "spacing": 7},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE, "panel": None,
+        "align": "left", "anchor": "bottom", "bottom_gap": 230,
+        "entrance": "slide", "transition": "slide", "patch": "bars", "scrim": "heavy",
+    },
 }
 
 DEFAULT_STYLE = "classic"
@@ -501,9 +613,12 @@ LAYOUTS = {
     },
     "press": {
         "label": "Press",
-        "blurb": "Sleeve flush to the top edge, hard cut to a flat field drawn from it. Type sits in the field.",
+        "blurb": "Sleeve flush to the top edge, hard cut to clean white below. Type sits in the white.",
         "art_rect": (0, 0, 1080, 1080),
-        "art_opacity": 1.0, "backdrop": False, "field": "derived",
+        # White, not a colour derived from the sleeve: the derived field kept
+        # reading as a wash of the artwork, and against real covers the clean
+        # gallery-print white is simply the stronger page.
+        "art_opacity": 1.0, "backdrop": False, "field": "white",
         "scrim": False, "text_bottom": 1660, "text_on_field": True,
         # Art runs to the top edge, so the header sits over the sleeve and
         # keeps its band.
@@ -547,10 +662,27 @@ LAYOUTS = {
         # A shorter band than the old square (0, 410, 1080, 1080): cropping the
         # sleeve to a letterboxed band is the layout's whole idea, and ending
         # at y1340 buys the text block room above the Instagram overlay zone.
+        # White above and below, like a photograph tipped into a book page --
+        # the derived tint made it a poster; white makes it a plate.
         "art_rect": (0, 400, 1080, 940),
-        "art_opacity": 1.0, "backdrop": False, "field": "derived",
+        "art_opacity": 1.0, "backdrop": False, "field": "white",
         "scrim": False, "text_bottom": 1670, "text_on_field": True,
         "header_band": False, "float_art": False,
+    },
+    "cover": {
+        "label": "Cover",
+        "blurb": "The name set enormous at the top with the sleeve hung over it -- type and image overlapping, neither complete without the other.",
+        # The magazine-cover move: the headline is drawn UNDER the artwork
+        # (compose.py places it on its own layer below the sleeve), so the
+        # sleeve crops the word the way a cover model crops a masthead.
+        # Headline at 420 clears the show/episode header (it ends ~380); the
+        # sleeve then crops the word from below. Art at 600 leaves most of one
+        # XXL line readable before the crop.
+        "art_rect": (140, 600, 800, 800),
+        "art_opacity": 1.0, "backdrop": False, "field": "white",
+        "scrim": False, "text_bottom": 1660, "text_on_field": True,
+        "header_band": False, "float_art": True, "drift_px": 16,
+        "headline_behind": True, "headline_top": 420,
     },
 }
 
@@ -697,7 +829,15 @@ def thumbnail_markup(key: str, palette: dict | None = None,
 
 def preview_layout_css(themes: dict | None = None) -> str:
     """Per-theme positioning and typography for the preview text block."""
+    # The bundled faces, served from /static/fonts so the tiles show the real
+    # chrome and the real italic rather than their fallbacks.
     out = [
+        f"@font-face {{ font-family: '{fam}'; "
+        f"src: url('/static/fonts/{os.path.basename(path)}') format('woff2'); "
+        f"font-style: {sty}; font-weight: 400; font-display: swap; }}"
+        for faces in FONT_FACES.values() for fam, path, sty in faces
+    ]
+    out += [
         ".theme-thumb { position: relative; }",
         ".tp-txt { position: absolute; left: 0; right: 0; display: flex;"
         " flex-direction: column; padding: 0 8px; pointer-events: none;"
@@ -1332,6 +1472,9 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     steps it down for long titles."""
     lay = lay or LAYOUTS[DEFAULT_LAYOUT]
     font = FONTS[style["font"]]
+    # Display faces that only work at headline size (a colour font, a ticker
+    # slab) hand their secondary lines to a quieter family.
+    sec_font = FONTS[style.get("secondary_font", style["font"])]
     # The artist name is the promo's headline and the track title sits under
     # it, in every theme. Someone scrolling recognises the artist first -- it is
     # how a gig poster or a festival lineup is set -- and the hierarchy is a
@@ -1417,6 +1560,40 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     else:
         position_css = f"margin-top: auto; margin-bottom: {style['bottom_gap']}px;"
 
+    # Per-capability extras on the headline. Italic is a voice, break-all is
+    # the XXL mid-word crop, art-fill masks the letterforms with the scene's
+    # own artwork (the image itself is set inline per scene by compose.py).
+    headline_extras = ""
+    if style.get("italic"):
+        headline_extras += " font-style: italic;"
+    if style.get("break_all"):
+        headline_extras += " word-break: break-all;"
+
+    extra_blocks = ""
+    if style.get("art_text"):
+        extra_blocks += """
+.artist-name.art-fill {
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  background-size: cover; background-position: center; text-shadow: none;
+}"""
+    if style.get("ticker"):
+        # The wrap escapes its container's 60px padding so the track runs edge
+        # to edge; the track's two halves are identical, which is what makes an
+        # xPercent scroll need no measurement.
+        extra_blocks += """
+.ticker-wrap { overflow: hidden; white-space: nowrap; width: 1080px; margin: 0 -60px; }
+.ticker-track { display: inline-block; white-space: nowrap; }
+.ticker-track .tick-sep { opacity: 0.4; padding: 0 42px; }"""
+    if lay.get("headline_behind"):
+        # The headline lives on its own layer under the artwork (see
+        # compose.py); this places it. z-index 1 keeps it above the white
+        # field, below the sleeve's box at 2.
+        extra_blocks += f"""
+.headline-behind {{
+  position: absolute; left: 0; right: 0; top: {lay.get('headline_top', 250)}px;
+  z-index: 1; padding: 0 60px; text-align: {align};
+}}"""
+
     return f"""
 .meta-container {{
   position: relative; z-index: 10; width: 100%;
@@ -1428,19 +1605,19 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
   font-family: {font}; font-weight: {primary['weight']};
   text-transform: {_case_css(primary['case'])}; letter-spacing: {primary['spacing']}px;
   line-height: {primary['line']}; color: {color}; text-shadow: {shadow};
-  margin-bottom: 10px; max-width: 950px;
+  margin-bottom: 10px; max-width: 950px;{headline_extras}
 }}
 .track-title {{
-  font-family: {font}; font-size: {secondary['size']}px; font-weight: {secondary['weight']};
+  font-family: {sec_font}; font-size: {secondary['size']}px; font-weight: {secondary['weight']};
   text-transform: {_case_css(secondary['case'])}; letter-spacing: {secondary['spacing']}px;
   color: {color}; text-shadow: {shadow}; margin-bottom: 14px; opacity: 0.92;
 }}
 .trivia-tag {{
-  font-family: {font}; font-size: {trivia['size']}px; font-weight: {trivia['weight']};
+  font-family: {sec_font}; font-size: {trivia['size']}px; font-weight: {trivia['weight']};
   line-height: 1.4; color: {color}; text-shadow: {shadow};
   letter-spacing: 0.2px; max-width: 840px; margin-bottom: 14px; opacity: 0.88;
 }}
-.scrim {{ background: {SCRIMS[style['scrim']]}; }}
+.scrim {{ background: {SCRIMS[style['scrim']]}; }}{extra_blocks}
 """
 
 
@@ -1457,6 +1634,11 @@ _ADVANCE = {
     "serif": (0.51, 0.64),
     "condensed": (0.29, 0.35),
     "display": (0.61, 0.76),
+    # The two bundled faces are estimates, not render measurements: Nabla is a
+    # wide display face, Instrument Serif a narrow bookish one. _FIT_MARGIN
+    # absorbs the estimate error; re-measure if either misbehaves.
+    "chrome": (0.62, 0.72),
+    "flowy": (0.46, 0.60),
 }
 
 # .artist-name's own max-width, and the binding constraint in every layout: the
@@ -1521,6 +1703,12 @@ def headline_size(style: dict, text: str) -> int:
     #
     # So the longest word sets a hard floor on how large the type may be, and
     # the answer to a word that does not fit is to shrink it until it does.
+    #
+    # Two styles opt out of the floor on purpose: break_all styles WANT the
+    # browser to break inside the word (the mid-word crop is the look), and a
+    # ticker never wraps at all -- its line scrolls instead of fitting.
+    if style.get("break_all") or style.get("ticker"):
+        return size
     longest = max((text or "").split(), key=len, default="")
     if longest:
         available = _headline_width(style) * _FIT_MARGIN

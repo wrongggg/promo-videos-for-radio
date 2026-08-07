@@ -292,6 +292,48 @@ PRESET_THEMES = {
             {"bg1": "#0f1118", "bg2": "#020203", "accent": "#a5b4fc", "accent2": "#e0e7ff", "orb1": "#2a3157", "orb2": "#525c8f"},
         ],
     },
+
+    # --- the contemporary five ---------------------------------------------
+    "chrome": {
+        "label": "Chrome", "style": "chrome", "layout": "bleed",
+        "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#16062e", "bg2": "#040108", "accent": "#b18cff", "accent2": "#59f3ff", "orb1": "#5a2ea6", "orb2": "#0e8fa8"},
+            {"bg1": "#2e0620", "bg2": "#080105", "accent": "#ff5ea8", "accent2": "#ffd166", "orb1": "#a62e6b", "orb2": "#b8860b"},
+        ],
+    },
+    "ink": {
+        "label": "Ink", "style": "flux", "layout": "strip", "transition": "dissolve",
+        "motion": "calm", "frame": "film-grain",
+        "palettes": [
+            {"bg1": "#1c1a17", "bg2": "#050404", "accent": "#b5a48c", "accent2": "#e6dccb", "orb1": "#4a4234", "orb2": "#7d7159"},
+            {"bg1": "#171a1c", "bg2": "#040505", "accent": "#8ca6b5", "accent2": "#cbdce6", "orb1": "#34424a", "orb2": "#59707d"},
+        ],
+    },
+    "cutout": {
+        "label": "Cutout", "style": "cutout", "layout": "gallery", "transition": "swap",
+        "motion": "normal", "frame": "clean",
+        "palettes": [
+            {"bg1": "#18181a", "bg2": "#030303", "accent": "#e8e8e4", "accent2": "#9a9aa0", "orb1": "#303034", "orb2": "#5a5a60"},
+            {"bg1": "#1a1614", "bg2": "#040302", "accent": "#e0b894", "accent2": "#f2e4d4", "orb1": "#5c4430", "orb2": "#8f6f52"},
+        ],
+    },
+    "reel": {
+        "label": "Reel", "style": "reel", "layout": "bleed", "transition": "slide",
+        "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#200808", "bg2": "#060101", "accent": "#ff3b30", "accent2": "#ffe8e6", "orb1": "#8f1c14", "orb2": "#c9564d"},
+            {"bg1": "#081420", "bg2": "#010306", "accent": "#37b6ff", "accent2": "#e2f4ff", "orb1": "#14508f", "orb2": "#4d86c9"},
+        ],
+    },
+    "coverstar": {
+        "label": "Cover Star", "style": "xl", "layout": "cover", "transition": "dissolve",
+        "motion": "calm", "frame": "clean",
+        "palettes": [
+            {"bg1": "#1a1a1a", "bg2": "#000000", "accent": "#111214", "accent2": "#8a8a8a", "orb1": "#3a3a3a", "orb2": "#6a6a6a"},
+            {"bg1": "#1a1214", "bg2": "#040202", "accent": "#c2453a", "accent2": "#2b2b2b", "orb1": "#7a2a22", "orb2": "#4a4a4a"},
+        ],
+    },
 }
 
 
