@@ -209,7 +209,10 @@ TRANSITIONS = {
     # through a fixed ladder rather than sliding, because pixelation that
     # eases between block sizes reads as a wobble; jumping between them is
     # what makes it read as pixels.
-    "pixelate": {"secs": 0.8, "kind": "pixelate"},
+    # 1.15s, not 0.8: the block ladder needs room to be read as a ladder. At
+    # 0.8 the whole coarse half went past in under a third of a second and
+    # under 20% opacity, so what you actually saw was a flicker, not pixels.
+    "pixelate": {"secs": 1.15, "kind": "pixelate"},
 }
 
 # Hydra patches. `A` is the accent as an rgb triple; `h.time` is set absolutely
@@ -298,15 +301,14 @@ STYLES = {
         "secondary": {"size": 29, "weight": 400, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 500},
         "color": INK,
-        # The card is what makes black type safe over arbitrary album art. It
-        # used to be a solid white block; frosted glass does the same contrast
-        # job (brightness() in the backdrop filter lifts whatever is behind it
-        # above the ink's floor) while letting the artwork's colour glow
-        # through, which is what makes it read as designed rather than pasted.
-        "panel": {"bg": "rgba(255,255,255,0.62)", "pad": "52px 58px", "radius": 30,
-                  "glass": "blur(26px) saturate(1.6) brightness(1.18)",
-                  "border": "1px solid rgba(255,255,255,0.45)",
-                  "shadow": "0 24px 70px rgba(0,0,0,0.28)"},
+        # The card is what makes black type safe over arbitrary album art, but
+        # a rounded rectangle floating short of three edges reads as pasted on
+        # however it is filled. Run it edge to edge instead and off the bottom
+        # of the frame, and it stops being a box on a picture and becomes the
+        # bottom of the poster. Solid white, no radius: the crop is doing the
+        # work the frosting was, so nothing has to fake depth.
+        "panel": {"bg": "#ffffff", "pad": "58px 60px", "radius": 0, "bleed": True,
+                  "shadow": "0 -18px 60px rgba(0,0,0,0.28)"},
         "align": "left", "anchor": "bottom", "bottom_gap": 220,
         "entrance": "snap", "transition": "zoom", "patch": "kaleid", "scrim": "light",
     },
@@ -423,15 +425,15 @@ STYLES = {
         "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 400},
         "color": WHITE,
-        # The inverse of Poppy's card. It is what separates this from Terminal,
-        # which is the same family in the same corner with no block behind it.
-        # Smoked glass rather than the old opaque black slab: brightness(0.7)
-        # in the backdrop filter does the darkening the 0.90 alpha used to, so
-        # white mono type keeps its floor while the sleeve stays present.
-        "panel": {"bg": "rgba(10,10,16,0.45)", "pad": "50px 54px", "radius": 18,
-                  "glass": "blur(22px) saturate(1.25) brightness(0.7)",
-                  "border": "1px solid rgba(255,255,255,0.14)",
-                  "shadow": "0 24px 70px rgba(0,0,0,0.35)"},
+        # No card. Index only ever runs on Gallery, which is a flat white
+        # field, and a dark box floating on white is the one thing that read as
+        # pasted-on rather than designed -- a rectangle with nothing to frost
+        # over and no edge to justify it. What makes a catalogue card is the
+        # setting, not the box: mono, ink, hung under a short rule with a lot
+        # of white around it. Terminal stays distinct because it sits on
+        # artwork under a heavy scrim rather than on a page.
+        "panel": None,
+        "rule": {"width": 150, "weight": 3, "gap": 30},
         "align": "left", "anchor": "bottom", "bottom_gap": 235,
         "entrance": "stamp", "transition": "swap", "patch": "bars", "scrim": "light",
     },
@@ -1306,6 +1308,25 @@ def resolve_text(style: dict, lay: dict, field_is_light: bool) -> tuple[str, dic
     return WHITE, None, False
 
 
+FRAME_HEIGHT = 1920
+
+
+def _pad_parts(pad: str) -> tuple[float, float]:
+    """(vertical, horizontal) from a CSS shorthand like "58px 60px"."""
+    parts = [float(p.rstrip("px")) for p in pad.split()]
+    return (parts[0], parts[1] if len(parts) > 1 else parts[0])
+
+
+def _bleed_clearance(lay: dict) -> float:
+    """How far a bleed band's text must sit above the frame's bottom edge.
+
+    The layout already decided that: `text_bottom` is where it wants the
+    block's lowest pixel, chosen to clear Instagram's reply overlay. A band
+    runs to the crop, so that offset becomes the band's bottom padding rather
+    than the block's own bottom offset, and the type does not move."""
+    return FRAME_HEIGHT - lay["text_bottom"] if lay.get("text_bottom") else 250
+
+
 def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False) -> str:
     """CSS for the text roles. Sizes for the title are a ceiling -- compose.py
     steps it down for long titles."""
@@ -1338,17 +1359,52 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
             extras += f"border: {panel['border']}; "
         if panel.get("shadow"):
             extras += f"box-shadow: {panel['shadow']}; "
-        panel_css = (
-            f"background: {panel['bg']}; padding: {panel['pad']}; "
-            f"border-radius: {panel['radius']}px; {extras}max-width: 900px; opacity: 0;"
-        )
+        if panel.get("bleed"):
+            # A band, not a card: it spans the frame and runs off the bottom
+            # edge. The layout's own bottom offset moves from the block to the
+            # band's inner padding, so the type still lands exactly where the
+            # layout put it -- clear of Instagram's reply zone -- while the
+            # white behind it carries on past the crop.
+            clearance = _bleed_clearance(lay)
+            pad_v, pad_h = _pad_parts(panel["pad"])
+            panel_css = (
+                f"background: {panel['bg']}; "
+                f"padding: {pad_v:g}px {pad_h:g}px {clearance:g}px; "
+                f"{extras}width: 100%; max-width: none; border-radius: 0; opacity: 0;"
+            )
+        else:
+            panel_css = (
+                f"background: {panel['bg']}; padding: {panel['pad']}; "
+                f"border-radius: {panel['radius']}px; {extras}max-width: 900px; opacity: 0;"
+            )
     else:
         panel_css = ""
+
+    # A short rule hung above the block, for styles that dropped their card and
+    # need something to hang the type off. Drawn as ::before on the headline
+    # rather than on .meta-inner, and deliberately so: a pseudo-element cannot
+    # be a GSAP target, but it inherits its parent's opacity -- and the
+    # headline is what the entrance actually tweens. Hung off .meta-inner the
+    # rule would snap in with the scene and sit there while the type animated
+    # underneath it.
+    rule = style.get("rule")
+    rule_css = ""
+    if rule and not panel:
+        rule_css = f"""
+.artist-name::before {{
+  content: ""; display: block; width: {rule['width']}px; height: {rule['weight']}px;
+  background: {color}; margin-bottom: {rule['gap']}px; opacity: 0.9;
+}}"""
 
     # The layout places the block whenever it has an opinion; only "bleed"
     # leaves it to the style, which is what keeps that layout pixel-identical
     # to what shipped before any of this existed.
-    if lay.get("text"):
+    if lay.get("text") and panel and panel.get("bleed"):
+        # The band is the thing that reaches the edges, so the container keeps
+        # no padding of its own and sits on the crop.
+        position_css = ("position: absolute; left: 0; right: 0; margin: 0; "
+                        "padding: 0; bottom: 0;")
+    elif lay.get("text"):
         # Absolute against .scene, which means .scene's 60px padding no longer
         # applies and has to be restated here or the type runs to the bleed.
         # Anchored by its bottom edge (lay["text"] is a `bottom:` rule) so the
@@ -1367,7 +1423,7 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
   display: flex; flex-direction: column; align-items: {items};
   text-align: {align}; {position_css}
 }}
-.meta-inner {{ display: flex; flex-direction: column; align-items: {items}; {panel_css} }}
+.meta-inner {{ display: flex; flex-direction: column; align-items: {items}; {panel_css} }}{rule_css}
 .artist-name {{
   font-family: {font}; font-weight: {primary['weight']};
   text-transform: {_case_css(primary['case'])}; letter-spacing: {primary['spacing']}px;

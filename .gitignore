@@ -31,3 +31,7 @@ server/static/preview/*
 !server/static/preview/cover-a.jpg
 !server/static/preview/cover-b.jpg
 server/credits.jsonl
+
+# A local cache of catalogue API responses (iTunes and friends), written by
+# server/providers.py. Regenerates on demand and churns constantly.
+server/catalog_cache.json

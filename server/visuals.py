@@ -64,6 +64,23 @@ CSS = """
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   transform-origin: 0 0;
 }
+/* Where the pixelate transition actually draws.
+
+   Laying the image out small and scaling it back up with a CSS transform does
+   not quantise anything: the browser rasterises an element at its composited
+   scale, so `image-rendering: pixelated` re-samples from the full-resolution
+   source at the final size and the picture comes out smooth. That is why the
+   transition looked like a plain crossfade for its whole life -- the block
+   ladder was running, and doing nothing.
+
+   Real blocks need a genuinely small source. The driver draws the cover into
+   this canvas at box/f pixels, and CSS stretches that backing store to the
+   full box with nearest-neighbour sampling. Deterministic: same t, same f,
+   same bytes. */
+.art-pixc {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: none; image-rendering: pixelated; z-index: 1;
+}
 """
 
 
@@ -142,7 +159,9 @@ def art_html(index: int, start: float, duration: float, src: str,
     return (f'<div id="artbox-{index}" class="art-box" style="{box}">'
             f'<div id="pix-{index}" class="art-pix">'
             f'<img id="art-{index}" class="art-media" src="{src}" />'
-            f'</div></div>\n')
+            f'</div>'
+            f'<canvas id="pixc-{index}" class="art-pixc"></canvas>'
+            f'</div>\n')
 
 
 def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
@@ -281,29 +300,47 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }};
     }}
 
+    // Raw progress goes through as well as the eased one. Everything that
+    // slides wants the ease; a stepped ladder wants linear, or smoothstep's
+    // compressed ends hand the coarsest blocks a couple of frames each while
+    // the fine ones sit there for a third of a second.
     if (t < enterEnd) {{
-      var p = smoothstep((t - s.start) / T);          // 0 -> 1 arriving
-      return applyTransition(p, true);
+      var rp = (t - s.start) / T;                     // 0 -> 1 arriving
+      return applyTransition(smoothstep(rp), true, rp);
     }}
     if (t >= s.start + s.dur) {{
-      var q = smoothstep((t - s.start - s.dur) / T);  // 0 -> 1 departing
-      return applyTransition(q, false);
+      var rq = (t - s.start - s.dur) / T;             // 0 -> 1 departing
+      return applyTransition(smoothstep(rq), false, rq);
     }}
     return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0 }};
   }}
 
-  function applyTransition(p, entering) {{
+  function applyTransition(p, entering, raw) {{
     var k = TRANS.kind;
     if (k === "pixelate") {{
       // Snapped to a ladder: interpolating block size looks like the picture
       // breathing, stepping between sizes looks like pixels.
-      var LADDER = [1, 2, 3, 5, 8, 13, 21, 34];
-      var i = Math.min(LADDER.length - 1,
-                       Math.max(0, Math.round((entering ? 1 - p : p) * (LADDER.length - 1))));
+      //
+      // Opacity is deliberately NOT tied to p the way the other transitions
+      // tie it. Fading the incoming cover in across the same window that the
+      // blocks resolve over means the two cancel: the coarse steps all happen
+      // while the picture is nearly transparent, so the only thing on screen
+      // is a faint flicker over the outgoing cover, and by the time you can
+      // see anything the blocks are down to a few pixels. The incoming cover
+      // therefore arrives almost immediately -- opaque and heavily blocked --
+      // and the transition is the blocks resolving, which is the effect this
+      // was always supposed to be. It sits above the outgoing one (see the
+      // z-index below), so landing at full opacity early hides nothing.
+      var LADDER = [1, 2, 3, 4, 6, 9, 13, 18, 24];
+      var g = entering ? 1 - raw : raw;
+      var i = Math.min(LADDER.length - 1, Math.max(0, Math.round(g * (LADDER.length - 1))));
       var f = LADDER[i];
+      // Opaque within two frames, so the coarsest rungs are seen at full
+      // strength and the transition is the blocks resolving rather than a
+      // fade that happens to be blocky.
       return entering
-        ? {{ op: Math.min(1, p * 1.6), dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, pix: f }}
-        : {{ op: Math.min(1, (1 - p) * 1.6), dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, pix: f }};
+        ? {{ op: Math.min(1, raw / 0.06), dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, pix: f }}
+        : {{ op: Math.max(0, 1 - raw / 0.5), dx: 0, dy: 0, scale: 1, rot: 0, blur: 0, pix: f }};
     }}
     if (k === "dissolve") {{
       // Both covers are blurred and part-transparent through the middle of the
@@ -371,6 +408,8 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       var el = document.getElementById("art-" + s.i);
       if (!el) continue;
       var pixEl = document.getElementById("pix-" + s.i);
+      var pixc = document.getElementById("pixc-" + s.i);
+      var box = document.getElementById("artbox-" + s.i);
       var st = transitionState(t, s);
       if (st === null) {{
         // Reset everything, not just opacity. Leaving a stale transform on a
@@ -389,6 +428,7 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
           pixEl.style.height = "100%";
           pixEl.style.transform = "";
         }}
+        if (pixc) pixc.style.display = "none";
         continue;
       }}
 
@@ -417,22 +457,36 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
         x.toFixed(2) + "px, " + y.toFixed(2) + "px)" +
         (st.rot ? " rotate(" + st.rot.toFixed(2) + "deg)" : "");
       el.style.filter = st.blur ? "blur(" + st.blur.toFixed(2) + "px)" : "";
-      // Lay the artwork out at 1/f of its box and scale it back up by f, with
-      // nearest-neighbour sampling: real blocks, and less rasterising than at
-      // rest rather than more.
-      if (pixEl) {{
-        var f = st.pix || 1;
-        if (f > 1) {{
-          pixEl.style.width = (100 / f).toFixed(4) + "%";
-          pixEl.style.height = (100 / f).toFixed(4) + "%";
-          pixEl.style.transform = "scale(" + f + ")";
-          el.style.imageRendering = "pixelated";
+      // Draw the blocks into the canvas at box/f pixels and let CSS stretch
+      // that backing store over the box. The img itself is hidden while this
+      // is up, so only one of the two is ever on screen.
+      var f = st.pix || 1;
+      if (pixc && f > 1 && el.complete && el.naturalWidth) {{
+        var bw = box ? box.clientWidth : 1080, bh = box ? box.clientHeight : 1920;
+        var cw = Math.max(1, Math.round(bw / f)), ch = Math.max(1, Math.round(bh / f));
+        if (pixc.width !== cw) pixc.width = cw;
+        if (pixc.height !== ch) pixc.height = ch;
+        var ctx2 = pixc.getContext("2d");
+        ctx2.imageSmoothingEnabled = true;   // box-average down, hard edges up
+        ctx2.clearRect(0, 0, cw, ch);
+        // Reproduce object-fit: cover against the box's aspect, so the blocks
+        // land on exactly the crop the sharp image is showing.
+        var ir = el.naturalWidth / el.naturalHeight, br2 = bw / bh;
+        var sw2, sh2, sx2, sy2;
+        if (ir > br2) {{
+          sh2 = el.naturalHeight; sw2 = sh2 * br2;
+          sx2 = (el.naturalWidth - sw2) / 2; sy2 = 0;
         }} else {{
-          pixEl.style.width = "100%";
-          pixEl.style.height = "100%";
-          pixEl.style.transform = "";
-          el.style.imageRendering = "";
+          sw2 = el.naturalWidth; sh2 = sw2 / br2;
+          sx2 = 0; sy2 = (el.naturalHeight - sh2) / 2;
         }}
+        ctx2.drawImage(el, sx2, sy2, sw2, sh2, 0, 0, cw, ch);
+        pixc.style.display = "block";
+        pixc.style.opacity = (ART_OP * st.op).toFixed(4);
+        pixc.style.zIndex = el.style.zIndex;
+        el.style.opacity = "0";
+      }} else if (pixc) {{
+        pixc.style.display = "none";
       }}
       // No audio-driven filter. Treble moved ~0.17 per frame, so driving
       // saturation from it strobed the colour.
