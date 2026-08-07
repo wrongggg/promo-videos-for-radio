@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 
-BRAND_NAME = "ROTATION"
+BRAND_NAME = "ONREPEAT.MOV"
 
 # Lives under server/static/ rather than assets/ -- assets/ is gitignored (it's
 # populated at render time by visuals.install_vendor), and the wordmark has to

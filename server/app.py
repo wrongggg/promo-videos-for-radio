@@ -51,9 +51,10 @@ RENDER_RETENTION_DAYS = float(os.environ.get("RENDER_RETENTION_DAYS", "7"))
 _prune_lock = threading.Lock()
 
 # Branding, in one place because it appears in the wordmark, the legal pages and
-# (via tools/make_watermark.py) burned into every free video. The name is not
-# finally settled, so nothing hardcodes it.
-BRAND_NAME = os.environ.get("BRAND_NAME", "Rotation")
+# (via tools/make_watermark.py) burned into every free video. Always the full
+# string including the suffix -- "onrepeat" alone is a common phrase and doesn't
+# identify us, the domain does.
+BRAND_NAME = os.environ.get("BRAND_NAME", "onrepeat.mov")
 # Paddle's domain review requires the seller's legal name in the T&Cs and a
 # working contact address on the site. Both must be set before submitting.
 LEGAL_ENTITY_NAME = os.environ.get("LEGAL_ENTITY_NAME", "")
