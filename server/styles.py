@@ -671,18 +671,17 @@ LAYOUTS = {
     },
     "cover": {
         "label": "Cover",
-        "blurb": "The name set enormous at the top with the sleeve hung over it -- type and image overlapping, neither complete without the other.",
-        # The magazine-cover move: the headline is drawn UNDER the artwork
-        # (compose.py places it on its own layer below the sleeve), so the
-        # sleeve crops the word the way a cover model crops a masthead.
-        # Headline at 420 clears the show/episode header (it ends ~380); the
-        # sleeve then crops the word from below. Art at 600 leaves most of one
-        # XXL line readable before the crop.
+        "blurb": "The name set enormous at the top, running out over the sleeve -- type and image overlapping, neither complete without the other.",
+        # The magazine-cover move, readable edition: the headline runs OVER
+        # the artwork on its own layer (a first cut drew it underneath, which
+        # was handsome and illegible), with a white stroke and soft shadow so
+        # ink type reads on the white page and on the sleeve alike. Headline
+        # at 420 clears the show/episode header (it ends ~380).
         "art_rect": (140, 600, 800, 800),
         "art_opacity": 1.0, "backdrop": False, "field": "white",
         "scrim": False, "text_bottom": 1660, "text_on_field": True,
         "header_band": False, "float_art": True, "drift_px": 16,
-        "headline_behind": True, "headline_top": 420,
+        "headline_overlap": True, "headline_top": 420,
     },
 }
 
@@ -1566,15 +1565,29 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     headline_extras = ""
     if style.get("italic"):
         headline_extras += " font-style: italic;"
-    if style.get("break_all"):
-        headline_extras += " word-break: break-all;"
+    # break_all styles get their word-break per scene from compose.py --
+    # headline_fit decides whether this particular name should break at all.
 
     extra_blocks = ""
     if style.get("art_text"):
+        # Two defences keep a pale sleeve legible (letters filled from a
+        # mostly-white cover on a white field would otherwise vanish): a thin
+        # stroke that draws every glyph's edge, and a ::before duplicate of
+        # the text (via data-text) that paints a soft dark halo BEHIND the
+        # filled letters. The halo cannot be a text-shadow on the element
+        # itself -- that paints over the clipped image -- and cannot be a
+        # filter, which the entrance blur tween would overwrite.
         extra_blocks += """
 .artist-name.art-fill {
+  position: relative;
   -webkit-background-clip: text; background-clip: text; color: transparent;
   background-size: cover; background-position: center; text-shadow: none;
+  -webkit-text-stroke: 2px rgba(11,11,13,0.35);
+}
+.artist-name.art-fill::before {
+  content: attr(data-text); position: absolute; inset: 0; z-index: -1;
+  color: transparent; -webkit-text-stroke: 0;
+  text-shadow: 0 4px 30px rgba(11,11,13,0.5), 0 1px 5px rgba(11,11,13,0.3);
 }"""
     if style.get("ticker"):
         # The wrap escapes its container's 60px padding so the track runs edge
@@ -1584,14 +1597,19 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
 .ticker-wrap { overflow: hidden; white-space: nowrap; width: 1080px; margin: 0 -60px; }
 .ticker-track { display: inline-block; white-space: nowrap; }
 .ticker-track .tick-sep { opacity: 0.4; padding: 0 42px; }"""
-    if lay.get("headline_behind"):
-        # The headline lives on its own layer under the artwork (see
-        # compose.py); this places it. z-index 1 keeps it above the white
-        # field, below the sleeve's box at 2.
+    if lay.get("headline_overlap"):
+        # The headline lives on its own layer OVER the artwork (see
+        # compose.py); this places it. z-index 3 clears the sleeve's box at 2,
+        # and the white stroke + soft shadow keep ink type readable both on
+        # the white field and across the artwork it overhangs.
         extra_blocks += f"""
-.headline-behind {{
+.headline-overlap {{
   position: absolute; left: 0; right: 0; top: {lay.get('headline_top', 250)}px;
-  z-index: 1; padding: 0 60px; text-align: {align};
+  z-index: 3; padding: 0 60px; text-align: {align};
+}}
+.headline-overlap .artist-name {{
+  -webkit-text-stroke: 7px #f4f4f0; paint-order: stroke fill;
+  text-shadow: 0 8px 44px rgba(0,0,0,0.22);
 }}"""
 
     return f"""
@@ -1715,3 +1733,35 @@ def headline_size(style: dict, text: str) -> int:
         while size > MIN_HEADLINE_SIZE and _text_width(style, longest, size) > available:
             size -= 2
     return size
+
+
+def headline_fit(style: dict, text: str) -> tuple[int, bool]:
+    """(size, break_mid_word) for XXL break-capable styles.
+
+    A mid-word break at a size chosen for fitting reads as a mistake --
+    "FLEETWOOD M / AC" -- so the break is never a fallback, it is a choice
+    made against three ordered preferences:
+
+      1. One line at the ceiling: no break at all.
+      2. Break at the spaces with each word filling its line, at whatever
+         size that allows -- often LARGER than the ceiling ("FLEETWOOD" /
+         "MAC" at ~300px). A word-boundary break at enormous size is the
+         poster look, and it costs nothing when the words happen to fit.
+      3. Only when a single word cannot fill a line at near-ceiling size,
+         break mid-word -- and jump to 1.32x the ceiling when doing it, so
+         the crop is unmistakably deliberate.
+
+    Non-break styles just get headline_size."""
+    if not style.get("break_all"):
+        return headline_size(style, text), False
+    ceiling = style["primary"]["max_size"]
+    text = (text or "").strip()
+    available = _headline_width(style) * _FIT_MARGIN
+    if not text or _text_width(style, text, ceiling) <= available:
+        return ceiling, False
+    longest = max(text.split(), key=len, default="")
+    unit = _text_width(style, longest, 100) / 100 or 1.0
+    word_size = available / unit
+    if word_size >= ceiling * 0.92:
+        return int(min(word_size, ceiling * 1.45)), False
+    return int(ceiling * 1.32), True

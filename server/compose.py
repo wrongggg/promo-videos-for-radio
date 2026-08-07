@@ -384,7 +384,7 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     display_title = track["title"] + (f" ({track['album']})" if track.get("album") else "")
     entrance = styles.ENTRANCES[style["entrance"]]
     headline = track["artist"]
-    headline_size = styles.headline_size(style, headline)
+    headline_size, break_mid_word = styles.headline_fit(style, headline)
     # Style capabilities that change what the headline IS, not just how it
     # moves. A ticker scrolls one long track, an art-fill masks the letters
     # with the sleeve -- both are incompatible with per-character spans.
@@ -397,6 +397,11 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     headline_markup = _split_chars(headline) if split_title else _esc(headline)
 
     artist_style = f"font-size: {headline_size}px;"
+    if break_mid_word:
+        # Per-scene, not per-style: headline_fit only breaks inside a word
+        # when the break is deliberate (see its docstring); most names either
+        # fit one line or break at their spaces.
+        artist_style += " word-break: break-all;"
     if art_fill:
         # The letterforms clip this image (background-clip: text in the style's
         # CSS); it is the same file the scene draws, so type and artwork read
@@ -414,7 +419,9 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
                     f'{half}{half}</p></div>')
     else:
         fill_cls = " art-fill" if art_fill else ""
-        artist_p = (f'<p id="artist-{index}" class="artist-name{fill_cls}" '
+        # data-text feeds the ::before halo duplicate behind art-filled glyphs.
+        fill_data = f' data-text="{_esc(headline)}"' if art_fill else ""
+        artist_p = (f'<p id="artist-{index}" class="artist-name{fill_cls}"{fill_data} '
                     f'style="{artist_style}">{headline_markup}</p>')
     trivia = track.get("reason", "").strip()
     trivia_html = f'<p id="trivia-{index}" class="trivia-tag">{_esc(trivia)}</p>' if trivia else ""
@@ -428,17 +435,17 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
         f'<div id="orb-b-{index}" class="orb orb-b" style="background: {pal["orb2"]};"></div>'
     ) if not field else ""
     # The magazine-cover overlap: the headline moves out of the scene onto its
-    # own layer BELOW the artwork (the .scene div sits above every media
-    # layer, so "behind the sleeve" is impossible from inside it). It becomes
-    # a sibling clip the framework times like any other; every #artist-N tween
-    # works unchanged.
-    behind = bool(lay.get("headline_behind"))
-    if behind:
+    # own layer positioned at the top of the frame, running out over the
+    # sleeve (stroke and shadow in text_css keep it readable on both grounds).
+    # It becomes a sibling clip the framework times like any other; every
+    # #artist-N tween works unchanged.
+    overlap = bool(lay.get("headline_overlap"))
+    if overlap:
         media_html += (
-            f'<div class="clip headline-behind"{rtl} data-start="{start}" '
+            f'<div class="clip headline-overlap"{rtl} data-start="{start}" '
             f'data-duration="{duration}" data-track-index="6">{artist_p}</div>\n'
         )
-    meta_artist = "" if behind else artist_p
+    meta_artist = "" if overlap else artist_p
     scene_html = f"""
       <div id="{scene_id}" class="clip scene" style="{bg_style}" data-start="{start}" data-duration="{duration}" data-track-index="0">
         {scrim_html}
@@ -466,11 +473,11 @@ def _scene_html(index: int, start: float, duration: float, track: dict, media: d
     # first fraction of a second, which reads as a bug -- the box has to arrive
     # with its contents. Styles without a card keep the line-by-line stagger.
     has_panel = bool(style.get("panel"))
-    # Image first, then the name: when the headline hides behind the sleeve,
-    # let the artwork land alone for a beat before the big type slides in
-    # under it -- the reveal only reads as "behind" if the thing in front is
-    # already there.
-    headline_at = start + (0.7 if behind else 0.25)
+    # Image first, then the name: when the headline runs over the sleeve, let
+    # the artwork land alone for a beat before the big type arrives on top of
+    # it -- the overlap only reads as intentional if the image is already
+    # there to be overlapped.
+    headline_at = start + (0.7 if overlap else 0.25)
     if is_ticker:
         # The scroll IS the entrance: the track fades up already moving and
         # travels for the whole scene. xPercent and the exit's transforms
