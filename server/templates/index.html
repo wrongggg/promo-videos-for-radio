@@ -93,10 +93,12 @@
         .brand-mark { width: 40px; height: 40px; flex-shrink: 0; display: block; }
         .brand-mark .grooves { transform-origin: 32px 32px; animation: spin 14s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        /* Plain black rather than the pink-to-purple gradient it used to carry.
+           The mark beside it still holds the brand colours, so the gradient on
+           the word as well was the same idea said twice. */
         .wordmark {
             font-size: 27px; font-weight: 700; margin: 0; letter-spacing: -0.6px; line-height: 1.05;
-            background: linear-gradient(96deg, var(--accent), var(--accent2));
-            -webkit-background-clip: text; background-clip: text; color: transparent;
+            color: var(--text);
         }
         .brand .subtitle { margin: 3px 0 0; font-size: 13.5px; }
         /* Wraps so the account block drops below the brand on narrow screens.
@@ -111,6 +113,17 @@
             color: var(--text-muted); letter-spacing: 0.3px; text-transform: uppercase;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
+        /* An aside inside a label -- "optional", a format hint, "hover to
+           preview" -- set to read as a note rather than shouting in the
+           label's caps. One class for all of them so they match; the theme
+           label used to carry its own inline copy of these declarations. */
+        .label-note {
+            font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .6;
+        }
+        /* Labels are nowrap+ellipsis so short ones stay tidy in the narrow grid
+           columns. A label carrying a long note needs the opposite: wrapping,
+           because an ellipsis would eat the note rather than shorten it. */
+        label:has(.label-note) { white-space: normal; }
         input[type="text"], input[type="number"], textarea, select {
             width: 100%; padding: 12px 14px; border-radius: 14px;
             border: 1px solid var(--border-soft); background: rgba(0,0,0,0.035);
@@ -160,6 +173,39 @@
             filter: brightness(0) invert(1);
         }
         #logoToggle button { display: inline-flex; align-items: center; justify-content: center; }
+        /* Controls for a logo that is already chosen. The file input's native
+           "Choose File / No file chosen" is the right affordance for picking a
+           logo and the wrong one for having picked one -- it reads as though
+           nothing is set even while the mark is sitting in the chip beside it,
+           which is exactly how a station session looked on first load. */
+        /* The icons sit on the same row as the Show/None control and stretch to
+           its height, so the three read as one strip of controls. On their own
+           line underneath they looked like an afterthought bolted below. */
+        .logo-controls { display: flex; align-items: stretch; gap: 8px; }
+        .logo-controls .segmented { flex: 1; min-width: 0; }
+        .icon-row { display: flex; align-items: stretch; gap: 6px; flex: none; }
+        .icon-btn {
+            position: relative; flex: none;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 38px; padding: 0;
+            border: 1px solid var(--border-soft); border-radius: 14px;
+            background: rgba(0,0,0,0.035); color: var(--text-muted); cursor: pointer;
+            transition: background .12s, color .12s;
+        }
+        .icon-btn:hover { background: rgba(0,0,0,0.075); color: var(--text); }
+        .icon-btn[data-danger]:hover { background: rgba(214,51,108,0.10); color: var(--accent); }
+        .icon-btn svg { width: 15px; height: 15px; display: block; }
+        /* Its own tooltip rather than a native title=, which waits about a
+           second before appearing -- too slow to answer "what does this icon
+           do?" while the pointer is already moving away again. */
+        .icon-btn::after {
+            content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%;
+            transform: translateX(-50%); white-space: nowrap; z-index: 5;
+            background: #1c1c1e; color: #fff; font-size: 11px; font-weight: 600;
+            padding: 4px 8px; border-radius: 6px; pointer-events: none;
+            opacity: 0; transition: opacity .12s;
+        }
+        .icon-btn:hover::after, .icon-btn:focus-visible::after { opacity: 1; }
         .theme-grid {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
             gap: 10px;
@@ -241,6 +287,21 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .uploads-box { margin-top: 20px; display: none; }
+        /* Render failures used to go out as an alert() containing the whole
+           renderer log. The reason belongs on the page, where it can be read
+           twice and copied -- a tester reporting this is the only diagnostic
+           channel there is. */
+        .error-box {
+            display: none; margin-top: 20px; padding: 14px 16px; border-radius: 14px;
+            border: 1px solid rgba(214,51,108,0.28); background: rgba(214,51,108,0.06);
+        }
+        .error-box .error-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+        .error-box .error-reason {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+            line-height: 1.5; word-break: break-word; user-select: text;
+        }
+        .error-box .error-ref { font-size: 11px; color: var(--text-muted); margin-top: 8px; user-select: text; }
+        .error-box button { margin-top: 12px; }
         .upload-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .upload-row .upload-track { flex: 1; font-size: 13px; }
         .upload-row .upload-status { flex: none; font-size: 11px; color: var(--text-muted); }
@@ -360,19 +421,18 @@
         <form id="startForm">
             <div class="row">
                 <div class="form-group">
-                    <label>Show name</label>
-                    <input type="text" name="show_name" required placeholder="{% if station_mode %}{{ default_show_name }}{% else %}Your show name{% endif %}"{% if station_mode %} value="{{ default_show_name }}"{% endif %}>
+                    <label>Show name <span class="label-note">optional</span></label>
+                    <input type="text" name="show_name" placeholder="{% if station_mode %}{{ default_show_name }}{% else %}Your show name{% endif %}"{% if station_mode %} value="{{ default_show_name }}"{% endif %}>
                 </div>
                 <div class="form-group">
-                    <label>Episode name</label>
+                    <label>Episode name <span class="label-note">optional</span></label>
                     <input type="text" name="episode_label" placeholder="Episode 42">
                 </div>
             </div>
 
             <div class="form-group">
-                <label>Tracklist</label>
+                <label>Tracklist <span class="label-note">— one per line, as <strong>Artist - Title</strong>, artist first</span></label>
                 <textarea id="tracklistInput" name="tracklist" required placeholder="Four Tet - Baby&#10;Bicep - Glue&#10;Overmono - So U Kno"></textarea>
-                <p class="hint">One per line, as <strong>Artist - Title</strong> — artist first.</p>
             </div>
 
             {% if personal_mode %}
@@ -398,7 +458,7 @@
             </div>
 
             <div class="form-group">
-                <label>Theme <span style="font-weight:400; text-transform:none; letter-spacing:0; opacity:.65;">— hover to preview</span></label>
+                <label>Theme <span class="label-note">— hover to preview</span></label>
                 <div class="theme-grid" id="themeGrid">
                     {% for t in theme_choices %}
                     <button type="button" class="theme-card{% if loop.first %} selected{% endif %}" data-mode="preset:{{ t.key }}">
@@ -425,6 +485,7 @@
                 <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
             </div>
 
+
             <div class="row-bottom">
                 <div class="form-group">
                     <label>Pace</label>
@@ -445,15 +506,29 @@
                 </div>
                 <div class="form-group">
                     <label>Logo</label>
-                    <div class="segmented" id="logoToggle">
-                        <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>
-                            <span class="logo-chip" id="logoChipWrap" hidden><img id="logoChip" alt=""></span>
-                            <span>Show</span>
-                        </button>
-                        <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
+                    <div class="logo-controls">
+                        <div class="segmented" id="logoToggle">
+                            <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>
+                                <span class="logo-chip" id="logoChipWrap" hidden><img id="logoChip" alt=""></span>
+                                <span>Show</span>
+                            </button>
+                            <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
+                        </div>
+                        <div class="icon-row" id="logoChosenGroup" style="display:none;">
+                            <button type="button" class="icon-btn" id="logoReplaceBtn" data-tip="Replace logo" aria-label="Replace logo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>
+                                </svg>
+                            </button>
+                            <button type="button" class="icon-btn" id="logoRemoveBtn" data-danger data-tip="Remove logo" aria-label="Remove logo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3.5 6h17"/><path d="M9 6V3.8h6V6"/><path d="M6 6l1 14.2h10L18 6"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}show{% else %}none{% endif %}">
-                    <div id="logoUploadGroup" style="display:none; margin-top:8px;">
+                    <div id="logoPickGroup" style="display:none; margin-top:8px;">
                         <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
                         <p class="hint">Square or wide PNG, transparent background. Max 2&nbsp;MB.</p>
                     </div>
@@ -487,6 +562,13 @@
         <div class="uploads-box" id="uploadsBox">
             <label>Some tracks need an audio file</label>
             <div id="uploadRows"></div>
+        </div>
+
+        <div class="error-box" id="errorBox">
+            <div class="error-title">That render didn't finish</div>
+            <div class="error-reason" id="errorReason"></div>
+            <div class="error-ref" id="errorRef"></div>
+            <button type="button" class="secondary" id="copyErrorBtn">Copy details</button>
         </div>
 
         <div class="video-wrap" id="downloadBox">
@@ -547,16 +629,27 @@ if (PERSONAL_MODE) {
 const STATION_LOGO_URL = "{{ station_logo_url }}";
 const STATION_MODE = {{ "true" if station_mode else "false" }};
 
+function setLogoTip(name) {
+    const btn = document.getElementById("logoReplaceBtn");
+    btn.dataset.tip = "Replace " + name;
+    btn.setAttribute("aria-label", "Replace logo (" + name + ")");
+}
+
 function refreshLogoPreview() {
     const on = document.getElementById("useLogoInput").value === "show";
     const chip = document.getElementById("logoChip");
     const chipWrap = document.getElementById("logoChipWrap");
     const file = document.getElementById("logoInput").files[0];
+    // A logo counts as chosen when there is actually one to show: the user's
+    // own upload, or the station mark a station session starts with.
+    const chosen = on && (file || STATION_MODE);
 
-    // Upload is offered whenever Show is on. A station session gets the station
-    // mark by default and can still override it with their own file; everyone
-    // else has only the upload, so the same rule serves both.
-    document.getElementById("logoUploadGroup").style.display = on ? "block" : "none";
+    // Picking a logo and having one are different states, so they get different
+    // controls -- the file input only appears while there is nothing to show.
+    // It stays in the DOM either way (a display:none input still submits its
+    // file), and Replace reaches it through .click().
+    document.getElementById("logoPickGroup").style.display = (on && !chosen) ? "block" : "none";
+    document.getElementById("logoChosenGroup").style.display = chosen ? "flex" : "none";
 
     if (!on) { chipWrap.hidden = true; return; }
     if (file) {
@@ -565,13 +658,39 @@ function refreshLogoPreview() {
         chip.dataset.blob = url;
         chip.src = url;
         chipWrap.hidden = false;
+        // Which logo is loaded is already answered by the chip in the Show
+        // button; the name only needs to be reachable, not laid out, so it
+        // rides along in the tooltip rather than taking a line of its own.
+        setLogoTip(file.name);
     } else if (STATION_MODE) {
         chip.src = STATION_LOGO_URL;
         chipWrap.hidden = false;
+        setLogoTip("Station logo");
     } else {
         chipWrap.hidden = true;
     }
 }
+
+document.getElementById("logoReplaceBtn").addEventListener("click", () => {
+    document.getElementById("logoInput").click();
+});
+
+document.getElementById("logoRemoveBtn").addEventListener("click", () => {
+    const input = document.getElementById("logoInput");
+    const chip = document.getElementById("logoChip");
+    input.value = "";
+    if (chip.dataset.blob) {
+        URL.revokeObjectURL(chip.dataset.blob);
+        delete chip.dataset.blob;
+    }
+    // Remove means no logo, whether the mark came from an upload or from the
+    // station default. Clearing only the upload and silently revealing the
+    // station's underneath would leave a logo on screen right after the user
+    // asked for it to go; switching Show back on brings the default back.
+    document.getElementById("useLogoInput").value = "none";
+    setActive(document.getElementById("logoToggle"), "none");
+    refreshLogoPreview();
+});
 
 document.getElementById("logoToggle").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
@@ -809,6 +928,7 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
     activeUploadRows = {};
     downloadBox.style.display = "none";
     saveThemeBox.style.display = "none";
+    document.getElementById("errorBox").style.display = "none";
     spinner.style.display = "block";
     document.getElementById("statusText").textContent = "Starting...";
 
@@ -882,11 +1002,55 @@ function pollStatus() {
                 clearInterval(pollInterval);
                 spinner.style.display = "none";
                 btn.disabled = false;
-                alert("Failed: " + job.error);
+                showRenderError(job.error);
             }
         })
         .catch(() => {});
 }
+
+let lastErrorReason = "";
+
+// The job id is the whole point of the copy button: it is what ties a tester's
+// screenshot to the full renderer log on the server, which is where the actual
+// cause lives. The reason line alone is rarely enough to act on.
+function renderErrorReport() {
+    return [
+        "Radio promo render failed",
+        "Reason: " + (lastErrorReason || "unknown"),
+        "Job: " + (currentJobId || "unknown"),
+        "When: " + new Date().toISOString(),
+        "Browser: " + navigator.userAgent,
+    ].join("\n");
+}
+
+function showRenderError(reason) {
+    lastErrorReason = reason || "The renderer stopped without saying why.";
+    document.getElementById("errorReason").textContent = lastErrorReason;
+    document.getElementById("errorRef").textContent = "Job " + (currentJobId || "unknown");
+    document.getElementById("copyErrorBtn").textContent = "Copy details";
+    document.getElementById("errorBox").style.display = "block";
+}
+
+document.getElementById("copyErrorBtn").addEventListener("click", function () {
+    const btn = this;
+    // navigator.clipboard needs a secure context; a tester on plain http, or
+    // one who denies the permission, still gets the text selected so ctrl-C
+    // works. Failing silently here would waste the only bug report we get.
+    const done = () => { btn.textContent = "Copied"; };
+    const fallback = () => {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById("errorBox"));
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = "Press Ctrl/Cmd-C to copy";
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(renderErrorReport()).then(done, fallback);
+    } else {
+        fallback();
+    }
+});
 
 // The palette swatches under the finished video were decoration -- the video
 // itself already shows the colours. Only the (operator-only) save-theme box
