@@ -327,7 +327,7 @@ PRESET_THEMES = {
         ],
     },
     "coverstar": {
-        "label": "Cover Star", "style": "xl", "layout": "cover", "transition": "dissolve",
+        "label": "Cover Star", "style": "coverpiece", "layout": "cover", "transition": "dissolve",
         "motion": "calm", "frame": "clean",
         "palettes": [
             {"bg1": "#1a1a1a", "bg2": "#000000", "accent": "#111214", "accent2": "#8a8a8a", "orb1": "#3a3a3a", "orb2": "#6a6a6a"},

@@ -45,21 +45,45 @@ FONTS = {
     "serif": f"'Playfair Display', Georgia, 'Times New Roman', {_FALLBACK}, serif",
     "condensed": f"'Bebas Neue', 'Oswald', {_FALLBACK}, sans-serif",
     "display": f"'Archivo Black', 'Inter', {_FALLBACK}, system-ui, sans-serif",
-    # The two bundled faces (see FONT_FACES). Nabla is a COLRv1 colour font --
-    # the liquid-chrome 3D look ships inside the glyphs themselves, no CSS
-    # trickery -- and Instrument Serif's italic is the flowing editorial voice.
+    # The bundled faces (see FONT_FACES). Nabla is a COLRv1 colour font -- the
+    # liquid-chrome 3D look ships inside the glyphs themselves, no CSS trickery
+    # -- and Instrument Serif's italic is the flowing editorial voice.
     "chrome": f"'Nabla', 'Archivo Black', {_FALLBACK}, system-ui, sans-serif",
     "flowy": f"'Instrument Serif', 'Playfair Display', Georgia, {_FALLBACK}, serif",
+    # The renderer's own set is small and dated -- Inter, Playfair and Bebas
+    # were carrying four styles apiece, which is why fourteen styles read as
+    # about five. These are bundled for range: contemporary, rounder, heavier,
+    # and each one distinct enough that a theme is recognisable by its type
+    # alone. All variable except Bagel Fat One, so one file covers every weight
+    # a style asks for and nothing gets synthesised.
+    "grotesk": f"'Space Grotesk', 'Inter', {_FALLBACK}, system-ui, sans-serif",
+    "editorial": f"'Bricolage Grotesque', 'Inter', {_FALLBACK}, system-ui, sans-serif",
+    "round": f"'Gabarito', 'Inter', {_FALLBACK}, system-ui, sans-serif",
+    "geo": f"'Unbounded', 'Archivo Black', {_FALLBACK}, system-ui, sans-serif",
+    "fat": f"'Bagel Fat One', 'Archivo Black', {_FALLBACK}, system-ui, sans-serif",
+    "tall": f"'Big Shoulders Display', 'Bebas Neue', {_FALLBACK}, sans-serif",
+    "soft": f"'Fraunces', 'Playfair Display', Georgia, {_FALLBACK}, serif",
 }
 
 # Fonts the renderer cannot supply itself, shipped as project assets. The rule
 # at the top of this file stands: a family outside the renderer's set must not
 # be used without a matching @font-face -- these are those @font-faces. Files
 # live in server/static/fonts and install_fonts() copies them into each job.
+#
+# Entries are (family, path, font-style, font-weight). The weight is a range
+# for the variable faces: declaring the real range is what lets a style ask for
+# 800 and get the drawn 800 rather than a synthesised smear of the 400.
 FONT_FACES = {
-    "chrome": (("Nabla", "assets/fonts/nabla.woff2", "normal"),),
-    "flowy": (("Instrument Serif", "assets/fonts/instrument-serif.woff2", "normal"),
-              ("Instrument Serif", "assets/fonts/instrument-serif-italic.woff2", "italic")),
+    "chrome": (("Nabla", "assets/fonts/nabla.woff2", "normal", "400"),),
+    "flowy": (("Instrument Serif", "assets/fonts/instrument-serif.woff2", "normal", "400"),
+              ("Instrument Serif", "assets/fonts/instrument-serif-italic.woff2", "italic", "400")),
+    "grotesk": (("Space Grotesk", "assets/fonts/spacegrotesk.woff2", "normal", "300 700"),),
+    "editorial": (("Bricolage Grotesque", "assets/fonts/bricolage.woff2", "normal", "200 800"),),
+    "round": (("Gabarito", "assets/fonts/gabarito.woff2", "normal", "400 900"),),
+    "geo": (("Unbounded", "assets/fonts/unbounded.woff2", "normal", "200 900"),),
+    "fat": (("Bagel Fat One", "assets/fonts/bagelfatone.woff2", "normal", "400"),),
+    "tall": (("Big Shoulders Display", "assets/fonts/bigshoulders.woff2", "normal", "100 900"),),
+    "soft": (("Fraunces", "assets/fonts/fraunces.woff2", "normal", "100 900"),),
 }
 
 _FONT_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -69,14 +93,26 @@ _FONT_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 def font_face_css(style: dict) -> str:
     """@font-face rules for a style's bundled faces, or '' for renderer fonts.
 
+    Covers the secondary face as well as the headline's: a style whose display
+    face is too heavy to set a track title at 30px points `secondary_font` at
+    something readable, and that face needs its @font-face too or the small
+    type silently falls back.
+
     font-display: block, because a flash of fallback glyphs on frame 0 would
     bake into the render; better to hold the frame until the face is in."""
-    faces = FONT_FACES.get(style["font"]) or ()
-    return "".join(
-        f"@font-face {{ font-family: '{fam}'; src: url('{path}') format('woff2'); "
-        f"font-style: {sty}; font-weight: 400; font-display: block; }}\n"
-        for fam, path, sty in faces
-    )
+    keys = [style["font"]]
+    if style.get("secondary_font") and style["secondary_font"] not in keys:
+        keys.append(style["secondary_font"])
+    seen, out = set(), []
+    for key in keys:
+        for fam, path, sty, weight in FONT_FACES.get(key) or ():
+            if (fam, sty) in seen:
+                continue
+            seen.add((fam, sty))
+            out.append(
+                f"@font-face {{ font-family: '{fam}'; src: url('{path}') format('woff2'); "
+                f"font-style: {sty}; font-weight: {weight}; font-display: block; }}\n")
+    return "".join(out)
 
 
 def install_fonts(project_dir: str) -> None:
@@ -332,8 +368,8 @@ STYLES = {
     "classic": {
         "label": "Classic",
         "blurb": "Clean and neutral. Centred sans type, gentle rise, soft haze behind. The safe choice for any show.",
-        "font": "grotesque",
-        "primary": {"max_size": 104, "weight": 800, "case": "none", "spacing": -1, "line": 1.06},
+        "font": "grotesk",
+        "primary": {"max_size": 104, "weight": 700, "case": "none", "spacing": -1, "line": 1.06},
         "secondary": {"size": 32, "weight": 600, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
@@ -343,8 +379,8 @@ STYLES = {
     "poppy": {
         "label": "Poppy",
         "blurb": "Black type on a bright frosted-glass card, bouncy entrances, saturated colour behind. Loud and friendly.",
-        "font": "display",
-        "primary": {"max_size": 88, "weight": 400, "case": "none", "spacing": -1, "line": 1.04},
+        "font": "round",
+        "primary": {"max_size": 88, "weight": 800, "case": "none", "spacing": -1, "line": 1.04},
         "secondary": {"size": 29, "weight": 400, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 500},
         "color": INK,
@@ -362,12 +398,12 @@ STYLES = {
     "xl": {
         "label": "XL",
         "blurb": "Type as the whole picture. Enormous condensed caps that fill the frame and break mid-word, hard cuts, stark bars.",
-        "font": "condensed",
+        "font": "tall",
         # break_all lets a long name wrap wherever it runs out of frame --
         # the mid-word break IS the look (a magazine masthead cropped by its
         # own page), and it is what buys the extra 30px of size.
         "break_all": True,
-        "primary": {"max_size": 240, "weight": 400, "case": "uppercase", "spacing": 1, "line": 0.88},
+        "primary": {"max_size": 240, "weight": 800, "case": "uppercase", "spacing": 1, "line": 0.88},
         "secondary": {"size": 44, "weight": 400, "case": "uppercase", "spacing": 10},
         "trivia": {"size": 32, "weight": 500},
         "color": WHITE, "panel": None,
@@ -391,19 +427,19 @@ STYLES = {
     "kinetic": {
         "label": "Kinetic",
         "blurb": "Every letter spins into place and the covers spin with them. The loudest option here.",
-        "font": "display",
+        "font": "fat",
         "primary": {"max_size": 86, "weight": 400, "case": "uppercase", "spacing": 0, "line": 1.04},
         "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 29, "weight": 500},
-        "color": WHITE, "panel": None,
+        "color": WHITE, "secondary_font": "grotesk", "panel": None,
         "align": "center", "anchor": "bottom", "bottom_gap": 235,
         "entrance": "spin", "transition": "spin", "patch": "kaleid", "scrim": "heavy",
     },
     "tidal": {
         "label": "Tidal",
         "blurb": "Letters rise on an elastic swell, one after another, over slow haze. Big but unhurried.",
-        "font": "serif",
-        "primary": {"max_size": 104, "weight": 400, "case": "none", "spacing": 0, "line": 1.1},
+        "font": "soft",
+        "primary": {"max_size": 104, "weight": 500, "case": "none", "spacing": 0, "line": 1.1},
         "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 9},
         "trivia": {"size": 30, "weight": 400},
         "color": WHITE, "panel": None,
@@ -444,7 +480,7 @@ STYLES = {
     "swiss": {
         "label": "Swiss",
         "blurb": "Restraint as the whole idea: one weight, tight tracking, a lot of empty frame. Lets the sleeve carry it.",
-        "font": "grotesque",
+        "font": "editorial",
         "primary": {"max_size": 84, "weight": 500, "case": "none", "spacing": -1.5, "line": 1.1},
         "secondary": {"size": 30, "weight": 400, "case": "uppercase", "spacing": 4},
         "trivia": {"size": 29, "weight": 400},
@@ -523,26 +559,46 @@ STYLES = {
     "cutout": {
         "label": "Cutout",
         "blurb": "The artist's name cut out of the artwork itself -- the sleeve shows through the letters. Type and image as one object.",
-        "font": "display",
+        "font": "geo",
         # compose.py fills the letterforms with the scene's own artwork via
         # background-clip: text; the colour below is only the no-artwork
         # fallback.
         "art_text": True,
-        "primary": {"max_size": 150, "weight": 400, "case": "uppercase", "spacing": 0, "line": 0.96},
+        "primary": {"max_size": 150, "weight": 700, "case": "uppercase", "spacing": 0, "line": 0.96},
         "secondary": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 5},
         "trivia": {"size": 29, "weight": 400},
         "color": WHITE, "panel": None, "secondary_font": "grotesque",
         "align": "center", "anchor": "bottom", "bottom_gap": 225,
         "entrance": "fade", "transition": "swap", "patch": "haze", "scrim": "soft",
     },
+    # Cover Star's own style. It used to borrow XL, which meant it inherited
+    # break_all -- the deliberate mid-word crop -- and on the one layout whose
+    # headline hangs over an opaque sleeve the cropped remainder landed behind
+    # the artwork. It also wanted a white outline to survive the overlap, which
+    # read as a sticker. Filling the letters with the sleeve instead solves
+    # both: the type and the picture become the same image, which is the point
+    # of hanging one over the other. Same trick as Cutout, different face --
+    # Archivo Black's wide counters show more artwork than Unbounded's.
+    "coverpiece": {
+        "label": "Cover Piece",
+        "blurb": "The name cut from the sleeve and hung over it -- letters and picture are one image, neither complete without the other.",
+        "font": "display",
+        "art_text": True,
+        "primary": {"max_size": 170, "weight": 400, "case": "uppercase", "spacing": -2, "line": 0.9},
+        "secondary": {"size": 34, "weight": 600, "case": "uppercase", "spacing": 7},
+        "trivia": {"size": 29, "weight": 400},
+        "color": WHITE, "panel": None, "secondary_font": "grotesk",
+        "align": "left", "anchor": "bottom", "bottom_gap": 220,
+        "entrance": "fade", "transition": "dissolve", "patch": "haze", "scrim": "soft",
+    },
     "reel": {
         "label": "Reel",
         "blurb": "The name as a full-width ticker, sliding through the frame for the whole scene. Motion as the typography.",
-        "font": "condensed",
+        "font": "tall",
         # compose.py duplicates the name into a seamless track and scrolls it
         # by its own width -- no measurement, deterministic at any seek.
         "ticker": True,
-        "primary": {"max_size": 185, "weight": 400, "case": "uppercase", "spacing": 2, "line": 0.9},
+        "primary": {"max_size": 185, "weight": 700, "case": "uppercase", "spacing": 2, "line": 0.9},
         "secondary": {"size": 32, "weight": 500, "case": "uppercase", "spacing": 7},
         "trivia": {"size": 29, "weight": 400},
         "color": WHITE, "panel": None,
@@ -671,17 +727,25 @@ LAYOUTS = {
     },
     "cover": {
         "label": "Cover",
-        "blurb": "The name set enormous at the top, running out over the sleeve -- type and image overlapping, neither complete without the other.",
+        "blurb": "The name set enormous above the sleeve and cut out of it -- the letters are the artwork, the artwork is the subject.",
         # The magazine-cover move, readable edition: the headline runs OVER
         # the artwork on its own layer (a first cut drew it underneath, which
         # was handsome and illegible), with a white stroke and soft shadow so
         # ink type reads on the white page and on the sleeve alike. Headline
         # at 420 clears the show/episode header (it ends ~380).
-        "art_rect": (140, 600, 800, 800),
+        "art_rect": (140, 680, 800, 800),
         "art_opacity": 1.0, "backdrop": False, "field": "white",
         "scrim": False, "text_bottom": 1660, "text_on_field": True,
         "header_band": False, "float_art": True, "drift_px": 16,
-        "headline_overlap": True, "headline_top": 420,
+        # Anchored by its BOTTOM edge, 24px above the sleeve, rather than by a
+        # fixed top. An art-filled headline is transparent -- it is the sleeve
+        # showing through the letterforms -- so any part of it that crosses the
+        # sleeve has nothing to contrast against and simply disappears. A fixed
+        # top could not prevent that: the block's height depends on how many
+        # lines the artist's name takes, so one-word names cleared the artwork
+        # and two-line ones lost their second line into it. Growing upward from
+        # the sleeve's edge keeps every line on the field whatever the name.
+        "headline_overlap": True, "headline_bottom": 656,
     },
 }
 
@@ -829,12 +893,14 @@ def thumbnail_markup(key: str, palette: dict | None = None,
 def preview_layout_css(themes: dict | None = None) -> str:
     """Per-theme positioning and typography for the preview text block."""
     # The bundled faces, served from /static/fonts so the tiles show the real
-    # chrome and the real italic rather than their fallbacks.
+    # chrome and the real italic rather than their fallbacks. The declared
+    # weight has to be the face's real range or a tile asking for 800 gets a
+    # synthesised bold and stops matching what renders.
     out = [
         f"@font-face {{ font-family: '{fam}'; "
         f"src: url('/static/fonts/{os.path.basename(path)}') format('woff2'); "
-        f"font-style: {sty}; font-weight: 400; font-display: swap; }}"
-        for faces in FONT_FACES.values() for fam, path, sty in faces
+        f"font-style: {sty}; font-weight: {weight}; font-display: swap; }}"
+        for faces in FONT_FACES.values() for fam, path, sty, weight in faces
     ]
     out += [
         ".theme-thumb { position: relative; }",
@@ -1466,6 +1532,15 @@ def _bleed_clearance(lay: dict) -> float:
     return FRAME_HEIGHT - lay["text_bottom"] if lay.get("text_bottom") else 250
 
 
+def _overlap_anchor(lay: dict) -> str:
+    """Where an overlapping headline is pinned. Bottom-anchored when the layout
+    gives a `headline_bottom`, so the block grows upward and its lowest line
+    lands in the same place no matter how many lines the name takes."""
+    if lay.get("headline_bottom"):
+        return f"bottom: {FRAME_HEIGHT - lay['headline_bottom']}px;"
+    return f"top: {lay.get('headline_top', 250)}px;"
+
+
 def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False) -> str:
     """CSS for the text roles. Sizes for the title are a ceiling -- compose.py
     steps it down for long titles."""
@@ -1604,12 +1679,19 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
         # the white field and across the artwork it overhangs.
         extra_blocks += f"""
 .headline-overlap {{
-  position: absolute; left: 0; right: 0; top: {lay.get('headline_top', 250)}px;
+  position: absolute; left: 0; right: 0; {_overlap_anchor(lay)}
   z-index: 3; padding: 0 60px; text-align: {align};
 }}
 .headline-overlap .artist-name {{
   -webkit-text-stroke: 7px #f4f4f0; paint-order: stroke fill;
   text-shadow: 0 8px 44px rgba(0,0,0,0.22);
+}}
+/* An art-filled headline brings its own stroke and halo (see .art-fill) and
+   is transparent by definition, so the heavy white outline above would ring
+   it in cream and defeat the point. */
+.headline-overlap .artist-name.art-fill {{
+  -webkit-text-stroke: 2px rgba(11,11,13,0.35);
+  text-shadow: none;
 }}"""
 
     return f"""
@@ -1640,23 +1722,34 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
 
 
 # Mean glyph advance as a fraction of font-size, per face, as (lowercase,
-# uppercase). Measured off a real render -- A-Z and a-z at 60px, ink extent read
-# back out of the PNG -- rather than estimated, because the display faces are
-# supplied by the renderer and are not installed on the machine that composes
-# the HTML, so nothing here can measure them locally. Re-measure if FONTS
-# changes; 'mono' landing on 0.59 for both cases is the check that the real
-# faces loaded, since IBM Plex Mono is a fixed 0.6em advance.
+# uppercase). Measured off a real render -- A-Z and a-z, ink extent read back
+# out of the PNG -- rather than estimated, because none of these faces are
+# installed on the machine that composes the HTML: they are either supplied by
+# the renderer or bundled as woff2, so nothing here can measure them locally.
+#
+# Each face is measured at the heaviest weight any style actually sets on it,
+# not at 400. On a variable face that is not a rounding difference -- Big
+# Shoulders goes 0.34 -> 0.45 between 400 and 800, a third wider -- and sizing
+# the headline off the thin instance would let it overflow the frame.
+#
+# Re-measure whenever FONTS or a style's primary weight changes. 'mono' landing
+# on ~0.60 for both cases is the check that the real faces loaded rather than a
+# fallback, since IBM Plex Mono is a fixed 0.6em advance.
 _ADVANCE = {
-    "grotesque": (0.53, 0.68),
-    "mono": (0.59, 0.59),
-    "serif": (0.51, 0.64),
+    "grotesque": (0.53, 0.67),
+    "mono": (0.59, 0.60),
+    "serif": (0.50, 0.64),
     "condensed": (0.29, 0.35),
     "display": (0.61, 0.76),
-    # The two bundled faces are estimates, not render measurements: Nabla is a
-    # wide display face, Instrument Serif a narrow bookish one. _FIT_MARGIN
-    # absorbs the estimate error; re-measure if either misbehaves.
-    "chrome": (0.62, 0.72),
-    "flowy": (0.46, 0.60),
+    "chrome": (0.51, 0.57),
+    "flowy": (0.39, 0.47),
+    "grotesk": (0.55, 0.63),
+    "editorial": (0.54, 0.64),
+    "round": (0.51, 0.63),
+    "geo": (0.73, 0.88),
+    "fat": (0.52, 0.66),
+    "tall": (0.41, 0.45),
+    "soft": (0.54, 0.71),
 }
 
 # .artist-name's own max-width, and the binding constraint in every layout: the
