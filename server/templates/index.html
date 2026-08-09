@@ -351,7 +351,12 @@
                     <circle cx="32" cy="32" r="2.6" fill="#fff"/>
                 </svg>
                 <div>
-                    <h1 class="wordmark">onrepeat.mov</h1>
+                    <!-- Just "onrepeat" here. The suffix stays everywhere else
+                         (the tab title, the closing card the videos carry), but
+                         at the top of the page it is the one place the name is
+                         already unambiguous, and the extension read as a
+                         filename rather than as a mark. -->
+                    <h1 class="wordmark">onrepeat</h1>
                     <p class="subtitle">Music showcase reel for your radio show or event, ready to share.</p>
                 </div>
             </div>
@@ -723,6 +728,32 @@ document.querySelectorAll("#themeGrid .theme-card").forEach((card) => {
     card.addEventListener("touchstart", () => card.classList.add("previewing"), { passive: true });
 });
 
+// --- The header inside every thumbnail ---
+//
+// Each rendered frame carries the show name and episode label in its top-left
+// corner, and no tile used to show them, so the picker was previewing a frame
+// the renderer never produces. These are the only two pieces of the user's own
+// content the picker can know at pick time, so the tiles use the real thing
+// rather than a stand-in -- and show nothing while the fields are empty, which
+// is exactly what compose._header_html does with a blank show name.
+const showInput = document.querySelector('[name="show_name"]');
+const episodeInput = document.querySelector('[name="episode_label"]');
+
+function syncThumbHeaders() {
+    // The placeholder is what a station session pre-fills, so an untouched
+    // field still previews the name that will actually render.
+    const show = (showInput.value || showInput.placeholder || "").trim();
+    const episode = (episodeInput.value || "").trim();
+    document.querySelectorAll(".tp-hdr").forEach((hdr) => {
+        hdr.querySelector(".tp-hdr-show").textContent = show;
+        hdr.querySelector(".tp-hdr-ep").textContent = episode;
+        hdr.classList.toggle("on", Boolean(show || episode));
+    });
+}
+
+[showInput, episodeInput].forEach((el) => el.addEventListener("input", syncThumbHeaders));
+syncThumbHeaders();
+
 // Presets are rendered server-side with their thumbnails; only saved themes
 // still need fetching, and only the operator has any.
 function loadThemes() {
@@ -780,6 +811,9 @@ function restoreDraftIfAny() {
     document.getElementById("tracklistInput").value = draft.tracklist || "";
     document.querySelector('[name="show_name"]').value = draft.show_name || "";
     document.querySelector('[name="episode_label"]').value = draft.episode_label || "";
+    // Setting .value in script fires no input event, so the tiles would keep
+    // the header they had before the restore.
+    syncThumbHeaders();
     if (draft.num_standout) document.querySelector('[name="num_standout"]').value = draft.num_standout;
     if (draft.pace) document.querySelector('[name="pace"]').value = draft.pace;
 

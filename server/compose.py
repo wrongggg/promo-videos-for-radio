@@ -11,6 +11,12 @@ import styles
 import visuals
 
 OUTRO_DURATION = 5
+# The tool's mark, carried on the closing card of every promo. Written WITH the
+# suffix here -- the page header drops it because the name is unambiguous in
+# context there, but on someone else's feed this is the whole attribution and
+# ".mov" is what makes it read as a product rather than a word. Always dir=ltr:
+# a Hebrew promo still spells the mark left to right.
+WORDMARK = "onrepeat.mov"
 # The operator's own mark. Only used when the requesting session is the
 # operator; every other job either uses an uploaded logo or shows none.
 DEFAULT_LOGO_PATH = "server/static/kz-logo.png"
@@ -123,12 +129,20 @@ html, body {
    contrast floor. This band is sized to the header rather than the frame, and
    it hangs off #header-inner so it fades in and out on the same tween the text
    does -- painted on .header instead, it would still be sitting over the top
-   of the closing card after the header has gone. */
+   of the closing card after the header has gone.
+
+   0.64 at the top rather than 0.42, because 0.42 was sized against a mid-tone
+   cover and the worst case is a white one: 0.42 black over white leaves the
+   band at ~#949494, and white type on that measures 3.0:1 against the same
+   4.5:1 floor. 0.64 brings it to ~#5c5c5c and 4.6:1, which holds for any
+   sleeve at all. It costs nothing on the covers this was tuned for -- a dark
+   band over a dark cover was already invisible, and the only layouts that
+   draw it are the ones whose header genuinely sits over artwork. */
 .header-inner::before {
   content: ""; position: absolute; z-index: -1; pointer-events: none;
   left: -60px; right: -60px; top: -250px; bottom: -46px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.34) 55%,
-              rgba(0,0,0,0.22) 84%, rgba(0,0,0,0) 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.64) 0%, rgba(0,0,0,0.52) 55%,
+              rgba(0,0,0,0.30) 84%, rgba(0,0,0,0) 100%);
 }
 /* Layouts whose header does not sit over artwork drop the band entirely --
    over a flat field or a dark backdrop wash it reads as a smear across the
@@ -193,6 +207,19 @@ html, body {
   color: #fff; padding-bottom: 12px;
   border-bottom: 1px solid rgba(255,255,255,0.45);
   text-shadow: 0 2px 12px rgba(0,0,0,0.55);
+}
+/* The tool's own mark, on the closing card only. It sits in the lowest slot of
+   .outro-meta, which is a flex column with `margin-top: auto` -- so adding it
+   pushes the CTA and the credits UP rather than moving anything down toward
+   the frame edge, and the card's existing balance survives.
+   Deliberately never uppercased: the mark is lowercase, and a theme whose
+   secondary case is uppercase would otherwise shout it. 26px against the CTA's
+   30px, at 0.7 opacity -- present and legible at a glance, junior to
+   everything above it. */
+.outro-wordmark {
+  font-size: 26px; font-weight: 500; letter-spacing: 1px; text-transform: none;
+  color: #fff; opacity: 0; margin-top: 38px;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
 }
 /* Below the text (.scene is z-index 5), above the artwork and synth. A
    vignette or grain is a lens effect on the imagery; sitting it on top of the
@@ -633,11 +660,16 @@ def _header_html(show_name: str, episode_label: str, total_duration: float, fade
     return header_html, header_js
 
 
-def _outro_html(start: float, duration: float, show_name: str, episode_label: str, remaining: list[dict], pal: dict, language: str = "en", motion: dict | None = None, logo_path: str | None = None) -> tuple[str, str]:
+def _outro_html(start: float, duration: float, show_name: str, episode_label: str, remaining: list[dict], pal: dict, language: str = "en", motion: dict | None = None, logo_path: str | None = None, field: dict | None = None) -> tuple[str, str]:
     mo = motion or MOTION_STYLES["normal"]
     strings = languages.strings(language)
     rtl = ' dir="rtl"' if languages.is_rtl(language) else ""
-    bg_style = f"background: radial-gradient(circle at center, {pal['bg1']} 0%, {pal['bg2']} 100%);"
+    # The ground follows the layout's field when it has one, so a theme that
+    # ran on a cream page or a sampled colour closes on the same surface
+    # instead of cutting to the palette's unrelated gradient. See
+    # styles.outro_ground; the typography half is styles.outro_css.
+    ground, orb_mult = styles.outro_ground(field, pal)
+    bg_style = f"background: {ground};"
     also_html = ""
     if remaining:
         seen = set()
@@ -670,6 +702,7 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
         <div class="outro-meta">
           {also_html}
           <div id="outro-cta" class="cta-text"{rtl}>{_esc(strings['cta'])}</div>
+          <div id="outro-wordmark" class="outro-wordmark" dir="ltr">{WORDMARK}</div>
         </div>
       </div>
     """
@@ -707,9 +740,13 @@ def _outro_html(start: float, duration: float, show_name: str, episode_label: st
     cta_tween = (
         f'\n        .fromTo("#outro-cta", {{ opacity: 0, y: 14 }}, '
         f'{{ opacity: 1, y: 0, duration: 0.7, ease: "expo.out" }}, {start + 1.15})'
+        # Last in, and to 0.7 rather than 1 -- the mark should arrive after the
+        # eye has finished reading everything that matters.
+        f'\n        .fromTo("#outro-wordmark", {{ opacity: 0, y: 10 }}, '
+        f'{{ opacity: 0.7, y: 0, duration: 0.6, ease: "expo.out" }}, {start + 1.45})'
     )
     scene_js = f"""
-      tl.fromTo("#outro-orb-a, #outro-orb-b", {{ opacity: 0 }}, {{ opacity: 0.35, duration: 1.4 }}, {start})
+      tl.fromTo("#outro-orb-a, #outro-orb-b", {{ opacity: 0 }}, {{ opacity: {round(0.35 * orb_mult, 3)}, duration: 1.4 }}, {start})
         .to("#outro-orb-a", {{ x: {orb_ax}, y: {orb_ay}, duration: {orb_a_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_a_cycle)}, ease: "sine.inOut" }}, {start})
         .to("#outro-orb-b", {{ x: {orb_bx}, y: {orb_by}, duration: {orb_b_cycle}, yoyo: true, repeat: {_loop_repeat(duration, orb_b_cycle)}, ease: "sine.inOut" }}, {start})
         {logo_tween}{show_tween}{episode_tween}{also_tweens}{cta_tween};
@@ -779,7 +816,18 @@ def build_composition_html(
         cursor += scene_duration
 
     outro_pal = palette[len(standout) % len(palette)]
-    oh, oj = _outro_html(cursor, OUTRO_DURATION, show_name, episode_label, remaining, outro_pal, language=language, motion=motion, logo_path=logo_path)
+    # Sampled from the LAST sleeve rather than the first, so the card carries
+    # the colour the viewer is looking at when it cuts in. Same cache as the
+    # scenes' own fields, so this costs no extra ffmpeg call for a layout that
+    # already sampled that image.
+    last_image = _abs(standout[-1]["media"].get("image")) if standout else None
+    outro_field = palette_mod.field(last_image, field_mode) if field_mode else None
+    # The two strings on the card that are set in the theme's display face and
+    # so can overflow it. outro_css sizes them to fit rather than letting a
+    # wide face run off the frame -- it needs the actual text to do that.
+    outro_strings = {"show": show_name or "",
+                     "also_featuring": languages.strings(language)["also_featuring"]}
+    oh, oj = _outro_html(cursor, OUTRO_DURATION, show_name, episode_label, remaining, outro_pal, language=language, motion=motion, logo_path=logo_path, field=outro_field)
     scenes_html.append(oh)
     scenes_js.append(oj)
     cursor += OUTRO_DURATION
@@ -815,6 +863,16 @@ def build_composition_html(
         # Rounded corners only on inset boxes -- a flush band with radii shows
         # the field through its own corners.
         framed_css += " .art-box { border-radius: 22px; }"
+    if lay.get("art_fade"):
+        # The sleeve dissolves into the field below this point, so a text block
+        # that grows up into it lands on flat colour rather than on artwork.
+        # See the art_fade note in styles.LAYOUTS. Masked rather than overlaid
+        # with a gradient: an overlay would need the field's exact colour and
+        # would sit above the sleeve's own Ken Burns push, which is written on
+        # the <img> inside the box every frame.
+        stop = round(lay["art_fade"] * 100)
+        fade = (f"linear-gradient(180deg, #000 0%, #000 {stop}%, transparent 100%)")
+        framed_css += (f" .art-box {{ -webkit-mask-image: {fade}; mask-image: {fade}; }}")
 
     return f"""<!doctype html>
 <html lang="en">
@@ -823,7 +881,7 @@ def build_composition_html(
     <meta name="viewport" content="width=1080, height=1920" />
     <title>{_esc(show_name.strip() + " Promo") if (show_name or "").strip() else "Promo"}</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <style>{styles.font_face_css(style)}{BASE_CSS}{visuals.CSS}{styles.text_css(style, lay, field_is_light)}{framed_css}</style>
+    <style>{styles.font_face_css(style)}{BASE_CSS}{visuals.CSS}{styles.text_css(style, lay, field_is_light)}{styles.outro_css(style, lay, outro_field, outro_strings)}{framed_css}</style>
   </head>
   <body>
     <div id="root" class="{root_classes}" data-composition-id="main" data-start="0" data-duration="{total_duration}" data-width="1080" data-height="1920">

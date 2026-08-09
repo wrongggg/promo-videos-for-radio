@@ -31,6 +31,8 @@ Two rules hold across every style, both deliberate:
 """
 import os
 
+import palette
+
 # 'Noto Sans' and 'Noto Sans JP' sit in every stack because they are the only
 # two broad-coverage families the renderer will supply itself -- everything the
 # display faces don't cover (Cyrillic, Greek, Hebrew, Arabic, CJK, Devanagari,
@@ -86,8 +88,78 @@ FONT_FACES = {
     "soft": (("Fraunces", "assets/fonts/fraunces.woff2", "normal", "100 900"),),
 }
 
+# Colour fonts carry their own palette, and the one a face ships as its default
+# is a design decision made by its designer, not by us. Nabla's default (CPAL
+# palette 0) is a gold -- handsome on its own terms, and completely wrong here:
+# it is the only theme whose headline is not white or near-black, it fights
+# whatever is in the artwork, and it reads as a mistake rather than a choice.
+#
+# Palette 4 is Nabla's own silver: identical liquid-metal shading with the hue
+# taken out, which is what "Chrome" should have meant from the start. Two of
+# its ten entries (#555573, #8282a0) are dark enough to go muddy over a dark
+# sleeve, so those are lifted -- the shading survives, the floor comes up.
+#
+# Entries are (family, css-name, base-palette, {index: colour}).
+FONT_PALETTES = {
+    "chrome": ("Nabla", "--chrome-silver", 4,
+               {1: "#9a9ab4", 3: "#b4b4cd"}),
+}
+
+# The five faces the RENDERER supplies but a browser does not. They are
+# deliberately absent from FONT_FACES -- the renderer already has them, so a
+# composition needs no @font-face for them and install_fonts should not be
+# copying them into every job. But the picker is an ordinary web page with no
+# such luxury, and without these it silently substitutes whatever the visitor's
+# OS offers.
+#
+# That substitution was not cosmetic. Nine of the twenty-one themes are built
+# on these faces, and the picker was previewing all nine in a fallback sans:
+# Marquee's Bebas Neue (a 0.35 mean advance) fell back to a system sans at
+# 0.67, so a name that sets on one line in the render wrapped to two in the
+# tile -- which is how this was found. Same failure, quieter, for Terminal and
+# Night Shift (mono), Gallery and Plate (Playfair), Cover Line (Bebas), and
+# Slab, Off Cut and Cover Star (Archivo Black).
+#
+# Latin subsets, as served to a current browser, and only the weights the
+# themes actually ask for. IBM Plex Mono has no variable cut on Google Fonts,
+# so its 500 and 600 are separate files rather than a synthesised smear.
+PREVIEW_ONLY_FACES = (
+    ("Inter", "inter.woff2", "normal", "100 900"),
+    ("IBM Plex Mono", "ibmplexmono.woff2", "normal", "400"),
+    ("IBM Plex Mono", "ibmplexmono-500.woff2", "normal", "500"),
+    ("IBM Plex Mono", "ibmplexmono-600.woff2", "normal", "600"),
+    ("Playfair Display", "playfair.woff2", "normal", "400 900"),
+    ("Bebas Neue", "bebasneue.woff2", "normal", "400"),
+    ("Archivo Black", "archivoblack.woff2", "normal", "400"),
+)
+
 _FONT_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "static", "fonts")
+
+
+def font_palette_css(style: dict | None = None) -> str:
+    """@font-palette-values rules. With no style, every declared palette --
+    the picker renders all of the tiles at once and needs the whole set."""
+    keys = [style["font"]] if style else list(FONT_PALETTES)
+    out = []
+    for key in keys:
+        spec = FONT_PALETTES.get(key)
+        if not spec:
+            continue
+        fam, name, base, overrides = spec
+        override_css = ""
+        if overrides:
+            pairs = ", ".join(f"{i} {c}" for i, c in sorted(overrides.items()))
+            override_css = f" override-colors: {pairs};"
+        out.append(f"@font-palette-values {name} {{ font-family: '{fam}'; "
+                   f"base-palette: {base};{override_css} }}\n")
+    return "".join(out)
+
+
+def font_palette_name(style: dict) -> str | None:
+    """The css palette name this style's headline should use, if any."""
+    spec = FONT_PALETTES.get(style["font"])
+    return spec[1] if spec else None
 
 
 def font_face_css(style: dict) -> str:
@@ -99,7 +171,12 @@ def font_face_css(style: dict) -> str:
     type silently falls back.
 
     font-display: block, because a flash of fallback glyphs on frame 0 would
-    bake into the render; better to hold the frame until the face is in."""
+    bake into the render; better to hold the frame until the face is in.
+
+    Carries the style's @font-palette-values too, so a colour face arrives with
+    its palette already chosen -- a caller that emitted the face and forgot the
+    palette would get the designer's default back, which for Nabla is the gold
+    this exists to replace."""
     keys = [style["font"]]
     if style.get("secondary_font") and style["secondary_font"] not in keys:
         keys.append(style["secondary_font"])
@@ -112,7 +189,7 @@ def font_face_css(style: dict) -> str:
             out.append(
                 f"@font-face {{ font-family: '{fam}'; src: url('{path}') format('woff2'); "
                 f"font-style: {sty}; font-weight: {weight}; font-display: block; }}\n")
-    return "".join(out)
+    return "".join(out) + font_palette_css(style)
 
 
 def install_fonts(project_dir: str) -> None:
@@ -532,12 +609,14 @@ STYLES = {
     # and a headline that moves instead of arriving.
     "chrome": {
         "label": "Chrome",
-        "blurb": "Liquid-metal colour type -- the chrome lives inside the glyphs -- rippling in letter by letter over saturated colour.",
+        "blurb": "Liquid-metal silver type -- the chrome lives inside the glyphs -- rippling in letter by letter over saturated colour.",
         "font": "chrome",
         "primary": {"max_size": 118, "weight": 400, "case": "uppercase", "spacing": 2, "line": 1.04},
         "secondary": {"size": 30, "weight": 600, "case": "uppercase", "spacing": 6},
         "trivia": {"size": 29, "weight": 500},
-        # Nabla carries its own colour; WHITE is only the fallback face's colour.
+        # Nabla paints its own glyphs, so WHITE here only reaches the fallback
+        # face -- the real colour comes from FONT_PALETTES, which puts this on
+        # Nabla's silver rather than the gold it ships as its default.
         # The secondary lines drop to the grotesque -- a colour font at 30px is
         # noise, not chrome.
         "color": WHITE, "panel": None, "secondary_font": "grotesque",
@@ -703,6 +782,17 @@ LAYOUTS = {
         "art_opacity": 1.0, "backdrop": False, "field": "derived",
         "scrim": False, "text_bottom": 1670, "text_on_field": True,
         "header_band": False, "float_art": True,
+        # The one layout whose sleeve reaches down INTO the text block. The
+        # block is bottom-anchored at 1670 and grows upward, the sleeve's
+        # bottom edge is at 1400, so a one-line artist name clears it and a
+        # two-line one does not -- and on a pale sleeve the white type that
+        # crosses it simply vanishes (measured: a white cover swallows the
+        # whole first line). No geometry fixes that, because the number of
+        # lines is the user's tracklist, not ours. Fading the sleeve's bottom
+        # into the field does: whatever the block's height, the pixels it
+        # crosses are field. On a layout that already crops its sleeve off the
+        # right edge, a dissolve at the bottom reads as the same decision.
+        "art_fade": 0.74,
     },
     "split": {
         "label": "Split",
@@ -717,12 +807,33 @@ LAYOUTS = {
         "blurb": "The sleeve as a full-width band with colour holding it top and bottom.",
         # A shorter band than the old square (0, 410, 1080, 1080): cropping the
         # sleeve to a letterboxed band is the layout's whole idea, and ending
-        # at y1340 buys the text block room above the Instagram overlay zone.
+        # high buys the text block room above the Instagram overlay zone.
         # White above and below, like a photograph tipped into a book page --
         # the derived tint made it a poster; white makes it a plate.
-        "art_rect": (0, 400, 1080, 940),
+        #
+        # Trimmed again, 940 -> 830, to pay for the top anchor below. The band
+        # now ends at y1230 rather than y1340, which is also simply more of a
+        # band: at 940 it was within a whisker of square.
+        "art_rect": (0, 400, 1080, 830),
         "art_opacity": 1.0, "backdrop": False, "field": "white",
-        "scrim": False, "text_bottom": 1670, "text_on_field": True,
+        # The one layout anchored by the TOP of its text block, so a name that
+        # wraps grows downward into the white instead of upward into the
+        # picture. Every other layout is bottom-anchored, which is the safer
+        # default -- it pins the block's lowest pixel clear of Instagram's
+        # ~250px reply bar whatever the block's height. Here that default was
+        # visibly wrong: Marquee's 150px masthead on two lines is 376px tall,
+        # so growing up from 1670 put its first line at y1294 and straight
+        # through the bottom of the sleeve.
+        #
+        # A top anchor moves the risk to the other end -- an unbounded block
+        # now grows toward the reply bar rather than into the artwork -- which
+        # is why the band was shortened in the same edit rather than after the
+        # next complaint. The budget, worst case (Marquee, two lines): band
+        # ends 1230, +40 gap = 1270, +376 = 1646, clearing the 1670 line with
+        # 24px to spare. Tide and Ink are shorter still. A third line only
+        # happens on a name long enough for headline_size to have stepped the
+        # type down, which buys back more than it costs.
+        "scrim": False, "text_top": 1270, "text_bottom": 1670, "text_on_field": True,
         "header_band": False, "float_art": False,
     },
     "cover": {
@@ -756,8 +867,11 @@ LAYOUTS = {
 for _lay in LAYOUTS.values():
     _r = _lay["art_rect"]
     _lay["art"] = f"left:{_r[0]}px; top:{_r[1]}px; width:{_r[2]}px; height:{_r[3]}px;" if _r else None
+    # A layout declaring text_top is anchored by the block's top edge and grows
+    # downward; everything else pins the bottom edge and grows up. See strip.
+    _t = _lay.get("text_top")
     _b = _lay["text_bottom"]
-    _lay["text"] = f"bottom:{1920 - _b}px;" if _b else None
+    _lay["text"] = f"top:{_t}px;" if _t else (f"bottom:{1920 - _b}px;" if _b else None)
 
 DEFAULT_LAYOUT = "bleed"
 LAYOUT_KEYS = tuple(LAYOUTS.keys())
@@ -767,10 +881,10 @@ def layout(key: str | None) -> dict:
     return LAYOUTS.get(key or "", LAYOUTS[DEFAULT_LAYOUT])
 
 
-# Stand-in field colours for the picker. The real ones are sampled from each
-# sleeve at render time (see palette.field); these only have to show which
-# layout tints its ground, which leaves it white, and which flips to the
-# opposite hue.
+# Last-resort field colours, used only when the preview cover cannot be read
+# off disk. They show which layout tints its ground, which leaves it white and
+# which flips to the opposite hue -- but only roughly, which is the problem
+# preview_field exists to solve.
 _FIELD_SWATCH = {
     "derived": "#122c3a",
     "complement": "#3a2012",
@@ -778,6 +892,39 @@ _FIELD_SWATCH = {
     "ink": "#0b0b0d",
     None: "#0a0a0f",
 }
+
+_preview_field_cache: dict[str | None, str] = {}
+
+
+def preview_field(mode: str | None) -> str:
+    """The ground a picker tile paints, sampled from the cover it is showing.
+
+    The tile displays a specific image and the renderer derives the field from
+    whatever image it is given, so there is no reason for the picker to invent
+    a colour: running the real palette.field() over the real preview cover
+    makes the tile's ground the answer the renderer would actually give for
+    that picture. The hand-coded swatches were a guess, and on `derived` and
+    `complement` -- the two modes that exist precisely because they follow the
+    artwork -- a guess is the one thing they cannot be.
+
+    Cached per mode; this shells out to ffmpeg once per mode per process, and
+    palette.field keeps its own cache underneath.
+    """
+    if mode in _preview_field_cache:
+        return _preview_field_cache[mode]
+    fallback = _FIELD_SWATCH.get(mode, _FIELD_SWATCH[None])
+    if mode is None:
+        _preview_field_cache[mode] = fallback
+        return fallback
+    try:
+        sources = _preview_sources()
+        colour = palette.field(sources[0], mode)["bg"] if sources else fallback
+    except Exception:
+        # A picker that cannot sample is a picker with slightly wrong colours;
+        # it must never be a picker that 500s.
+        colour = fallback
+    _preview_field_cache[mode] = colour
+    return colour
 
 
 def layout_thumb(key: str) -> str:
@@ -840,7 +987,46 @@ def get(key: str | None) -> dict:
 
 
 # Two invented tracks, one per cover. The hand-over swaps both together.
-PREVIEW_TRACKS = (("Afterglow", "SABLE"), ("Halcyon", "MIRA VOSS"))
+#
+# Written the way a real tracklist arrives -- title case, two words, around a
+# dozen characters -- rather than as the short all-caps stubs they used to be.
+# A five-letter name like "SABLE" fits one line in every style at every size,
+# so the tiles all showed a single tidy line while the actual renders were
+# wrapping "Tame Impala" and "Fleetwood Mac" onto two. Wrapping is most of what
+# distinguishes XL and Split from Classic, and the picker was hiding it.
+PREVIEW_TRACKS = (("Halcyon", "Mira Kade"), ("Afterglow", "Signal Drift"))
+
+def cqw(render_px: float) -> str:
+    """A render-frame measurement as a tile measurement.
+
+    Every length in a tile -- type size, tracking, padding -- is expressed as a
+    percentage of the tile's own width via container query units, never as a
+    px value computed against an assumed tile size. The first cut did the
+    latter (112px, the width the tile happened to be) and it was wrong the
+    moment anything resized: at the 180px the tiles render at on a wide screen
+    the type came out at 62% of the size it should have been, which read as
+    "the picker undersells every theme" rather than as the arithmetic slip it
+    was. Anchored to the container, a tile is correct at any size.
+    """
+    return f"{render_px / 1080 * 100:.3f}cqw"
+
+
+def preview_headline_size(style: dict, artist: str) -> tuple[str, bool]:
+    """(font-size, break-mid-word) for one preview headline.
+
+    Deliberately routed through the same headline_size / headline_fit the
+    renderer uses rather than through a formula of its own. A second sizing
+    rule for the picker is a second thing to keep in step, and it was already
+    out of step: the tile scaled each style's *ceiling*, so it ignored the
+    step-down for long names entirely, and then clamped the result to 16px --
+    which flattened XL's 240px and Classic's 104px into nearly the same tile
+    and threw away the single loudest difference between them.
+    """
+    if style.get("break_all"):
+        size, break_mid = headline_fit(style, artist)
+    else:
+        size, break_mid = headline_size(style, artist), False
+    return cqw(size), break_mid
 
 
 def _title_spans(title: str, per_char: bool) -> str:
@@ -868,25 +1054,72 @@ def thumbnail_markup(key: str, palette: dict | None = None,
     real-type text block laid over it -- one block per cover, so the words swap
     when the picture does."""
     st = get(style_key or key)
+    lay = layout(layout_key)
     svg = thumbnail_svg(key, palette, style_key, layout_key)
     per_char = bool(ENTRANCES[st["entrance"]].get("chars"))
 
-    # Scale the real type to the tile (112px wide against a 1080px frame), then
-    # clamp. XL's 210px would land at 24px here and run straight off the edge,
-    # so the ceiling matters more than the ratio -- the tile shows which
-    # typeface and how it moves, not the true size.
-    t_px = max(11, min(16, round(st["primary"]["max_size"] * 0.115)))
-    a_px = max(6, min(9, round(st["secondary"]["size"] * 0.20)))
+    # Both sizes are the render's own, in tile-relative units and not clamped.
+    # An XL headline really is more than twice a Classic one and really does
+    # run to the edges and break mid-word; a tile that quietly capped it was
+    # promising a video nobody was going to get.
+    a_size = cqw(st["secondary"]["size"])
 
-    blocks = ""
-    for blk, (title, artist) in zip(("a", "b"), PREVIEW_TRACKS):
-        blocks += (
-            f'<span class="tp-txt tp-txt-{blk} tp-{key}">'
-            f'<span class="tp-title" style="font-size:{t_px}px">'
-            f'{_title_spans(artist, per_char)}</span>'
-            f'<span class="tp-artist" style="font-size:{a_px}px">{title}</span>'
-            f'</span>'
-        )
+    # The show/episode header, which every rendered frame carries and no tile
+    # did. Empty to start and filled by the picker's JS from the two fields
+    # above it, so a tile shows the user's own show name rather than a stand-in
+    # -- and shows nothing at all while the fields are blank, which is exactly
+    # what the render does (see compose._header_html).
+    #
+    # `light` here is the same test the composition uses to decide whether the
+    # header flips to ink and drops its band (compose's light-frame class):
+    # a light field with the header sitting ON it rather than over artwork.
+    header_light = lay.get("field") == "white" and not lay.get("header_band", True)
+    blocks = (f'<span class="tp-hdr{" tp-hdr-ink" if header_light else ""}'
+              f'{"" if lay.get("header_band", True) else " tp-hdr-bare"}">'
+              f'<span class="tp-hdr-show"></span>'
+              f'<span class="tp-hdr-ep"></span>'
+              f'</span>')
+    for i, (blk, (title, artist)) in enumerate(zip(("a", "b"), PREVIEW_TRACKS)):
+        t_size, break_mid = preview_headline_size(st, artist)
+        # break_all is the XL crop: the name is meant to run out of frame and
+        # continue on the next line mid-word. Without this the tile wraps at
+        # the space instead and loses the layout's whole signature.
+        brk = " word-break: break-all;" if break_mid else ""
+        # Cutout and Cover Star cut their letters out of the sleeve -- the
+        # glyphs ARE the artwork (compose.py's .art-fill). It is the whole
+        # point of both themes, and a tile showing flat black type was
+        # previewing neither of them. Filled from this block's own cover, so
+        # the letters change picture on the hand-over exactly as they do
+        # between scenes. Per-character spans are incompatible with a fill
+        # that has to be continuous across the word, same as in the render.
+        fill_src = preview_image(i) if st.get("art_text") else None
+        if fill_src:
+            # The fill goes on the character span, NOT on .tp-title around it.
+            # background-clip: text does not reach through an inline-block
+            # descendant -- with the clip on the outer element the glyphs came
+            # out empty, showing nothing but their hairline stroke. Putting it
+            # on the span that actually holds the text clips correctly and
+            # still leaves .tp-ch as the entrance animation's target.
+            # data-text feeds the ::before halo, as compose.py's does.
+            inner = (f'<span class="tp-ch tp-ch0 tp-artfill" data-text="{artist}"'
+                     f" style=\"background-image:url('{fill_src}');\">{artist}</span>")
+        else:
+            inner = _title_spans(artist, per_char)
+        headline = (f'<span class="tp-title" style="font-size:{t_size};{brk}">'
+                    f'{inner}</span>')
+        track = f'<span class="tp-artist" style="font-size:{a_size}">{title}</span>'
+        if lay.get("headline_overlap"):
+            # Two blocks, both carrying this cover's tp-txt-{blk} class so the
+            # hand-over animation drives them together -- the headline on its
+            # own layer above the sleeve, the title left at the bottom.
+            blocks += (
+                f'<span class="tp-txt tp-txt-{blk} tp-{key} tp-hl">{headline}</span>'
+                f'<span class="tp-txt tp-txt-{blk} tp-{key}">{track}</span>'
+            )
+        else:
+            blocks += (
+                f'<span class="tp-txt tp-txt-{blk} tp-{key}">{headline}{track}</span>'
+            )
     return svg + blocks
 
 
@@ -896,26 +1129,77 @@ def preview_layout_css(themes: dict | None = None) -> str:
     # chrome and the real italic rather than their fallbacks. The declared
     # weight has to be the face's real range or a tile asking for 800 gets a
     # synthesised bold and stops matching what renders.
+    faces = [(fam, os.path.basename(path), sty, weight)
+             for group in FONT_FACES.values() for fam, path, sty, weight in group]
+    # Plus the ones only the renderer has -- see PREVIEW_ONLY_FACES for why a
+    # tile that skips them quietly previews the wrong typeface.
+    faces += list(PREVIEW_ONLY_FACES)
     out = [
         f"@font-face {{ font-family: '{fam}'; "
-        f"src: url('/static/fonts/{os.path.basename(path)}') format('woff2'); "
+        f"src: url('/static/fonts/{file}') format('woff2'); "
         f"font-style: {sty}; font-weight: {weight}; font-display: swap; }}"
-        for faces in FONT_FACES.values() for fam, path, sty, weight in faces
+        for fam, file, sty, weight in faces
     ]
+    # Every declared colour palette, for the same reason the faces are all
+    # emitted: the picker draws all the tiles at once. Without this the Chrome
+    # tile shows Nabla's default gold while the render comes out silver.
+    out.append(font_palette_css())
     out += [
-        ".theme-thumb { position: relative; }",
-        ".tp-txt { position: absolute; left: 0; right: 0; display: flex;"
-        " flex-direction: column; padding: 0 8px; pointer-events: none;"
-        " overflow: hidden; }",
+        # The tile is the container every cqw below resolves against, so a
+        # tile is proportionally identical to the frame at whatever width the
+        # grid gives it. See the cqw() note.
+        ".theme-thumb { position: relative; container-type: inline-size; }",
+        # The composition's own 60px side padding, as a share of the frame.
+        f".tp-txt {{ position: absolute; left: 0; right: 0; display: flex;"
+        f" flex-direction: column; padding: 0 {cqw(60)}; pointer-events: none;"
+        f" overflow: hidden; }}",
         # Both track blocks occupy the same slot; the loop decides which shows.
         # Track B is hidden at rest -- including its card background, or a
         # panel style would show an empty white card over track A.
         ".tp-txt-b { opacity: 0; }",
         ".tp-sp { display: inline; }",
         ".tp-word { display: inline-block; white-space: nowrap; }",
-        ".tp-title { display: block; line-height: 1.02; }",
+        # line-height comes per theme below -- it is a real difference between
+        # styles (XL sets 0.88, Classic 1.06) and one that shows immediately
+        # once a name is long enough to wrap.
+        ".tp-title { display: block; }",
         ".tp-ch { display: inline-block; will-change: transform, opacity; }",
-        ".tp-artist { display: block; opacity: .75; margin-top: 3px; letter-spacing: 1px; }",
+        # Mirrors compose.py's .artist-name.art-fill in full -- both the
+        # hairline stroke and the ::before halo. The halo looked droppable at
+        # tile size and is not: letters filled from a pale part of a sleeve,
+        # on a pale field, are invisible without something dark behind them,
+        # which is the whole reason the renderer draws it.
+        f".tp-artfill {{ position: relative;"
+        f" -webkit-background-clip: text; background-clip: text;"
+        f" color: transparent; background-size: cover; background-position: center;"
+        f" text-shadow: none;"
+        f" -webkit-text-stroke: {cqw(2)} rgba(11,11,13,0.35); }}",
+        f".tp-artfill::before {{ content: attr(data-text); position: absolute;"
+        f" inset: 0; z-index: -1; color: transparent; -webkit-text-stroke: 0;"
+        f" text-shadow: 0 {cqw(4)} {cqw(30)} rgba(11,11,13,0.5),"
+        f" 0 {cqw(1)} {cqw(5)} rgba(11,11,13,0.3); }}",
+        f".tp-artist {{ display: block; opacity: .92; margin-top: {cqw(10)}; }}",
+        # The header, at the same 13% of frame height the composition puts it
+        # (250px of 1920). Hidden until the JS gives it something to say.
+        f".tp-hdr {{ position: absolute; left: 0; right: 0; top: 13%;"
+        f" padding: 0 {cqw(60)}; pointer-events: none; display: none;"
+        f" flex-direction: column; color: #fff;"
+        f" font-family: 'Inter', system-ui, sans-serif;"
+        f" text-shadow: 0 {cqw(3)} {cqw(14)} rgba(0,0,0,.85); }}",
+        ".tp-hdr.on { display: flex; }",
+        # The band, matching the composition's -- and dropped by the same
+        # layouts, for the same reason.
+        f".tp-hdr::before {{ content: ''; position: absolute; z-index: -1;"
+        f" left: 0; right: 0; top: -{cqw(250)}; bottom: -{cqw(46)};"
+        f" background: linear-gradient(180deg, rgba(0,0,0,.64) 0%,"
+        f" rgba(0,0,0,.52) 55%, rgba(0,0,0,.30) 84%, rgba(0,0,0,0) 100%); }}",
+        ".tp-hdr-bare::before { display: none; }",
+        ".tp-hdr-ink { color: #111214; text-shadow: none; }",
+        f".tp-hdr-show {{ font-size: {cqw(32)}; font-weight: 900;"
+        f" letter-spacing: {cqw(2)}; text-transform: uppercase; line-height: 1.2; }}",
+        f".tp-hdr-ep {{ font-size: {cqw(19)}; font-weight: 600;"
+        f" letter-spacing: {cqw(3)}; text-transform: uppercase;"
+        f" opacity: .9; line-height: 1.3; margin-top: {cqw(4)}; }}",
     ]
     for key, theme in (themes or {}).items():
         st = get(theme.get("style"))
@@ -931,7 +1215,10 @@ def preview_layout_css(themes: dict | None = None) -> str:
         # The block sits where the layout puts it, scaled from render pixels to
         # the tile; only full bleed falls back to the style's own anchor. A
         # bottom anchor here mirrors the composition's bottom-anchored block.
-        if lay["text_bottom"]:
+        if lay.get("text_top"):
+            # Grows downward, like the render -- see strip's note.
+            pos = f"top: {lay['text_top'] / 1920 * 100:.1f}%; bottom: auto;"
+        elif lay["text_bottom"]:
             pos = f"bottom: {(1920 - lay['text_bottom']) / 1920 * 100:.1f}%;"
         else:
             pos = "top: 46%;" if st["anchor"] == "center" else "bottom: 12%;"
@@ -944,18 +1231,58 @@ def preview_layout_css(themes: dict | None = None) -> str:
             else:
                 card = "rgba(255,255,255,.95)" if ink else "rgba(9,9,12,.92)"
                 glass = ""
-            panel = (f" background: {card}; border-radius: {min(panel_spec['radius'], 6)}px;"
-                     " padding: 6px 8px; margin: 0 6px;" + glass)
+            # The card's own geometry, in frame pixels like everything else --
+            # a bleed panel runs edge to edge and off the bottom, an inset one
+            # keeps its margin, and the tile should show which it is.
+            pad_v, pad_h = _pad_parts(panel_spec["pad"])
+            if panel_spec.get("bleed"):
+                edge = f" margin: 0; border-radius: 0; padding: {cqw(pad_v)} {cqw(pad_h)};"
+            else:
+                edge = (f" margin: 0 {cqw(40)};"
+                        f" border-radius: {cqw(panel_spec['radius'])};"
+                        f" padding: {cqw(pad_v)} {cqw(pad_h)};")
+            panel = f" background: {card};{edge}" + glass
         else:
             panel = ""
-        shadow = "" if ink else " text-shadow: 0 1px 4px rgba(0,0,0,.8);"
+        shadow = "" if ink else f" text-shadow: 0 {cqw(4)} {cqw(26)} rgba(0,0,0,.72);"
         case = "uppercase" if st["primary"]["case"] == "uppercase" else "none"
+        pal_name = font_palette_name(st)
+        pal_css = f" font-palette: {pal_name};" if pal_name else ""
+        italic = " font-style: italic;" if st.get("italic") else ""
         out.append(
             f".tp-{key} {{ font-family: {font}; color: {colour}; {pos}"
             f" align-items: {align}; text-align: {st['align']};"
             f" font-weight: {st['primary']['weight']}; text-transform: {case};"
-            f"{shadow}{panel} }}"
+            f"{shadow}{pal_css}{italic}{panel} }}"
         )
+        # The headline's own metrics, scaled the same way its size is. Leading
+        # and tracking are as much of a style's fingerprint as the face is, and
+        # both only show up once the name wraps.
+        out.append(
+            f".tp-{key} .tp-title {{ line-height: {st['primary']['line']};"
+            f" letter-spacing: {cqw(st['primary']['spacing'])}; }}"
+        )
+        # A display face too heavy to set a track title hands its small lines
+        # to a quieter family in the render (styles carrying `secondary_font`
+        # -- Chrome, Ink, Reel). The tile owes the same swap, or it previews
+        # Nabla at 30px, which is a smudge in the render and a smudge here.
+        out.append(
+            f".tp-{key} .tp-artist {{ letter-spacing:"
+            f" {cqw(st['secondary']['spacing'])};"
+            f" font-family: {FONTS[st.get('secondary_font', st['font'])]};"
+            f" font-weight: {st['secondary']['weight']};"
+            f" text-transform: {_case_css(st['secondary']['case'])}; }}"
+        )
+        if lay.get("headline_overlap"):
+            # Cover Star splits its block in two: the artist name lifts onto
+            # its own layer ABOVE the sleeve (compose.py emits it as a separate
+            # .headline-overlap clip) and only the track title stays at the
+            # bottom. The tile used to stack both at the bottom like every
+            # other theme, which is the one thing this layout is not.
+            out.append(
+                f".tp-{key}.tp-hl {{"
+                f" bottom: {(1920 - lay['headline_bottom']) / 1920 * 100:.1f}%; }}"
+            )
     return "\n".join(out)
 
 
@@ -1069,7 +1396,13 @@ _COVER_STATES = {
     "pixelate": {"in": "opacity: 0; transform: scale(1.14);",
                  "out": "opacity: 0; transform: scale(1.14);"},
 }
-_COVER_ON = "opacity: 1; transform: none;"
+# Declares `filter` for the same reason _SETTLED does further down, and the
+# omission here was the older half of a bug the text states had already had
+# fixed: zoom and dissolve put `filter: blur(4px)` in their entry and exit
+# poses, and a settled keyframe that names no filter leaves the property to
+# fall back to its underlying value mid-animation rather than interpolating
+# from a stated one. Naming blur(0px) makes the resolve to sharp explicit.
+_COVER_ON = "opacity: 1; transform: none; filter: blur(0px);"
 
 # A cover parked off-stage has to get from its exit pose back to its entry pose
 # before its next turn. steps(1, end) on that one segment makes the reset a cut
@@ -1224,11 +1557,23 @@ PREVIEW_IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 _PREVIEW_THUMB_DIR = os.path.join(PREVIEW_IMAGE_DIR, "thumbs")
 _PREVIEW_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
-# The tile is ~112px wide, so a 2048px source is three orders of magnitude more
-# pixels than it can show. Generated art tends to arrive that size (the first
-# pair were 8MB and 6MB PNGs), and every card references both images -- so they
-# get downscaled once and cached, rather than shipping ~14MB into a picker.
-PREVIEW_THUMB_WIDTH = 320
+# Generated art arrives at 2048px and 8MB, and every card references both
+# images, so they get downscaled once and cached rather than shipping ~14MB
+# into a picker. The number below is how far down.
+#
+# It was 320, chosen off the tile's ~120px CSS width, and that was the wrong
+# measurement twice over. A full-bleed tile paints the sleeve over the whole
+# 9:16 frame, so the binding dimension is the tile's HEIGHT, not its width --
+# ~218 CSS px. And a Retina panel wants that in device pixels: 437 at DPR 2,
+# 654 at DPR 3. A 320px square being stretched to cover 437px is a 1.37x
+# upscale, which is exactly as soft as it sounds, and it showed up only on the
+# bleed layouts -- Gallery and Press draw the sleeve small enough that 320 was
+# always plenty, which is why it read as "some themes are blurry".
+#
+# 768 covers DPR 3 with room to spare. The framed layouts do not need it and do
+# not pay for it either: the same file serves both, and at ~110KB the pair it
+# is still a rounding error next to a single render.
+PREVIEW_THUMB_WIDTH = 768
 
 
 def _preview_sources() -> list[str]:
@@ -1334,15 +1679,84 @@ def _cover_art(variant: int, a1: str, a2: str, accent: str, key: str,
     )
 
 
-# Hand this to an image model. Square, because real covers are square and the
-# renderer crops them to 9:16 -- so anything vital must sit centre, and the
-# lower third has to stay calm or the overlaid title stops being legible.
-PREVIEW_IMAGE_BRIEF = """\
-Square 1:1 abstract album cover artwork. No text, no lettering, no logos, no
-faces or people. Keep the lower third visually calm and darker so overlaid
-white type stays readable; put the interesting detail in the upper two thirds.
-Print-quality, 35mm grain, slight chromatic aberration, rich but not neon.
+# Hand these to an image model, one per cover.
+#
+# The two are NOT a set and must not look like one. They stand in for two
+# arbitrary tracks by two unrelated artists -- which is what a real tracklist
+# is -- so they should read as if they came off different labels in different
+# decades. The first version of this brief got that wrong in a way worth
+# recording: it asked for the same abstract composition twice in complementary
+# colours, which is a coordinated pair, i.e. the one thing a tracklist never
+# gives you. Different medium, different era, different design tradition. If
+# they look good side by side that is a bad sign, not a good one.
+#
+# What each one has to survive, in the order it bites:
+#
+#   * 118px wide. That is the whole game. Film grain, chromatic aberration and
+#     fine texture -- which the first brief asked for -- are invisible at tile
+#     size and cost the image the thing that isn't: big shapes and hard value
+#     contrast. One clear idea per cover.
+#   * One dominant SATURATED hue, different in each. palette.field samples a
+#     3x3 downscale and takes the most colourful cell, and it gives up below
+#     0.04 colourfulness -- a tasteful desaturated cover sends every derived
+#     and complement layout (Off Cut, Split) to the neutral fallback slate,
+#     which is exactly the case those layouts exist to avoid.
+#   * One light cover and one dark one. Half the layouts sit the sleeve on a
+#     cream page and half bleed it behind white type; two dark covers only ever
+#     preview one of those situations. This is a floor the two have to clear
+#     between them, not a colour scheme -- it is satisfied by any two sleeves
+#     that are genuinely unalike, which is the point above.
+#   * Centre-safe. The tile crops square to 9:16, so the left and right edges
+#     go. Cutout and Cover Star fill their letterforms from the centre
+#     horizontal band, so that band wants incident and contrast -- a flat
+#     gradient through the middle makes for dull letters.
+#   * Calm at the top and bottom, not empty. The show/episode header sits over
+#     the top ~20% and the artist block over the bottom third in the bleed
+#     layouts. But the same file is also shown whole and unobstructed by
+#     Gallery, Press and Canvas, so a cover gutted to make room for type is a
+#     bad cover three times over.
+#   * No lettering. The tile lays its own type over these; a sleeve with words
+#     on it collides with the thing it is standing in for.
+#   * No people or faces. A figure reads as a stock photo rather than as album
+#     art, and invites "who is that?" of an act that does not exist.
+# A: the deadpan object sleeve. One ordinary thing, isolated on flat colour --
+# the pop-art lineage, and the most reliable way to read as "a record" at tile
+# size, because a single silhouette on a plain ground survives any amount of
+# shrinking. Swap the cone for any everyday object with a clean outline (a
+# chilli, a cassette, a desk fan); avoid anything that carries baggage into a
+# picker a station client is going to see.
+#
+# The COBALT is doing more work than the cone. palette.field samples a 3x3
+# downscale and takes the most colourful cell, and a modest central object
+# loses that vote to the ground it sits on -- so this cover reads as blue to
+# every derived and complement layout, which is what keeps it clear of B's
+# amber. Recolour the ground and that separation is what you are changing.
+PREVIEW_IMAGE_BRIEF_A = """\
+Square 1:1 colour photograph used as an album sleeve. One ordinary object alone
+near the centre -- a single orange traffic cone -- shot straight on against a
+flat, deeply saturated cobalt ground, with one hard shadow. Deadpan pop-art
+framing: the object modest in a lot of empty colour, no styling, no props, no
+background detail. Rich saturated colour, hard edges, strong value contrast;
+must still read as one clear image at 100px. No text, no lettering, no logos,
+no people, no faces.
 """
+
+# B: the colour-field sleeve. No subject at all -- light and geometry doing the
+# work. Note the difference from the generated stand-ins this replaces, which
+# are also "abstract colour" and read as mud: those are dark, low-contrast and
+# formless, this is high-chroma with clean divisions. Precision and saturation
+# are what separate a designed colour field from a blur.
+PREVIEW_IMAGE_BRIEF_B = """\
+Square 1:1 abstract colour-field artwork used as an album sleeve. Broad
+soft-edged bands of luminous colour bleeding into one another -- warm amber
+through coral into pale lilac -- arranged as simple horizontal geometry, like
+light through frosted glass. No objects, no texture, no photographic lighting;
+flat and glowing rather than shaded. Big simple divisions, high chroma, still
+legible at 100px. No text, no lettering, no logos, no people, no faces.
+"""
+
+# Kept as one string for anything that wants the whole brief at once.
+PREVIEW_IMAGE_BRIEF = f"cover-a:\n{PREVIEW_IMAGE_BRIEF_A}\ncover-b:\n{PREVIEW_IMAGE_BRIEF_B}"
 
 
 def _cover_layer(variant, a1, a2, accent, key, W, H) -> str:
@@ -1363,6 +1777,12 @@ def thumbnail_svg(key: str, palette: dict | None = None,
     typographic style and differ only in where the sleeve sits, so the layout
     has to be visible here or half the picker would be pairs of identical
     tiles.
+
+    Every tile rests on the SAME cover -- cover A -- and only reaches the
+    second one on hover. That is deliberate: holding the artwork constant is
+    what makes the grid a comparison of themes rather than of pictures, and a
+    tile that differed in both at once would be answering a question nobody
+    asked. So cover A carries the weight and wants to be the better sleeve.
 
     Layered exactly like the rendered frame: synth patch at the back, artwork
     over it, scrim on top, and the text laid over that as HTML (see
@@ -1425,7 +1845,7 @@ def thumbnail_svg(key: str, palette: dict | None = None,
         f'</defs>'
     )
 
-    ground = _FIELD_SWATCH.get(lay.get("field"), "#0a0a0f")
+    ground = preview_field(lay.get("field"))
     parts = [f'<rect width="{W}" height="{H}" fill="{ground}"/>']
 
     if lay.get("backdrop"):
@@ -1624,9 +2044,11 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     elif lay.get("text"):
         # Absolute against .scene, which means .scene's 60px padding no longer
         # applies and has to be restated here or the type runs to the bleed.
-        # Anchored by its bottom edge (lay["text"] is a `bottom:` rule) so the
-        # block grows upward and its lowest pixel stays out of Instagram's
-        # bottom overlay zone whatever the content height.
+        # Usually anchored by its bottom edge (lay["text"] is a `bottom:` rule)
+        # so the block grows upward and its lowest pixel stays out of
+        # Instagram's bottom overlay zone whatever the content height. A layout
+        # declaring text_top inverts that and grows downward instead -- see the
+        # note on `strip`, which is the only one that does.
         position_css = ("position: absolute; left: 0; right: 0; margin: 0; "
                         "padding: 0 60px; " + lay["text"])
     elif style["anchor"] == "center":
@@ -1640,6 +2062,11 @@ def text_css(style: dict, lay: dict | None = None, field_is_light: bool = False)
     headline_extras = ""
     if style.get("italic"):
         headline_extras += " font-style: italic;"
+    # A colour face paints its own glyphs, so `color` above never reaches it --
+    # the palette is the only lever on what colour it comes out.
+    palette_name = font_palette_name(style)
+    if palette_name:
+        headline_extras += f" font-palette: {palette_name};"
     # break_all styles get their word-break per scene from compose.py --
     # headline_fit decides whether this particular name should break at all.
 
@@ -1858,3 +2285,188 @@ def headline_fit(style: dict, text: str) -> tuple[int, bool]:
     if word_size >= ceiling * 0.92:
         return int(min(word_size, ceiling * 1.45)), False
     return int(ceiling * 1.32), True
+
+
+# --------------------------------------------------------------------------
+# The closing card
+#
+# For every theme in the picker this card was the same object: Inter, white,
+# centred, over the palette's radial gradient. A promo would spend twenty
+# seconds establishing a voice -- Terminal's mono, Ink's italic, Gallery's
+# quiet white page -- and then throw all of it away in the last five, which
+# read as the video ending on someone else's template.
+#
+# What follows re-voices the card without redesigning it. The structure is
+# untouched (brand at the top, "also in this episode" below it, CTA under
+# that), the motion is untouched, and the sizes are the ones that shipped.
+# Only the four things that carry a theme's identity move: typeface, case and
+# letter-spacing, which edge the block aligns to, and what ground it sits on.
+# --------------------------------------------------------------------------
+
+# The card's own type scale, in the same roles text_css uses. Fixed rather
+# than derived from the style's scene sizes: the scene headline is an artist
+# name that has to compete with a full-frame image, the card's is a show name
+# on an empty ground, and inheriting XL's 240px here would put four letters on
+# the screen.
+_OUTRO_SIZES = {"show": 68, "episode": 26, "title": 72, "list": 30, "cta": 30}
+
+# Widths the card's two headings have to live inside -- the frame less its
+# padding, and less the list's own cap for the heading that sits above it.
+_OUTRO_SHOW_WIDTH = 940
+_OUTRO_TITLE_WIDTH = 900
+
+
+def _field_is_light(field: dict | None) -> bool:
+    """Whether a sampled field wants dark type on it.
+
+    Measured off the field's own background rather than compared against INK:
+    palette.field and this module keep separate near-black constants (#111214
+    and #0b0b0d), so an equality test between them silently answers "dark" for
+    the one field that is actually the cream page -- which is how the closing
+    card ended up setting white type on white for every gallery layout.
+    """
+    if not field or not field.get("bg"):
+        return False
+    raw = field["bg"].lstrip("#")
+    if len(raw) != 6:
+        return False
+    r, g, b = (int(raw[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.5
+
+
+def _outro_fit(style: dict, text: str, ceiling: int, available: float) -> int:
+    """Largest size at or below `ceiling` that fits `text` on one line.
+
+    The scene headline gets to wrap and to shrink by character count; this
+    card cannot do either -- "ALSO IN THIS EPISODE" set in Unbounded at 72px
+    is 1267px wide against a 1080px frame, and a heading that wraps mid-phrase
+    reads as a bug rather than as a style. So the wide display faces simply
+    come down until the line fits, which is invisible in a way overflow is not.
+    """
+    size = ceiling
+    while size > 20 and _text_width(style, text or "", size) > available * _FIT_MARGIN:
+        size -= 2
+    return size
+
+
+def outro_css(style: dict, lay: dict | None = None, field: dict | None = None,
+              strings: dict | None = None) -> str:
+    """Theme-matched overrides for the closing card.
+
+    `field` is the layout's sampled colour field when it has one, and it is
+    what decides ink vs white on the card: a theme that has spent the whole
+    promo on a cream page should not close on a dark gradient, and one that
+    has been sitting on a deep sampled colour should close on that colour
+    rather than on the palette's unrelated one.
+    """
+    lay = lay or LAYOUTS[DEFAULT_LAYOUT]
+    strings = strings or {}
+    font = FONTS[style["font"]]
+    sec_font = FONTS[style.get("secondary_font", style["font"])]
+    primary, secondary = style["primary"], style["secondary"]
+
+    # White type over a dark ground is the default everywhere in this file; the
+    # light field is the single inversion, and both the colour and the shadow
+    # have to flip together or the card gets a black glow around black text.
+    light = _field_is_light(field)
+    ink_col = INK if light else WHITE
+    muted = "rgba(17,18,20,0.68)" if light else "rgba(255,255,255,0.7)"
+    rule = "rgba(17,18,20,0.35)" if light else "rgba(255,255,255,0.45)"
+    shadow = "none" if light else "0 4px 24px rgba(0,0,0,0.8)"
+    soft_shadow = "none" if light else "0 3px 14px rgba(0,0,0,0.8)"
+    # The logo is inverted to white for a dark card; on a light one that would
+    # erase it.
+    logo_filter = ("brightness(0) drop-shadow(0 4px 16px rgba(0,0,0,0.18))" if light
+                   else "brightness(0) invert(1) drop-shadow(0 4px 16px rgba(0,0,0,0.7))")
+
+    align = style["align"]
+    items = "center" if align == "center" else "flex-start"
+    # The block is centred in the frame for a centred style and inset by the
+    # scene's own 60px padding otherwise, so the card lines up with the edge
+    # the scenes have been using rather than floating free of it.
+    pad = "0" if align == "center" else "0 60px"
+
+    case = _case_css(primary["case"])
+    sec_case = _case_css(secondary["case"])
+    italic = " font-style: italic;" if style.get("italic") else ""
+    pal_name = font_palette_name(style)
+    pal = f" font-palette: {pal_name};" if pal_name else ""
+
+    # "Also in this episode" is a label, not a headline, and a colour font is
+    # the one kind of face that cannot set one. Chrome's Nabla paints every
+    # glyph as a three-dimensional metal object; two of those spell an artist
+    # name and read as a logo, twenty of them spell a label and read as a wall.
+    # Same judgement the styles already make with `secondary_font` for their
+    # small lines -- extended to the one heading that is long rather than small.
+    # The show name above it keeps the display face: it is short, it is the
+    # brand moment, and it is the reason someone picked the theme.
+    label_is_display = pal_name is None
+    title_font = font if label_is_display else sec_font
+    title_case = case if label_is_display else sec_case
+    title_weight = primary["weight"] if label_is_display else 700
+    title_italic = italic if label_is_display else ""
+    title_pal = pal if label_is_display else ""
+    # A quieter face wants the quieter measure too -- the display sizes are
+    # tuned to faces that carry them.
+    title_style = style if label_is_display else {**style, "font": style.get("secondary_font", style["font"])}
+
+    show_size = _outro_fit(style, strings.get("show", ""), _OUTRO_SIZES["show"],
+                           _OUTRO_SHOW_WIDTH)
+    title_size = _outro_fit(title_style, strings.get("also_featuring", ""),
+                            _OUTRO_SIZES["title"], _OUTRO_TITLE_WIDTH)
+
+    return f"""
+.outro-brand {{ text-align: {align}; align-items: {items}; padding: {pad}; }}
+.outro-meta {{ align-items: {items}; text-align: {align}; padding: {pad}; }}
+.outro-logo {{ filter: {logo_filter}; }}
+.outro-show {{
+  font-family: {font}; font-size: {show_size}px; font-weight: {primary['weight']};
+  text-transform: {case}; letter-spacing: {max(primary['spacing'], 0)}px;
+  color: {ink_col}; text-shadow: {shadow};{italic}{pal}
+}}
+.outro-episode {{
+  font-family: {sec_font}; font-weight: {secondary['weight']};
+  text-transform: {sec_case}; letter-spacing: {secondary['spacing']}px;
+  color: {muted}; text-shadow: {soft_shadow};
+}}
+.outro-title {{
+  font-family: {title_font}; font-size: {title_size}px; font-weight: {title_weight};
+  text-transform: {title_case}; letter-spacing: {max(primary['spacing'], 0)}px;
+  text-align: {align}; color: {ink_col}; text-shadow: {shadow};{title_italic}{title_pal}
+}}
+.also-featuring-list {{
+  font-family: {sec_font}; font-weight: {secondary['weight']};
+  text-align: {align}; color: {ink_col}; opacity: {0.78 if light else 0.9};
+  text-shadow: {soft_shadow};
+}}
+.cta-text {{
+  font-family: {sec_font}; font-weight: {secondary['weight']};
+  text-transform: {sec_case}; letter-spacing: {max(secondary['spacing'], 4)}px;
+  color: {ink_col}; border-bottom-color: {rule}; text-shadow: {soft_shadow};
+}}
+/* The tool's mark takes the theme's quieter face and its ink, but never its
+   case -- see the .outro-wordmark note in compose.py. */
+.outro-wordmark {{
+  font-family: {sec_font}; color: {ink_col}; text-shadow: {soft_shadow};
+}}
+"""
+
+
+def outro_ground(field: dict | None, pal: dict) -> tuple[str, float]:
+    """(background, orb opacity multiplier) for the closing card.
+
+    A layout with a colour field closes on that field -- flat, the way its
+    scenes were -- and the orbs come most of the way down, because they exist
+    to give a gradient some movement and a printed page does not want them.
+    Everything else keeps the radial gradient it always had.
+    """
+    if not field:
+        return (f"radial-gradient(circle at center, {pal['bg1']} 0%, {pal['bg2']} 100%)", 1.0)
+    if _field_is_light(field):
+        # The cream page. Orbs off entirely: a 120px-blurred saturated circle
+        # on a light ground is a stain, not an accent.
+        return (field["bg"], 0.0)
+    # A sampled colour. Its own mid tone gives the flat field just enough
+    # depth to not read as a solid fill, and the orbs stay but come down.
+    mid = field.get("mid", field["bg"])
+    return (f"radial-gradient(circle at 50% 42%, {mid} 0%, {field['bg']} 100%)", 0.45)
