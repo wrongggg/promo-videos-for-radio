@@ -26,6 +26,11 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test-only-not-a-real-key")
 # working copy. app.py resolves DATA_DIR at import time.
 _DATA = tempfile.mkdtemp(prefix="rotation-test-")
 os.environ["DATA_DIR"] = _DATA
+# This file tests the paywall, so it has to be on. Production currently runs
+# with it off (clean exports for everyone, no watermark) until Paddle is live;
+# forcing it here is what keeps the gate covered while it is switched off, so
+# turning it back on is a config change and not a rediscovery of these bugs.
+os.environ["PAYWALL"] = "1"
 
 import accounts         # noqa: E402
 import app as A          # noqa: E402
@@ -206,6 +211,30 @@ def main():
             A.JOBS[jid] = {"status": "done", "owner": "v5", "output_path": clean,
                            "log": [], "error": None, "needs_upload": []}
             check("falls back to the master", which(c.get(f"/preview/{jid}").data), "CLEAN")
+
+        # The shipping configuration: PAYWALL unset. Everything above proves the
+        # gate works; this proves it is genuinely absent when switched off,
+        # rather than merely handing out a watermarked file to nobody.
+        print("\npaywall off (the current production default):")
+        A.PAYWALL = False
+        try:
+            with A.app.test_client() as c:
+                with c.session_transaction() as s:
+                    s["vid"] = "v8"
+                install("anon:v8")
+                # No watermarked copy is produced at render time either, so the
+                # job carries only a master -- as a real paywall-off job would.
+                A.JOBS[jid]["watermarked_path"] = None
+                r = c.get(f"/download/{jid}")
+                check("anonymous download is clean", which(r.data), "CLEAN")
+                check("no -watermarked suffix", "-watermarked" in
+                      r.headers.get("Content-Disposition", ""), False)
+                check("preview is clean too", which(c.get(f"/preview/{jid}").data), "CLEAN")
+                check("page told not to advertise credits",
+                      c.get("/credits").get_json()["paywall"], False)
+                check("no credit spent", accounts.summary("inout@example.com")["balance"], 0)
+        finally:
+            A.PAYWALL = True
 
     print("\n" + ("ALL PASS" if not FAILURES else f"{len(FAILURES)} FAILURE(S): {FAILURES}"))
     return 1 if FAILURES else 0

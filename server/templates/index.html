@@ -1889,6 +1889,23 @@ async function refreshCredits() {
         return;
     }
 
+    // Paywall off: exports are clean for everyone, so there is nothing to warn
+    // about, nothing to sell and no balance worth showing. Say nothing rather
+    // than say "free" -- a banner announcing a free tier invites the question
+    // of what the paid one costs, which has no answer yet.
+    if (!c.paywall) {
+        note.textContent = "";
+        couponRow.style.display = "none";
+        if (badge) badge.style.display = "none";
+        // Hidden here rather than left to renderBuyButtons, which only knows
+        // whether Paddle is configured -- credentials could be present while
+        // the paywall is still off, and then there is nothing to sell.
+        const buyRow = document.getElementById("buyRow");
+        if (buyRow) buyRow.style.display = "none";
+        return;
+    }
+    if (badge) badge.style.display = "";
+
     if (badge) badge.textContent = c.balance === 1 ? "1 credit" : `${c.balance} credits`;
     couponRow.style.display = c.signed_in && c.balance === 0 && !c.operator ? "flex" : "none";
     renderBuyButtons(c);

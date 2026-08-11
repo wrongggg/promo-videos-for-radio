@@ -62,6 +62,20 @@ BRAND_NAME = os.environ.get("BRAND_NAME", "onrepeat.mov")
 LEGAL_ENTITY_NAME = os.environ.get("LEGAL_ENTITY_NAME", "")
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "")
 
+# The paywall as a single switch: watermarking, and the credit spend on export.
+#
+# OFF BY DEFAULT, deliberately. Watermarking only makes sense once there is a
+# way to pay to remove it, and until Paddle is live in production there isn't
+# one -- shipping the mark without the checkout would brand every video with no
+# escape hatch, which is worse than free. Sign-in (GOOGLE_CLIENT_ID) and the buy
+# buttons (PADDLE_CLIENT_TOKEN) are already env-gated on their own credentials,
+# so this only has to cover the two places that would otherwise fire regardless.
+#
+# Set PAYWALL=1 alongside the Paddle vars to turn the commercial layer on. The
+# code it gates is fully built and tested (tests/test_download_gate.py,
+# tests/test_credits.py) -- this is a switch, not a stub.
+PAYWALL = (os.environ.get("PAYWALL", "") or "").strip().lower() in ("1", "true", "yes", "on")
+
 # The renderer serves the composition with PROJECT_DIR as its document root, so
 # every media src in index.html has to name a path *inside* the project. With
 # DATA_DIR on a mounted volume the job media sits outside it, and the obvious
@@ -975,9 +989,16 @@ def _run_render_stage(job_id):
         # entitled to it. Everything on-screen -- and every unentitled download
         # -- comes from the watermarked copy, so the master is not reachable by
         # reading a URL out of the page source.
-        _log(job, "Adding watermark...")
-        watermarked = os.path.join(job["job_dir"], "output-watermarked.mp4")
-        compose.watermark_video(master, watermarked)
+        #
+        # With the paywall off there is nothing to withhold, so the pass is
+        # skipped entirely rather than made and ignored -- it is a full extra
+        # ffmpeg encode. _served_path falls back to the master when no
+        # watermarked copy exists, so preview and download both keep working.
+        watermarked = None
+        if PAYWALL:
+            _log(job, "Adding watermark...")
+            watermarked = os.path.join(job["job_dir"], "output-watermarked.mp4")
+            compose.watermark_video(master, watermarked)
 
         job["status"] = "done"
         job["output_path"] = master
@@ -1073,7 +1094,10 @@ def credits_status():
     so the UI can hide the button rather than offer a 503."""
     account = current_account()
     payload = {"signed_in": bool(account), "account": account,
-               "sign_in_available": sign_in_available(), "operator": access.is_operator()}
+               "sign_in_available": sign_in_available(), "operator": access.is_operator(),
+               # So the page can drop the export note and the buy buttons rather
+               # than warn about a watermark that isn't being applied.
+               "paywall": PAYWALL}
     payload.update(accounts.summary(account) if account else
                    {"balance": 0, "expiring": 0, "next_expiry": None, "videos_paid_for": 0})
     # Whether this particular video is already paid for, so the UI can say
@@ -1662,7 +1686,13 @@ def _clean_export_allowed(job_id: str) -> bool:
     re-downloading a video this account already paid for costs nothing; that is
     why the job id is threaded all the way down here rather than the decision
     being made from the session alone.
+
+    With the paywall off, everyone gets the clean master and no credit is spent
+    -- checked first so a signed-in visitor with a balance isn't quietly charged
+    for something currently being given away.
     """
+    if not PAYWALL:
+        return True
     if access.is_operator():
         return True
     account = current_account()
