@@ -15,6 +15,7 @@ operator's own session sets. Downloading from YouTube violates its terms of
 service, so it must never run on behalf of a subscriber -- see app.py.
 """
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from typing import Optional
@@ -30,6 +31,9 @@ static_ffmpeg.add_paths()
 
 CLIP_DURATION = 10
 MAX_SOURCE_DURATION = 900  # skip full sets/mixes
+# How many covers the picker offers per track. Providers return 17-21 distinct ones,
+# which is more browsing than anyone wants from a next/prev gallery.
+MAX_IMAGE_OPTIONS = 10
 MIN_SOURCE_DURATION = 45
 
 ENERGY_SAMPLE_RATE = 8000
@@ -49,6 +53,9 @@ class ResolvedMedia:
     matched_label: str = ""
     release_note: str = ""
     sources: list[dict] = field(default_factory=list)
+    # Covers the user could swap to, as URLs -- nothing here is on disk. Only the
+    # chosen one is downloaded, which is what makes offering ten of them free.
+    image_options: list[dict] = field(default_factory=list)
 
     def credit(self, cand: Candidate, kind: str) -> None:
         self.sources.append({
@@ -56,6 +63,22 @@ class ResolvedMedia:
             "source": cand.source,
             "matched": cand.label(),
             "url": cand.attribution_url,
+            "license": cand.license_note,
+        })
+
+    def offer(self, cand: Candidate, kind: str, url: str) -> None:
+        """Record an image the user could pick, without fetching it.
+
+        Carries the same provenance credit() writes, so a later selection can be
+        credited from what was captured here rather than re-querying the provider."""
+        self.image_options.append({
+            "id": f"{'art' if kind == 'artwork' else 'artist'}_{len(self.image_options)}",
+            "kind": kind,
+            "source": cand.source,
+            "matched": cand.label(),
+            "url": url,
+            "thumb": providers.thumb_url(url, cand.source),
+            "link": cand.attribution_url,
             "license": cand.license_note,
         })
 
@@ -71,6 +94,7 @@ class ResolvedMedia:
             "matched_label": self.matched_label,
             "release_note": self.release_note,
             "sources": self.sources,
+            "image_options": self.image_options,
         }
 
 
@@ -147,7 +171,7 @@ def _trim_to_best_window(src: str, dest: str, want_seconds: float) -> Optional[s
 # --------------------------------------------------------------------------
 
 def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds: float,
-                           result: ResolvedMedia) -> bool:
+                           result: ResolvedMedia, collect_options: bool = False) -> bool:
     cand = providers.find_audio_candidate(track)
     if not cand or not cand.audio_url:
         return False
@@ -179,16 +203,36 @@ def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds:
         if art:
             result.artwork = art
             result.credit(cand, "artwork")
+            if collect_options:
+                # Offered first so it is option 0 -- this is the cover actually on disk
+                # and on screen, and the gallery has to open on the one in use. The
+                # audio candidate isn't necessarily among find_image_candidates()'
+                # results, so without this the current cover can be missing from its
+                # own picker.
+                result.offer(cand, "artwork", cand.artwork_url)
     return True
 
 
-def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedia) -> None:
+def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedia,
+                    collect_options: bool = False) -> None:
     """Album art and an artist photo, from whichever providers have them.
     These are what the generative/audio-reactive scenes are built around, so
-    it's worth checking every provider rather than stopping at the first."""
-    if result.artwork and result.artist_image:
+    it's worth checking every provider rather than stopping at the first.
+
+    With collect_options, keep walking after both are downloaded to record the other
+    covers as URLs for the picker. Image matching allows alternate releases, so the
+    first hit is often a compilation or best-of sleeve rather than the single that
+    aired -- the alternates are usually where the right one is. Nothing extra is
+    fetched: the candidates come from the same cached searches, and only URLs are kept.
+
+    Without it, the control flow is exactly what it was, early return included."""
+    if result.artwork and result.artist_image and not collect_options:
         return
 
+    # Seeded with whatever the audio candidate already offered, so the cover in use
+    # isn't listed twice.
+    seen_urls = {_image_key(o["url"]) for o in result.image_options}
+    pool = []
     for cand in providers.find_image_candidates(track):
         if not result.release_note:
             result.release_note = cand.release_note()
@@ -204,8 +248,67 @@ def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedi
             if pic:
                 result.artist_image = pic
                 result.credit(cand, "artist_image")
-        if result.artwork and result.artist_image:
+
+        if collect_options:
+            # The same sleeve comes back repeatedly within one provider's results and
+            # again from the others; without deduping, the gallery is mostly repeats.
+            for url, kind in ((cand.artwork_url, "artwork"),
+                              (cand.artist_image_url, "artist_image")):
+                key = _image_key(url)
+                if url and key not in seen_urls:
+                    seen_urls.add(key)
+                    pool.append((cand, kind, url))
+        elif result.artwork and result.artist_image:
             return
+
+    if collect_options:
+        for cand, kind, url in _pick_varied(pool, MAX_IMAGE_OPTIONS - len(result.image_options)):
+            result.offer(cand, kind, url)
+
+
+def _image_key(url: str) -> str:
+    """Identify an image by its asset, not its URL.
+
+    The same sleeve comes back at different sizes and with different query strings
+    across providers -- iTunes encodes the size in the path, Deezer in the filename --
+    so comparing whole URLs leaves near-duplicates in the gallery. Matching on the
+    identifying part of the path collapses them without downloading anything to compare.
+    """
+    if not url:
+        return ""
+    path = url.split("?", 1)[0].rstrip("/")
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return url
+    tail = parts[-1]
+    # A size-only leaf (iTunes "3000x3000bb.jpg", Deezer "1000x1000-000000-80-0-0.jpg")
+    # says nothing about which image it is -- the identity is the segment before it.
+    if re.match(r"^\d+x\d+", tail) and len(parts) > 1:
+        return parts[-2]
+    return re.sub(r"^\d+x\d+[-\w]*\.", "", tail)
+
+
+def _pick_varied(pool: list[tuple], limit: int) -> list[tuple]:
+    """Take `limit` images spread across providers rather than the first N.
+
+    Candidates arrive grouped by provider, so a plain head-of-list slice fills the whole
+    gallery with one source -- ten near-identical iTunes releases, and the Deezer sleeve
+    or the artist photo never seen. Round-robin keeps the browsing worthwhile, and the
+    artist photo (usually last, from Deezer) actually reachable."""
+    if limit <= 0:
+        return []
+    buckets: dict[str, list] = {}
+    for item in pool:
+        buckets.setdefault(f"{item[0].source}:{item[1]}", []).append(item)
+    picked = []
+    while len(picked) < limit and any(buckets.values()):
+        for key in list(buckets):
+            if not buckets[key]:
+                continue
+            picked.append(buckets[key].pop(0))
+            if len(picked) >= limit:
+                break
+    return picked
 
 
 # --------------------------------------------------------------------------
@@ -252,6 +355,7 @@ def resolve_track(
     audio_duration: Optional[int] = None,
     allow_youtube: bool = False,
     cookie_file: Optional[str] = None,
+    collect_options: bool = False,
 ) -> ResolvedMedia:
     """audio_duration lets the caller request a longer audio bed than the
     visual clip (e.g. the last featured track, whose audio also covers the
@@ -263,12 +367,13 @@ def resolve_track(
     want = max(clip_duration, audio_duration)
     result = ResolvedMedia()
 
-    got_audio = _resolve_preview_audio(track, out_dir, index, want, result)
+    got_audio = _resolve_preview_audio(track, out_dir, index, want, result,
+                                       collect_options=collect_options)
 
     if not got_audio and allow_youtube:
         _resolve_youtube(track, out_dir, index, clip_duration, audio_duration, cookie_file, result)
 
-    _resolve_images(track, out_dir, index, result)
+    _resolve_images(track, out_dir, index, result, collect_options=collect_options)
 
     if not result.audio:
         result.needs_manual_audio = True
@@ -279,12 +384,14 @@ def process_track(
     track: Track, out_dir: str, index: int,
     clip_duration: int = CLIP_DURATION, audio_duration: Optional[int] = None,
     allow_youtube: bool = False, cookie_file: Optional[str] = None,
+    collect_options: bool = False,
 ) -> dict:
     """Dict-returning wrapper kept for the existing callers in compose/app."""
     return resolve_track(
         track, out_dir, index,
         clip_duration=clip_duration, audio_duration=audio_duration,
         allow_youtube=allow_youtube, cookie_file=cookie_file,
+        collect_options=collect_options,
     ).to_dict()
 
 

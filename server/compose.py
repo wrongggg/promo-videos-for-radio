@@ -798,12 +798,21 @@ def _render_failure_reason(log: str) -> str:
     return lines[-1] if lines else "the renderer exited without saying why"
 
 
-def render_video(project_dir: str, output_rel_path: str, quality: str = "standard") -> str:
-    """Runs the pinned hyperframes CLI against project_dir/index.html, returns the absolute output path."""
+def render_video(project_dir: str, output_rel_path: str, quality: str = "standard",
+                 composition: str | None = None) -> str:
+    """Runs the pinned hyperframes CLI, returns the absolute output path.
+
+    composition names a file to render instead of index.html, relative to project_dir.
+    Concurrent jobs each pass their own, so two renders can't overwrite one another's
+    composition mid-flight. It must live at the project root: media inside it is
+    addressed relative to project_dir (see app._composition_path), and a file in a
+    subdirectory would resolve those one level down."""
     cmd = [
         "npx", "--yes", f"hyperframes@{HYPERFRAMES_VERSION}", "render",
         "-q", quality, "-o", output_rel_path,
     ]
+    if composition:
+        cmd += ["-c", composition]
     env = {**os.environ, "HF_DE_STALL_MS": RENDER_STALL_TIMEOUT_MS}
     result = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True, env=env)
     if result.returncode != 0:

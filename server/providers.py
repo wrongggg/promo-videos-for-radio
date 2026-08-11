@@ -125,7 +125,10 @@ def _throttle(host: str, min_interval: float) -> None:
 def _get_json(host: str, url: str, params: dict, min_interval: float = 0.0) -> Optional[dict]:
     """Cached, throttled GET. Search results are stable enough to cache
     indefinitely -- a track's preview URL doesn't change day to day."""
-    key = f"{host}:{json.dumps(params, sort_keys=True, ensure_ascii=False)}"
+    # The URL is part of the key, not just host+params: lookup-by-id endpoints put the
+    # identifier in the path and often send identical params, so keying on params alone
+    # makes every such call collide onto whichever one ran first.
+    key = f"{host}:{url}:{json.dumps(params, sort_keys=True, ensure_ascii=False)}"
     cache = _load_cache()
     if key in cache:
         return cache[key]
@@ -278,6 +281,26 @@ def _split_itunes_version(track_name: str) -> tuple[str, str]:
     return (track_name or "").strip(), ""
 
 
+def thumb_url(url: str, source: str, size: int = 300) -> str:
+    """A small version of an image URL, for browsing a gallery without downloading.
+
+    Every provider encodes the size in the URL, so a thumbnail costs a string rewrite
+    rather than a fetch -- which is what lets the cover picker offer ten alternates per
+    track at no bandwidth or disk cost. An unrecognised shape falls back to the original:
+    a needlessly large thumbnail is a slow gallery, a broken rewrite is a blank one."""
+    if not url:
+        return url
+    if source == "itunes":
+        return upscale_itunes_art(url, size)
+    if source == "deezer":
+        # .../1000x1000-000000-80-0-0.jpg
+        return re.sub(r"/\d+x\d+(-[\d-]+)?\.jpg$", f"/{size}x{size}\\1.jpg", url)
+    if source == "musicbrainz":
+        # .../release/<mbid>/front-1200
+        return re.sub(r"/front-\d+$", f"/front-{min(size, 500)}", url)
+    return url
+
+
 def upscale_itunes_art(url: str, size: int = 3000) -> str:
     """iTunes hands back a 100x100 thumbnail but will serve the same asset at
     up to 3000x3000 -- worth taking for a 1080x1920 frame with a Ken Burns move."""
@@ -370,9 +393,74 @@ CAA_LICENSE = (
 )
 
 
+MB_FACT_MIN_SCORE = 90  # MusicBrainz scores 0-100; below this the match is a guess
+
+
+def recording_facts(track: Track) -> Optional[dict]:
+    """Structured catalogue facts for one recording, or None if there's no confident
+    match. One request (the search endpoint already carries artist credits and the
+    first-release date), so a whole tracklist costs one throttled call per track.
+
+    This exists to keep the curator honest. Left to its own recollection the model will
+    confidently invent a feature credit -- it claimed Peggy Gou's "It Makes You Forget"
+    was built on a Lenny Kravitz vocal, which it is not. MusicBrainz says the recording
+    is credited to Peggy Gou alone, and a few hundred tokens of that beats paying for
+    web search to relearn it (search results cost ~$0.24/call in input tokens; this is
+    free)."""
+    data = _get_json(
+        "musicbrainz", "https://musicbrainz.org/ws/2/recording",
+        {"query": f'artist:"{track.artist}" AND recording:"{track.title}"',
+         "fmt": "json", "limit": 5},
+        min_interval=_MUSICBRAINZ_MIN_INTERVAL,
+    )
+    recs = [r for r in ((data or {}).get("recordings") or [])
+            if (r.get("score") or 0) >= MB_FACT_MIN_SCORE]
+    if not recs:
+        return None
+
+    # Several pressings of one track all score 100 -- the single, the album cut, a
+    # remaster, a compilation appearance -- and their first-release-dates disagree
+    # wildly (Four Tet's "Baby" offers 2020-01-23, 2026-05-01 and null). Taking the
+    # top hit gets an arbitrary one, so take the EARLIEST instead: a re-release is
+    # always later than the original, never earlier. Year-only values like "2018"
+    # sort before "2018-05-04", which is the right answer at lower precision.
+    dates = sorted(d for d in (r.get("first-release-date") for r in recs) if d)
+    # Credits, unlike dates, agree across every pressing, so the top hit is fine --
+    # and they are the reason this function exists.
+    credited = [c.get("name") for c in (recs[0].get("artist-credit") or []) if c.get("name")]
+    return {
+        "title": recs[0].get("title") or track.title,
+        "credited": credited,
+        "first_release": dates[0] if dates else "",
+    }
+
+
+def facts_for_tracks(tracks: list[Track]) -> dict:
+    """recording_facts across a tracklist, keyed like the rest of the app
+    (artist_lower, title_lower). Best-effort: a provider hiccup drops that track's
+    facts rather than failing the job."""
+    out = {}
+    for t in tracks:
+        try:
+            f = recording_facts(t)
+        except Exception:
+            f = None
+        if f:
+            out[(t.artist.lower(), t.title.lower())] = f
+    return out
+
+
 def search_cover_art(track: Track) -> list[Candidate]:
     """Artwork fallback for vinyl-only / small-label releases the streaming
-    catalogs miss. No audio -- MusicBrainz is metadata only."""
+    catalogs miss. No audio -- MusicBrainz is metadata only.
+
+    NOTE: the URL is constructed for every release found, but the Cover Art Archive
+    only holds art for some of them -- measured around 40% of these 404. That is
+    invisible in the download path (a failed fetch just moves to the next candidate),
+    but it matters to the cover picker, which offers these as remote URLs it never
+    fetches. Any UI showing them must drop options whose image fails to load rather
+    than render a blank slot. Verifying here instead would cost a request per option,
+    which is exactly the cost the picker is designed to avoid."""
     query = f'artist:"{track.artist}" AND recording:"{track.title}"'
     data = _get_json(
         "musicbrainz", "https://musicbrainz.org/ws/2/recording",

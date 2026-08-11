@@ -16,7 +16,8 @@ _DATA_DIR = os.environ.get("DATA_DIR") or os.path.dirname(os.path.abspath(__file
 ANALYTICS_PATH = os.path.join(_DATA_DIR, "analytics.jsonl")
 _lock = threading.Lock()
 
-# Per-MTok, matching curator.MODEL_SIMPLE / MODEL_ADVANCED.
+# Per-MTok. Sonnet is the only model in use; the Opus row stays so historical rows in
+# analytics.jsonl (from when "Advanced" meant Opus) still price correctly on read.
 PRICING = {
     "claude-sonnet-5": {"input": 2, "output": 10, "cache_write": 2.5, "cache_read": 0.2},
     "claude-opus-4-8": {"input": 5, "output": 25, "cache_write": 6.25, "cache_read": 0.5},
@@ -53,9 +54,30 @@ def cost_from_usage(usage, model: str | None = None) -> float:
     )
 
 
+def _usage_fields(usage) -> dict:
+    """The token counts behind a cost, recorded alongside it so a surprising bill can be
+    traced to the field that caused it instead of re-run to find out. Search-heavy calls
+    grow their own input on every server-side iteration, which cost alone doesn't show."""
+    def get(obj, name, default=0):
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(name, default) or default
+        return getattr(obj, name, default) or default
+
+    return {
+        "in": get(usage, "input_tokens"),
+        "out": get(usage, "output_tokens"),
+        "cache_w": get(usage, "cache_creation_input_tokens"),
+        "cache_r": get(usage, "cache_read_input_tokens"),
+        "searches": get(get(usage, "server_tool_use"), "web_search_requests"),
+    }
+
+
 def record_api_call(job_id: str | None, label: str, usage, model: str | None = None) -> float:
     cost = cost_from_usage(usage, model)
-    _append({"type": "api_call", "job_id": job_id, "label": label, "cost_usd": round(cost, 6), "model": model})
+    _append({"type": "api_call", "job_id": job_id, "label": label, "cost_usd": round(cost, 6),
+             "model": model, "tokens": _usage_fields(usage)})
     return cost
 
 

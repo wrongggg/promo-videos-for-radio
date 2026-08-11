@@ -63,7 +63,7 @@
         @media (min-width: 900px) {
             html, body { height: 100%; overflow: hidden; }
             .layout {
-                grid-template-columns: minmax(0, 640px) minmax(0, 1fr);
+                grid-template-columns: minmax(0, 1fr) minmax(0, 430px);
                 align-items: stretch;
                 height: 100vh; max-height: 100vh; padding: 28px; gap: 24px;
             }
@@ -147,6 +147,12 @@
         }
         select { appearance: none; -webkit-appearance: none; cursor: pointer; }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        /* Show name, episode and logo are one idea: whose show this is. The logo column
+           is capped so its controls can never squeeze the two text fields. */
+        .row.identity { grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(120px, 160px); align-items: start; }
+        .row.identity .logo-controls { flex-wrap: nowrap; }
+        #logoPickGroup { margin: -4px 0 14px; }
+        #logoPickGroup input[type="file"] { max-width: 100%; font-size: 12px; }
         .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
         /* Pace / Language / Logo. The two selects are short values, so they get
            narrow fixed columns and the logo control takes the rest. */
@@ -161,6 +167,18 @@
         /* The dark tile and the inversion have to sit on different elements:
            a CSS filter applies to the element's own background too, so putting
            both on the <img> turned the whole chip into a white block. */
+        /* Matches the height of the text inputs beside it -- a thumbnail-sized control
+           left the third column visibly short once a file was chosen. */
+        .logo-chosen {
+            display: none; align-items: center; gap: 8px; flex: none;
+            min-height: 44px; box-sizing: border-box;
+            padding: 4px 6px 4px 5px; border-radius: 12px;
+            border: 1px solid var(--border-soft); background: rgba(0,0,0,0.025);
+        }
+        .logo-chosen img {
+            width: 26px; height: 26px; border-radius: 6px; object-fit: contain;
+            background: rgba(0,0,0,0.05); flex: none;
+        }
         .logo-chip {
             display: inline-flex; align-items: center; justify-content: center;
             height: 17px; padding: 0 4px; margin-right: 7px; border-radius: 3px;
@@ -181,7 +199,7 @@
         /* The icons sit on the same row as the Show/None control and stretch to
            its height, so the three read as one strip of controls. On their own
            line underneath they looked like an afterthought bolted below. */
-        .logo-controls { display: flex; align-items: stretch; gap: 8px; }
+        .logo-controls { display: flex; align-items: stretch; gap: 8px; min-height: 44px; }
         .logo-controls .segmented { flex: 1; min-width: 0; }
         .icon-row { display: flex; align-items: stretch; gap: 6px; flex: none; }
         .icon-btn {
@@ -278,7 +296,6 @@
         }
         .video-placeholder .ph-icon { font-size: 30px; opacity: 0.5; }
         .video-placeholder .ph-title { font-size: 14px; font-weight: 600; }
-        .video-placeholder .ph-sub { font-size: 12px; max-width: 240px; line-height: 1.5; }
         .status-line.on { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; color: var(--accent2); }
         .spinner {
             width: 16px; height: 16px; border: 3px solid rgba(124,58,237,0.2); border-radius: 50%;
@@ -287,6 +304,172 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .uploads-box { margin-top: 20px; display: none; }
+
+        /* Shown the instant a review screen is asked for, so the working column changes
+           immediately rather than sitting on the old screen until the data lands. */
+        .prep { display: none; margin-top: 20px; }
+        .prep-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+        .prep-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
+        .prep-row { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--border-soft); }
+        .prep-row:first-of-type { border-top: none; }
+        .prep-thumb { width: 108px; height: 108px; border-radius: 10px; flex: none; }
+        .prep-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+        .prep-bar { height: 12px; border-radius: 6px; }
+        .prep-bar.short { width: 45%; }
+        .prep-bar.tall { height: 34px; border-radius: 10px; }
+        .prep-bar.wide { width: 70%; }
+        .prep-bar.song { height: 10px; width: 55%; }
+        .prep-bar.card { height: 76px; border-radius: 12px; }
+        .prep-para { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+        .prep-cards { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+        .shimmer {
+            background: linear-gradient(100deg, rgba(0,0,0,0.05) 30%, rgba(0,0,0,0.10) 50%, rgba(0,0,0,0.05) 70%);
+            background-size: 220% 100%;
+            animation: shimmer 1.4s ease-in-out infinite;
+        }
+        @keyframes shimmer {
+            from { background-position: 180% 0; }
+            to { background-position: -60% 0; }
+        }
+        /* Always top-left of the working column, in the same place on every screen, so
+           there is one way out rather than a different affordance per gate. */
+        /* margin-left:auto keeps the account controls hard right whether or not the
+           back link is present, which it isn't on the form itself. */
+        .top-row { display: flex; align-items: center; gap: 14px; min-height: 22px; margin-bottom: 10px; }
+        .acct-row { display: flex; gap: 14px; align-items: center; flex-shrink: 0; white-space: nowrap; margin-left: auto; }
+        .back-link {
+            display: none; background: none; border: none; padding: 0;
+            color: var(--text-muted); font-size: 12.5px; cursor: pointer;
+        }
+        .back-link:hover { color: var(--text); }
+        /* Side by side and weighted, so they read as the same destination reached two
+           ways. Stacked full-width they looked like unrelated buttons. */
+        .submit-actions { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; }
+        .submit-actions button.primary { flex: 1.6 1 0; margin-top: 0; }
+        .submit-actions button.secondary { flex: 1 1 0; line-height: 1.3; margin-top: 0; }
+        /* Order rather than markup order: which button leads depends on the mode, and
+           the DOM order has to stay put for the form's own submit handling. */
+        .submit-actions.review-first #reviewBtn { order: 0; }
+        .submit-actions.review-first #submitBtn { order: 1; }
+
+        /* --- story review --- */
+        .story-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+        .story-headline { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+        .conf-chip {
+            font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+            padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border-soft);
+            color: var(--text-muted);
+        }
+        /* Three grades, all of them offerable. Anything the model would rate below
+           "solid" is never proposed, so there is no warning state to design for. */
+        .conf-chip.strong { color: #1a7f5a; border-color: rgba(26,127,90,0.35); background: rgba(26,127,90,0.09); }
+        .conf-chip.good { color: #2b6cb0; border-color: rgba(43,108,176,0.3); background: rgba(43,108,176,0.07); }
+        .conf-chip.solid { color: var(--text-muted); background: rgba(0,0,0,0.04); }
+        .story-body { font-size: 14px; line-height: 1.55; margin: 10px 0 14px; }
+        /* The supporting facts continue the paragraph rather than sitting in their own
+           labelled box -- they are why the claim is believable, not a separate artefact. */
+        .story-facts { color: var(--text-muted); }
+        .story-facts::before { content: " "; }
+
+        /* Unnumbered on purpose: this screen is about the framing and which songs are
+           in it. The running order is the next screen's business. */
+        .story-songs {
+            margin: 0 0 18px; padding: 0; list-style: none;
+            font-size: 13px; line-height: 1.8; color: var(--text-muted);
+        }
+        .story-songs li { padding-left: 14px; position: relative; }
+        .story-songs li::before {
+            content: ""; position: absolute; left: 0; top: 0.65em;
+            width: 4px; height: 4px; border-radius: 50%; background: var(--border-soft);
+        }
+
+        .story-accept { display: flex; gap: 10px; align-items: stretch; }
+        .story-accept button.primary { flex: 2 1 0; margin-top: 0; }
+        .story-accept button.secondary { flex: 1 1 0; }
+
+        .story-change { margin-top: 22px; }
+        /* A labelled rule, so the alternatives read as a different kind of choice from
+           the two buttons above rather than a fourth and fifth thing to weigh. */
+        .change-rule {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--text-muted); margin-bottom: 10px;
+        }
+        .change-rule::before, .change-rule::after {
+            content: ""; flex: 1; height: 1px; background: var(--border-soft);
+        }
+        /* Fixed rows, not auto-fit: cards of different text lengths were landing on
+           ragged rows of different heights, which is what made this look unconsidered. */
+        .story-alts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .alt-card {
+            display: flex; flex-direction: column; gap: 4px; min-height: 76px;
+            text-align: left; padding: 11px 13px; border-radius: 12px; cursor: pointer;
+            border: 1px solid var(--border-soft); background: rgba(0,0,0,0.025);
+            transition: background 0.12s ease, border-color 0.12s ease;
+        }
+        .alt-card:hover { background: rgba(0,0,0,0.055); border-color: rgba(0,0,0,0.16); }
+        .alt-card .alt-top {
+            display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+        }
+        .alt-card strong { font-size: 12.5px; font-weight: 650; line-height: 1.3; }
+        .alt-card .conf-chip { flex: none; font-size: 9px; padding: 2px 6px; }
+        .alt-card .alt-body { font-size: 11.5px; color: var(--text-muted); line-height: 1.45; }
+        .alt-card.chosen {
+            border-color: var(--accent); background: rgba(214,51,108,0.06);
+            box-shadow: 0 0 0 1px var(--accent) inset;
+        }
+        .alt-card.custom { cursor: default; gap: 8px; }
+        .alt-card.custom input {
+            width: 100%; font-size: 12px; padding: 7px 9px; border-radius: 8px;
+            border: 1px solid var(--border-soft); background: #fff; color: var(--text);
+        }
+        #storyBox .story-change > button.primary { width: 100%; margin-top: 12px; }
+
+        .story-foot { margin-top: 8px; text-align: right; }
+
+        /* --- cover + tagline picker --- */
+        /* Wraps rather than crushing: just above the 900px breakpoint the preview
+           column is only ~200px wide, and without this the title truncates to a few
+           letters and the tagline field collapses to nothing. */
+        .cover-row {
+            display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap;
+            padding: 14px 0; border-top: 1px solid var(--border-soft);
+        }
+        .cover-row:first-child { border-top: none; }
+        .cover-side { min-width: 190px; }
+        .cover-gallery { flex: none; width: 108px; text-align: center; }
+        .cover-frame {
+            position: relative; width: 108px; height: 108px; border-radius: 10px;
+            overflow: hidden; background: rgba(0,0,0,0.06);
+        }
+        .cover-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .cover-nav {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 6px; margin-top: 6px;
+        }
+        .cover-nav button {
+            border: 1px solid var(--border-soft); background: rgba(0,0,0,0.03);
+            border-radius: 8px; width: 26px; height: 24px; cursor: pointer;
+            font-size: 13px; line-height: 1; color: var(--text);
+        }
+        .cover-nav button:disabled { opacity: 0.35; cursor: default; }
+        .cover-meta { font-size: 11px; color: var(--text-muted); flex: 1; }
+        .cover-side { flex: 1; min-width: 0; }
+        .cover-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+        .cover-title span { font-weight: 400; color: var(--text-muted); }
+        .tagline-input {
+            width: 100%; font-size: 13px; padding: 9px 10px; border-radius: 10px;
+            border: 1px solid var(--border-soft); background: #fff; color: var(--text);
+        }
+        .tagline-count { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-align: right; }
+        .tagline-count.over { color: #d6336c; }
+        .tracks-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+        .tracks-actions button.primary { width: auto; flex: 1; margin-top: 0; }
+        button.linkish {
+            background: none; border: none; padding: 0; cursor: pointer;
+            color: var(--text-muted); font-size: 12px; text-decoration: underline;
+        }
+        .gate-countdown { font-size: 11px; color: var(--text-muted); }
         /* Render failures used to go out as an alert() containing the whole
            renderer log. The reason belongs on the page, where it can be read
            twice and copied -- a tester reporting this is the only diagnostic
@@ -378,28 +561,9 @@
 
 <div class="layout">
     <div class="panel">
-        <div class="brand-head" style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div class="brand">
-                <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
-                    <defs>
-                        <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0" stop-color="var(--accent)"/>
-                            <stop offset="1" stop-color="var(--accent2)"/>
-                        </linearGradient>
-                    </defs>
-                    <rect width="64" height="64" rx="16" fill="url(#brandGrad)"/>
-                    <g class="grooves" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round">
-                        <path d="M32 15a17 17 0 1 1-12.02 4.98" opacity=".55"/>
-                        <circle cx="32" cy="32" r="8.5"/>
-                    </g>
-                    <circle cx="32" cy="32" r="2.6" fill="#fff"/>
-                </svg>
-                <div>
-                    <h1 class="wordmark">{{ brand_name }}</h1>
-                    <p class="subtitle">Music showcase reel for your radio show or event, ready to share.</p>
-                </div>
-            </div>
-            <div style="display:flex; gap:14px; align-items:center; flex-shrink:0; white-space:nowrap;">
+        <div class="top-row">
+            <button type="button" class="back-link" id="backBtn">← Start over</button>
+            <div class="acct-row">
                 {% if signed_in %}
                 <span class="acct-credits" id="acctCredits" title="Credits remaining">…</span>
                 <span class="acct-email" title="{{ account }}">{{ account }}</span>
@@ -417,9 +581,31 @@
                 {% endif %}
             </div>
         </div>
+        <div class="brand-head" style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:nowrap;">
+            <div class="brand" style="min-width:0;">
+                <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="var(--accent)"/>
+                            <stop offset="1" stop-color="var(--accent2)"/>
+                        </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" rx="16" fill="url(#brandGrad)"/>
+                    <g class="grooves" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round">
+                        <path d="M32 15a17 17 0 1 1-12.02 4.98" opacity=".55"/>
+                        <circle cx="32" cy="32" r="8.5"/>
+                    </g>
+                    <circle cx="32" cy="32" r="2.6" fill="#fff"/>
+                </svg>
+                <div style="min-width:0;">
+                    <h1 class="wordmark">{{ brand_name }}</h1>
+                    <p class="subtitle">Music showcase reel for your radio show or event, ready to share.</p>
+                </div>
+            </div>
+        </div>
 
         <form id="startForm">
-            <div class="row">
+            <div class="row identity">
                 <div class="form-group">
                     <label>Show name <span class="label-note">optional</span></label>
                     <input type="text" name="show_name" placeholder="{% if station_mode %}{{ default_show_name }}{% else %}Your show name{% endif %}"{% if station_mode %} value="{{ default_show_name }}"{% endif %}>
@@ -428,6 +614,34 @@
                     <label>Episode name <span class="label-note">optional</span></label>
                     <input type="text" name="episode_label" placeholder="Episode 42">
                 </div>
+                <div class="form-group">
+                    <label>Logo</label>
+                    <div class="logo-controls">
+                        <div class="segmented" id="logoToggle">
+                            <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>Upload</button>
+                            <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
+                        </div>
+                        <div class="logo-chosen" id="logoChosenGroup" style="display:none;">
+                            <img id="logoChip" alt="">
+                            <button type="button" class="icon-btn" id="logoReplaceBtn" data-tip="Replace logo" aria-label="Replace logo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>
+                                </svg>
+                            </button>
+                            <button type="button" class="icon-btn" id="logoRemoveBtn" data-danger data-tip="Remove logo" aria-label="Remove logo">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3.5 6h17"/><path d="M9 6V3.8h6V6"/><path d="M6 6l1 14.2h10L18 6"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}show{% else %}none{% endif %}">
+                </div>
+            </div>
+
+            <div id="logoPickGroup" style="display:none;">
+                <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+                <p class="hint">Square or wide PNG, transparent background. Max 2&nbsp;MB.</p>
             </div>
 
             <div class="form-group">
@@ -435,26 +649,26 @@
                 <textarea id="tracklistInput" name="tracklist" required placeholder="Four Tet - Baby&#10;Bicep - Glue&#10;Overmono - So U Kno"></textarea>
             </div>
 
-            {% if personal_mode %}
             <div class="form-group">
-                <label>Track selection</label>
+                <label>Featured tracks <span class="label-note">— who picks them, and what holds them together</span></label>
                 <div class="segmented" id="selectionModeToggle">
-                    <button type="button" data-value="auto">Auto (AI picks)</button>
-                    <button type="button" data-value="manual" class="active">I'll pick</button>
+                    <button type="button" data-value="auto" class="active"
+                            title="Reads your tracklist, works out what connects the records, and picks and orders the ones that tell it.">Find the story</button>
+                    <button type="button" data-value="brief"
+                            title="You say what the episode is about; it picks and orders the tracks that tell that story.">I'll give the story</button>
+                    <button type="button" data-value="manual">I'll pick the tracks</button>
                 </div>
             </div>
-            {% endif %}
+
+            <div class="form-group" id="userBriefGroup" style="display:none;">
+                <label>What's this episode about? <span class="label-note" id="briefNote"></span></label>
+                <input type="text" name="user_brief" id="userBriefInput" maxlength="600"
+                       placeholder="e.g. everything I heard in Berlin in March — lean into the physicality">
+            </div>
 
             <div class="form-group" id="trackListGroup" style="display:none;">
                 <label>{% if personal_mode %}Pick tracks to feature{% else %}Pick up to {{ max_manual_tracks }} tracks to feature{% endif %}</label>
                 <div class="track-list" id="trackList"></div>
-            </div>
-
-            <div class="row3">
-                <div class="form-group" id="numStandoutGroup" style="display:none;">
-                    <label title="Number of standout tracks">Tracks</label>
-                    <input type="number" name="num_standout" value="5" min="2" max="15">
-                </div>
             </div>
 
             <div class="form-group">
@@ -480,13 +694,9 @@
                 </select>
                 {% endif %}
             </div>
-            <div class="form-group" id="themeDescriptionGroup" style="display:none;">
-                <label>Describe the theme</label>
-                <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
-            </div>
-
-
-            <div class="row-bottom">
+            <!-- Pace and language are look-and-feel decisions, so they live with the
+                 theme rather than in a settings row at the foot of the form. -->
+            <div class="row">
                 <div class="form-group">
                     <label>Pace</label>
                     <select name="pace">
@@ -504,40 +714,18 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Logo</label>
-                    <div class="logo-controls">
-                        <div class="segmented" id="logoToggle">
-                            <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>
-                                <span class="logo-chip" id="logoChipWrap" hidden><img id="logoChip" alt=""></span>
-                                <span>Show</span>
-                            </button>
-                            <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
-                        </div>
-                        <div class="icon-row" id="logoChosenGroup" style="display:none;">
-                            <button type="button" class="icon-btn" id="logoReplaceBtn" data-tip="Replace logo" aria-label="Replace logo">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>
-                                </svg>
-                            </button>
-                            <button type="button" class="icon-btn" id="logoRemoveBtn" data-danger data-tip="Remove logo" aria-label="Remove logo">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M3.5 6h17"/><path d="M9 6V3.8h6V6"/><path d="M6 6l1 14.2h10L18 6"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                    <input type="hidden" name="use_logo" id="useLogoInput" value="{% if station_mode %}show{% else %}none{% endif %}">
-                    <div id="logoPickGroup" style="display:none; margin-top:8px;">
-                        <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
-                        <p class="hint">Square or wide PNG, transparent background. Max 2&nbsp;MB.</p>
-                    </div>
-                </div>
             </div>
+
+            <div class="form-group" id="themeDescriptionGroup" style="display:none;">
+                <label>Describe the theme</label>
+                <input type="text" id="themeDescription" name="theme_value" placeholder="e.g. moody purple sunset, warm 90s VHS colors, icy minimal blue">
+            </div>
+
+
 
             {% if personal_mode %}
             <div class="form-group">
-                <label title="Simple = exactly what colleagues get (cheap model, no web search). Advanced = Opus + web research, higher quality and cost.">Quality</label>
+                <label title="Simple = exactly what colleagues get (no web search). Advanced = the same model with web research: better on brand-new releases, but search results are billed as input tokens so it costs several times more.">Quality</label>
                 <div class="segmented" id="qualityToggle">
                     <button type="button" data-value="simple" class="active">Simple</button>
                     <button type="button" data-value="advanced">Advanced</button>
@@ -546,23 +734,69 @@
             </div>
             {% endif %}
 
-            <button type="submit" class="primary" id="submitBtn">Generate Promo Video</button>
+            <!-- One decision at two speeds, not two actions: both end in a rendered
+                 video, so both say so. -->
+            <div class="submit-actions">
+                <button type="submit" class="primary" id="submitBtn">Generate Promo Video Now</button>
+                <button type="submit" class="secondary" id="reviewBtn"
+                        title="Stop and show me what it decided, before it renders.">Find the story for me</button>
+            </div>
+            <input type="hidden" name="review_first" id="reviewFirstInput" value="">
         </form>
+
+        <div class="prep" id="prepBox">
+            <div class="prep-title" id="prepTitle"></div>
+            <div class="prep-sub" id="prepSub"></div>
+            <div id="prepRows"></div>
+        </div>
+
+        <div class="uploads-box" id="uploadsBox">
+            <label>Some tracks need an audio file</label>
+            <div id="uploadRows"></div>
+        </div>
+
+        <div class="uploads-box" id="storyBox">
+            <div class="story-head">
+                <span class="story-headline" id="storyHeadline"></span>
+                <span class="conf-chip" id="storyConfidence"></span>
+            </div>
+            <p class="story-body" id="storyBody"></p>
+            <ul class="story-songs" id="storySongs"></ul>
+
+            <!-- The accept path sits directly under the story it applies to. Everything
+                 that changes the story lives below, so the two are never weighed as if
+                 they were the same kind of choice. -->
+            <div class="story-accept">
+                <button type="button" class="primary" id="storyGenerateBtn">Generate Video Now</button>
+                <button type="button" class="secondary" id="storyReviewBtn">Review Covers, Then Generate</button>
+            </div>
+
+            <div class="story-change">
+                <div class="change-rule"><span>or tell it differently</span></div>
+                <!-- Pick one, then commit. Firing on click meant a stray tap spent a
+                     retell and replaced the story you were still reading. -->
+                <div class="story-alts" id="storyAlts"></div>
+                <button type="button" class="primary" id="retellBtn" disabled>Retell it this way</button>
+                <div class="story-foot"><span class="gate-countdown" id="retellLeft"></span></div>
+            </div>
+        </div>
+
+        <div class="uploads-box" id="tracksBox">
+            <label>Covers &amp; taglines <span class="label-note">— the line shows under the title in the video</span></label>
+            <div id="trackRows"></div>
+            <div class="tracks-actions">
+                <button type="button" class="primary" id="tracksConfirmBtn">Generate Video Now</button>
+            </div>
+        </div>
     </div>
 
     <div class="panel preview-panel" id="previewPanel">
         <div class="video-placeholder" id="videoPlaceholder">
             <div class="ph-icon">🎬</div>
             <div class="ph-title">Your video will appear here</div>
-            <div class="ph-sub">Paste a tracklist, pick a theme, and hit Generate. Rendering takes about a minute.</div>
         </div>
 
         <div class="status-line" id="statusLine"><div class="spinner" id="spinner"></div><span id="statusText">Working...</span></div>
-
-        <div class="uploads-box" id="uploadsBox">
-            <label>Some tracks need an audio file</label>
-            <div id="uploadRows"></div>
-        </div>
 
         <div class="error-box" id="errorBox">
             <div class="error-title">That render didn't finish</div>
@@ -603,42 +837,71 @@
 <script>
 const PERSONAL_MODE = {{ "true" if personal_mode else "false" }};
 const MAX_MANUAL_TRACKS = {{ max_manual_tracks }};
+const MAX_TAGLINE = {{ max_beat_chars }};
 let pollInterval = null;
 let currentJobId = null;
 let lastTheme = null;
-// Manual selection is the default for everyone -- AI (Auto) curation is an
-// admin-only option, toggled on below only when PERSONAL_MODE.
-let selectionMode = "manual";
+// Finding the story is the default: it is what the tool is for, and it costs about four
+// cents. Picking your own tracks is the deliberate alternative, not the starting point.
+let selectionMode = "auto";
 let activeUploadRows = {};
 
 function setActive(container, value) {
     container.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.value === value));
 }
 
-if (PERSONAL_MODE) {
-    document.getElementById("selectionModeToggle").addEventListener("click", (e) => {
-        const btn = e.target.closest("button");
-        if (!btn) return;
-        selectionMode = btn.dataset.value;
-        setActive(e.currentTarget, selectionMode);
-        document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
-        if (selectionMode === "manual") { loadTrackCheckboxes(); } else { setTrackPickerVisible(false); }
-    });
+// One control decides everything downstream: whether the AI curates, whether a brief is
+// worth offering, and what the form's second button does. Top-level rather than block
+// scoped -- restoreDraftIfAny() calls it too.
+function applySelectionMode() {
+    const story = selectionMode === "auto" || selectionMode === "brief";
+    // When there is a story to look at, looking at it is the recommended path -- so it
+    // gets the primary button and generating blind becomes the deliberate shortcut.
+    const submit = document.getElementById("submitBtn");
+    const review = document.getElementById("reviewBtn");
+    submit.className = story ? "secondary" : "primary";
+    review.className = story ? "primary" : "secondary";
+    document.querySelector(".submit-actions").classList.toggle("review-first", story);
+    // The brief is optional when the AI is finding the story (a steer), and the whole
+    // point when the user is supplying one -- same field, different weight.
+    document.getElementById("userBriefGroup").style.display =
+        selectionMode === "brief" ? "block" : "none";
+    document.getElementById("briefNote").textContent =
+        selectionMode === "brief" ? "— the story it should tell" : "";
+    // Named for what the button actually does in this mode, rather than one generic
+    // "review first" label stretched across three different next steps.
+    review.textContent =
+        selectionMode === "auto" ? "Find the story for me"
+        : selectionMode === "brief" ? "Build my story first"
+        : "Review covers first";
+    submit.textContent = story ? "Skip review, just generate" : "Generate Promo Video Now";
 }
+
+document.getElementById("selectionModeToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    selectionMode = btn.dataset.value;
+    setActive(e.currentTarget, selectionMode);
+    applySelectionMode();
+    if (selectionMode === "manual") { loadTrackCheckboxes(); } else { setTrackPickerVisible(false); }
+});
+applySelectionMode();
 
 const STATION_LOGO_URL = "{{ station_logo_url }}";
 const STATION_MODE = {{ "true" if station_mode else "false" }};
 
 function setLogoTip(name) {
+    // The tooltip stays short: it renders as a pseudo-element inside a 36px button, and
+    // a filename-length one measured 143px wide, which propagated up and overflowed the
+    // whole identity row. The name still reaches screen readers via aria-label.
     const btn = document.getElementById("logoReplaceBtn");
-    btn.dataset.tip = "Replace " + name;
+    btn.dataset.tip = "Replace logo";
     btn.setAttribute("aria-label", "Replace logo (" + name + ")");
 }
 
 function refreshLogoPreview() {
     const on = document.getElementById("useLogoInput").value === "show";
     const chip = document.getElementById("logoChip");
-    const chipWrap = document.getElementById("logoChipWrap");
     const file = document.getElementById("logoInput").files[0];
     // A logo counts as chosen when there is actually one to show: the user's
     // own upload, or the station mark a station session starts with.
@@ -650,26 +913,27 @@ function refreshLogoPreview() {
     // file), and Replace reaches it through .click().
     document.getElementById("logoPickGroup").style.display = (on && !chosen) ? "block" : "none";
     document.getElementById("logoChosenGroup").style.display = chosen ? "flex" : "none";
+    // With a logo in hand the Upload/None pair is redundant -- Remove is how you get
+    // back to no logo -- and showing both side by side crushed the two text fields.
+    document.getElementById("logoToggle").style.display = chosen ? "none" : "flex";
+    if (!chosen) return;
 
-    if (!on) { chipWrap.hidden = true; return; }
+    // Once something is chosen, show the thumbnail and the two things you can do
+    // about it. No filename: the picture already says which logo it is, and the text
+    // was wide enough to squeeze the show-name fields. It stays on Replace's tooltip.
     if (file) {
         if (chip.dataset.blob) URL.revokeObjectURL(chip.dataset.blob);
         const url = URL.createObjectURL(file);
         chip.dataset.blob = url;
         chip.src = url;
-        chipWrap.hidden = false;
-        // Which logo is loaded is already answered by the chip in the Show
-        // button; the name only needs to be reachable, not laid out, so it
-        // rides along in the tooltip rather than taking a line of its own.
         setLogoTip(file.name);
-    } else if (STATION_MODE) {
-        chip.src = STATION_LOGO_URL;
-        chipWrap.hidden = false;
-        setLogoTip("Station logo");
     } else {
-        chipWrap.hidden = true;
+        chip.src = STATION_LOGO_URL;
+        setLogoTip("Station logo");
     }
 }
+
+
 
 document.getElementById("logoReplaceBtn").addEventListener("click", () => {
     document.getElementById("logoInput").click();
@@ -857,10 +1121,10 @@ function restoreDraftIfAny() {
             langEl.value = draft.language;
         }
     }
-    if (PERSONAL_MODE && draft.selectionMode) {
+    if (draft.selectionMode) {
         selectionMode = draft.selectionMode;
         setActive(document.getElementById("selectionModeToggle"), selectionMode);
-        document.getElementById("numStandoutGroup").style.display = selectionMode === "manual" ? "none" : "block";
+        applySelectionMode();
         document.getElementById("trackListGroup").style.display = selectionMode === "manual" ? "block" : "none";
     }
     if (selectionMode === "manual") loadTrackCheckboxes();
@@ -907,6 +1171,69 @@ function requestNotifyPermission() {
     }
 }
 
+// Which submit button was used decides whether the job stops at the picker. Set on
+// click because the form is submitted programmatically and a bare submitter isn't
+// carried into FormData.
+document.getElementById("submitBtn").addEventListener("click", () => {
+    document.getElementById("reviewFirstInput").value = "";
+});
+document.getElementById("reviewBtn").addEventListener("click", () => {
+    document.getElementById("reviewFirstInput").value = "1";
+});
+document.getElementById("startForm").addEventListener("submit", () => {
+    if (document.getElementById("reviewFirstInput").value !== "1") return;
+    if (selectionMode === "auto" || selectionMode === "brief") {
+        showPrep("Reading your tracklist", "Working out what connects these records.", 5, "story");
+    } else {
+        const n = document.querySelectorAll("#trackList input:checked").length || 4;
+        showPrep("Finding covers and writing taglines",
+                 "Looking up artwork for each track. This takes a few moments.", n);
+    }
+});
+document.getElementById("storyGenerateBtn").addEventListener("click",
+    () => storyAction({ action: "confirm", review_tracks: false }));
+document.getElementById("storyReviewBtn").addEventListener("click", () => {
+    const n = document.querySelectorAll("#storySongs li").length || 4;
+    showPrep("Finding covers and writing taglines",
+             "Looking up artwork for each track. This takes a few moments.", n);
+    storyAction({ action: "confirm", review_tracks: true });
+});
+document.getElementById("retellBtn").addEventListener("click", () => {
+    if (selectedAlt === null) return;
+    const n = document.querySelectorAll("#storySongs li").length || 5;
+    showPrep("Rewriting the story", "Looking at your tracklist from a different angle.", n, "story");
+    if (selectedAlt === "custom") {
+        const text = (document.getElementById("retellInput").value || "").trim();
+        if (text) storyAction({ action: "regenerate", instruction: text });
+    } else {
+        storyAction({ action: "use_alternate", index: selectedAlt });
+    }
+});
+document.getElementById("tracksConfirmBtn").addEventListener("click", confirmTracks);
+document.getElementById("backBtn").addEventListener("click", () => {
+    // Abandons whatever is parked and puts the form back. The job is released server
+    // side rather than left holding its render directory until the timeout.
+    if (currentJobId) fetch(`/cancel/${currentJobId}`, { method: "POST" }).catch(() => {});
+    if (pollInterval) clearInterval(pollInterval);
+    currentJobId = null;
+    ["storyBox", "tracksBox", "uploadsBox"].forEach((id) => {
+        document.getElementById(id).style.display = "none";
+    });
+    hidePrep();
+    tracksRendered = false;
+    renderedStoryRev = -1;
+    showWorkingView("form");
+    document.getElementById("submitBtn").disabled = false;
+    document.getElementById("statusLine").classList.remove("on");
+});
+
+// The working column shows exactly one thing at a time: the form, or the screen that
+// has replaced it. The preview column is only ever for the finished video.
+function showWorkingView(which) {
+    document.getElementById("startForm").style.display = which === "form" ? "" : "none";
+    document.getElementById("backBtn").style.display = which === "form" ? "none" : "block";
+}
+
 document.getElementById("startForm").addEventListener("submit", function (e) {
     e.preventDefault();
     requestNotifyPermission();
@@ -921,8 +1248,6 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
 
     btn.disabled = true;
     previewPanel.style.display = "block";
-    document.getElementById("videoPlaceholder").style.display = "none";
-    statusLine.classList.add("on");
     uploadsBox.style.display = "none";
     document.getElementById("uploadRows").innerHTML = "";
     activeUploadRows = {};
@@ -973,7 +1298,31 @@ function pollStatus() {
             const uploadsBox = document.getElementById("uploadsBox");
             const downloadBox = document.getElementById("downloadBox");
 
-            statusText.textContent = job.log.length ? job.log[job.log.length - 1] : job.status;
+            // Jobs live in memory, so a server restart takes them with it. Without this
+            // the next line throws on job.log, the error is swallowed by the .catch
+            // below, and the page spins forever with no idea anything went wrong.
+            if (!job.status) {
+                clearInterval(pollInterval);
+                statusLine.classList.remove("on");
+                btn.disabled = false;
+                showRenderError(job.error === "not your job"
+                    ? "This job belongs to a different browser session."
+                    : "This job is no longer on the server (it restarted). Please start again.");
+                return;
+            }
+
+            // The spinner and its running commentary belong to the render, not to every
+            // stage of the job. While a review screen is being prepared the left column
+            // already says so, and narrating "ranking tracks" beside an empty video frame
+            // just made the wait feel longer.
+            const making = ["fetching_media", "ready_to_render", "composing", "rendering"]
+                .includes(job.status) && !prepActive;
+            statusLine.classList.toggle("on", making);
+            document.getElementById("videoPlaceholder").style.display =
+                (making || job.status === "done") ? "none" : "";
+            if (making) {
+                statusText.textContent = job.log.length ? job.log[job.log.length - 1] : job.status;
+            }
             if (job.theme) lastTheme = job.theme;
 
             if (job.status === "awaiting_uploads" && job.needs_upload.length) {
@@ -984,6 +1333,51 @@ function pollStatus() {
                 Object.values(activeUploadRows).forEach((r) => r.remove());
                 activeUploadRows = {};
             }
+
+            // prepActive covers the stretch between asking for a screen and it being
+            // ready: the status is still "parsing"/"curating" then, and without this the
+            // poll would put the form back a second after it was replaced.
+            const gated = prepActive || ["awaiting_story", "awaiting_tracks",
+                                         "awaiting_uploads", "restorying"].includes(job.status);
+            showWorkingView(gated ? "gate" : "form");
+
+            const storyBox = document.getElementById("storyBox");
+            if (job.status === "awaiting_story" && job.story) {
+                storyBox.style.display = "block";
+                if (job.story_rev !== renderedStoryRev) {
+                    renderedStoryRev = job.story_rev;
+                    renderStory(job);
+                }
+                hidePrep();
+                ["storyGenerateBtn", "storyReviewBtn"].forEach((id) => {
+                    document.getElementById(id).disabled = false;
+                });
+                // Retell's state belongs to the selection, not the poll -- re-enabling it
+                // here every two seconds undid "nothing chosen yet".
+                syncRetell(job);
+            } else if (job.status !== "restorying") {
+                // "restorying" keeps the panel up with its buttons disabled, so the
+                // screen doesn't blink out and back while a retell runs.
+                storyBox.style.display = "none";
+                renderedStoryRev = -1;
+            }
+
+            const tracksBox = document.getElementById("tracksBox");
+            if (job.status === "awaiting_tracks" && job.track_choices) {
+                tracksBox.style.display = "block";
+                // Built once. This panel holds text inputs the user is typing into, so
+                // rebuilding it on the 2s poll would eat keystrokes.
+                if (!tracksRendered) {
+                    tracksRendered = true;
+                    renderTrackRows(job.track_choices);
+                }
+                hidePrep();
+            } else if (job.status !== "awaiting_tracks") {
+                tracksBox.style.display = "none";
+                tracksRendered = false;
+            }
+
+            if (job.status === "done" || job.status === "failed") hidePrep();
 
             if (job.status === "done") {
                 clearInterval(pollInterval);
@@ -1021,6 +1415,280 @@ function renderErrorReport() {
         "When: " + new Date().toISOString(),
         "Browser: " + navigator.userAgent,
     ].join("\n");
+}
+
+// --- waiting states ------------------------------------------------------
+// The working column switches the moment something is requested. Waiting on the old
+// screen while a spinner turns somewhere else reads as nothing having happened.
+let prepActive = false;
+
+function showPrep(title, sub, rows, shape) {
+    prepActive = true;
+    const box = document.getElementById("prepBox");
+    document.getElementById("prepTitle").textContent = title;
+    document.getElementById("prepSub").textContent = sub;
+    const holder = document.getElementById("prepRows");
+    holder.innerHTML = "";
+    // The skeleton mirrors the screen being waited for, so the shape of what is coming
+    // is already on screen before the content is.
+    if (shape === "story") {
+        holder.innerHTML =
+            '<div class="prep-bar wide shimmer" style="height:22px"></div>' +
+            '<div class="prep-para">' +
+            '<div class="prep-bar shimmer"></div><div class="prep-bar shimmer"></div>' +
+            '<div class="prep-bar short shimmer"></div></div>' +
+            '<div class="prep-para">' + Array.from({length: rows}, () =>
+                '<div class="prep-bar song shimmer"></div>').join("") + '</div>' +
+            '<div class="prep-bar tall shimmer" style="height:44px"></div>' +
+            '<div class="prep-cards"><div class="prep-bar card shimmer"></div>' +
+            '<div class="prep-bar card shimmer"></div></div>';
+    } else {
+        for (let i = 0; i < rows; i++) {
+            const row = document.createElement("div");
+            row.className = "prep-row";
+            row.innerHTML = '<div class="prep-thumb shimmer"></div>' +
+                '<div class="prep-lines"><div class="prep-bar short shimmer"></div>' +
+                '<div class="prep-bar tall shimmer"></div></div>';
+            holder.appendChild(row);
+        }
+    }
+    ["storyBox", "tracksBox", "uploadsBox"].forEach((id) => {
+        document.getElementById(id).style.display = "none";
+    });
+    box.style.display = "block";
+    showWorkingView("gate");
+}
+
+function hidePrep() {
+    prepActive = false;
+    document.getElementById("prepBox").style.display = "none";
+}
+
+// --- story gate ----------------------------------------------------------
+// Only redrawn when the story itself changes. The Retell box is a text input the
+// user is typing into, and the poll runs every 2 seconds.
+let renderedStoryRev = -1;
+
+let selectedAlt = null;   // index of a chosen framing, or "custom" for the typed one
+
+function renderStory(job) {
+    const s = job.story;
+    if (!s) return;
+    document.getElementById("storyHeadline").textContent = s.headline || "";
+    const chip = document.getElementById("storyConfidence");
+    chip.textContent = s.confidence || "";
+    chip.className = "conf-chip " + (s.confidence || "");
+    document.getElementById("storyBody").textContent = s.body || "";
+
+    const songs = document.getElementById("storySongs");
+    songs.innerHTML = "";
+    (s.sequence || []).forEach((t) => {
+        const li = document.createElement("li");
+        li.textContent = `${t.artist} — ${t.title}`;
+        songs.appendChild(li);
+    });
+
+    // A new story means the previous selection is meaningless -- clearing it is what
+    // makes a retell feel like a fresh screen rather than a partly-updated one.
+    selectedAlt = null;
+    const alts = document.getElementById("storyAlts");
+    alts.innerHTML = "";
+    (job.story_alternates || []).forEach((a, i) => {
+        alts.appendChild(altCard(a.headline || "", a.body || "", a.confidence, i));
+    });
+    alts.appendChild(customCard());
+    syncRetell(job);
+}
+
+function altCard(title, body, confidence, index) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "alt-card";
+    card.innerHTML = '<span class="alt-top"><strong></strong><span class="conf-chip"></span></span><span class="alt-body"></span>';
+    card.querySelector("strong").textContent = title;
+    const chip = card.querySelector(".conf-chip");
+    chip.textContent = confidence || "";
+    chip.className = "conf-chip " + (confidence || "");
+    card.querySelector(".alt-body").textContent = body;
+    card.addEventListener("click", () => selectAlt(index, card));
+    return card;
+}
+
+function customCard() {
+    const card = document.createElement("div");
+    card.className = "alt-card custom";
+    card.innerHTML = '<span class="alt-top"><strong>In my own words</strong></span>' +
+        '<input type="text" id="retellInput" maxlength="600" placeholder="tell it as…">';
+    const input = card.querySelector("input");
+    // Typing is choosing -- nobody fills this in and then expects to have to click it.
+    input.addEventListener("focus", () => selectAlt("custom", card));
+    input.addEventListener("input", () => { selectAlt("custom", card); syncRetell(); });
+    return card;
+}
+
+function selectAlt(which, card) {
+    selectedAlt = which;
+    document.querySelectorAll("#storyAlts .alt-card").forEach((c) => {
+        c.classList.toggle("chosen", c === card);
+    });
+    syncRetell();
+}
+
+function syncRetell(job) {
+    const left = job ? (job.story_regens_left || 0) : lastRegensLeft;
+    lastRegensLeft = left;
+    const typed = (document.getElementById("retellInput") || {}).value || "";
+    const ready = selectedAlt !== null && (selectedAlt !== "custom" || typed.trim());
+    document.getElementById("retellBtn").disabled = !ready || left <= 0;
+    document.getElementById("retellLeft").textContent =
+        left ? `${left} rewrites left` : "no rewrites left";
+}
+let lastRegensLeft = 0;
+
+function storyAction(payload) {
+    ["storyGenerateBtn", "storyReviewBtn", "retellBtn"].forEach((id) => {
+        document.getElementById(id).disabled = true;
+    });
+    document.querySelectorAll("#storyAlts .alt-card").forEach((c) => { c.disabled = true; });
+    document.getElementById("retellBtn").disabled = true;
+    return fetch(`/story/${currentJobId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    }).then((r) => r.json()).then((res) => {
+        if (res.error) { showRenderError(res.error); return; }
+        // Anything that changes the story bumps story_rev, which is what lets the
+        // panel redraw; a confirm just moves the job on.
+        pollStatus();
+    }).catch(() => {
+        ["storyGenerateBtn", "storyReviewBtn", "retellBtn"].forEach((id) => {
+            document.getElementById(id).disabled = false;
+        });
+    });
+}
+
+// --- covers & taglines gate ---------------------------------------------
+// Choices live here until the user confirms; the panel is built once and never
+// re-rendered, so a poll can't wipe what someone is typing.
+let trackChoices = null;      // the rows as served
+let coverPicks = {};          // index -> option id
+let tracksRendered = false;
+
+function loadThumb(url) {
+    // ~40% of MusicBrainz options are dead links: search_cover_art builds a Cover Art
+    // Archive URL for every release it finds, but the archive only holds art for some.
+    // Resolving them here is the only cheap place -- the server deliberately never
+    // fetches these -- and a gallery that pages onto blank frames reads as broken.
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth > 1);
+        img.onerror = () => resolve(false);
+        img.src = url;
+    });
+}
+
+function renderCoverRow(row) {
+    const wrap = document.createElement("div");
+    wrap.className = "cover-row";
+    const opts = row.options;
+    let pos = 0;
+
+    wrap.innerHTML = `
+        <div class="cover-gallery">
+            <div class="cover-frame"><img alt=""></div>
+            <div class="cover-nav">
+                <button type="button" data-dir="-1" aria-label="Previous cover">‹</button>
+                <span class="cover-meta"></span>
+                <button type="button" data-dir="1" aria-label="Next cover">›</button>
+            </div>
+        </div>
+        <div class="cover-side">
+            <div class="cover-title"></div>
+            <input class="tagline-input" type="text" maxlength="200"
+                   placeholder="a line to show under the title (optional)">
+            <div class="tagline-count"></div>
+        </div>`;
+
+    const img = wrap.querySelector("img");
+    const meta = wrap.querySelector(".cover-meta");
+    const [prev, next] = wrap.querySelectorAll(".cover-nav button");
+    wrap.querySelector(".cover-title").innerHTML =
+        `${escapeHtml(row.artist)} <span>${escapeHtml(row.title)}</span>`;
+
+    function paint() {
+        if (!opts.length) {
+            meta.textContent = "no cover found";
+            prev.disabled = next.disabled = true;
+            return;
+        }
+        const o = opts[pos];
+        img.src = o.thumb;
+        // Just the position. What kind of picture it is, and where it came from, are
+        // things you can see -- naming them was noise beside the image itself.
+        meta.textContent = `${pos + 1} of ${opts.length}`;
+        prev.disabled = pos === 0;
+        next.disabled = pos === opts.length - 1;
+        coverPicks[row.index] = o.id;
+    }
+    wrap.querySelectorAll(".cover-nav button").forEach((b) => {
+        b.addEventListener("click", () => {
+            pos = Math.min(opts.length - 1, Math.max(0, pos + Number(b.dataset.dir)));
+            paint();
+        });
+    });
+
+    const input = wrap.querySelector(".tagline-input");
+    const count = wrap.querySelector(".tagline-count");
+    input.value = row.line || "";
+    function countUp() {
+        const n = input.value.length;
+        count.textContent = `${n}/${MAX_TAGLINE}`;
+        count.classList.toggle("over", n > MAX_TAGLINE);
+    }
+    input.addEventListener("input", countUp);
+    countUp();
+    wrap.dataset.index = row.index;
+    paint();
+    return wrap;
+}
+
+function renderTrackRows(rows) {
+    const box = document.getElementById("trackRows");
+    box.textContent = "Loading covers…";
+    trackChoices = rows;
+    coverPicks = {};
+    // Every thumbnail is checked before anything is drawn, so the counter reflects the
+    // covers that actually exist rather than the ones that were offered.
+    Promise.all(rows.map((row) =>
+        Promise.all(row.options.map((o) => loadThumb(o.thumb)))
+            .then((ok) => Object.assign(row, { options: row.options.filter((_, i) => ok[i]) }))
+    )).then(() => {
+        box.textContent = "";
+        rows.forEach((row) => box.appendChild(renderCoverRow(row)));
+    });
+}
+
+function confirmTracks() {
+    const btn = document.getElementById("tracksConfirmBtn");
+    btn.disabled = true;
+    const lines = {};
+    document.querySelectorAll("#trackRows .cover-row").forEach((row) => {
+        lines[row.dataset.index] = row.querySelector(".tagline-input").value.slice(0, MAX_TAGLINE);
+    });
+    fetch(`/tracks/${currentJobId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ covers: coverPicks, lines: lines }),
+    }).then((r) => r.json()).then(() => {
+        document.getElementById("tracksBox").style.display = "none";
+        pollStatus();
+    }).catch(() => { btn.disabled = false; });
+}
+
+function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : s;
+    return d.innerHTML;
 }
 
 function showRenderError(reason) {

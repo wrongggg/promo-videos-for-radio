@@ -96,6 +96,37 @@ def main():
     check("second pass removes nothing new", A.prune_old_renders(), 1)
     check("third pass removes nothing", A.prune_old_renders(), 0)
 
+    # A job parked at a gate is exempt from pruning by design, which is exactly why it
+    # needs a deadline: without one it pins its directory on the billed volume for the
+    # life of the process.
+    print("\nabandoned gates expire and become prunable:")
+    waiting = str(uuid.uuid4())
+    make_dir(waiting, 30)
+    A.JOBS[waiting] = {"status": "awaiting_uploads", "log": [],
+                       "gate_deadline": time.time() + 3600}
+    check("nothing expired while inside the deadline", A._expire_stale_gates(), 0)
+    check("still awaiting", A.JOBS[waiting]["status"], "awaiting_uploads")
+    check("old dir survives while job is parked", A.prune_old_renders(), 0)
+    check("directory kept", exists(waiting), True)
+
+    A.JOBS[waiting]["gate_deadline"] = time.time() - 1
+    check("expired once past the deadline", A._expire_stale_gates(), 1)
+    check("marked failed", A.JOBS[waiting]["status"], "failed")
+    check("has an explanation", bool(A.JOBS[waiting].get("error")), True)
+    check("expiring twice is harmless", A._expire_stale_gates(), 0)
+    check("now prunable", A.prune_old_renders(), 1)
+    check("directory gone", exists(waiting), False)
+
+    # A gate with no deadline at all must not be swept -- an unrecognised state should
+    # stall visibly, not delete someone's job out from under them.
+    print("\na gate without a deadline is left alone:")
+    no_deadline = str(uuid.uuid4())
+    make_dir(no_deadline, 30)
+    A.JOBS[no_deadline] = {"status": "awaiting_uploads", "log": []}
+    check("not expired", A._expire_stale_gates(), 0)
+    check("still awaiting", A.JOBS[no_deadline]["status"], "awaiting_uploads")
+    check("directory kept", exists(no_deadline), True)
+
     print("\n" + ("ALL PASS" if not FAILURES else f"{len(FAILURES)} FAILURE(S): {FAILURES}"))
     return 1 if FAILURES else 0
 

@@ -40,15 +40,19 @@ OUT_PATH = os.path.join(BRAND_DIR, "watermark.png")
 # is to make a video obviously un-postable while leaving it readable enough to
 # judge. Tiled and rotated does that; a single mark does not.
 CANVAS_W, CANVAS_H = 1080, 1920
-FONT_SIZE = 52
-# Rows x columns of marks. 3x2 puts 6 on screen, with alternate rows offset half
-# a column so the tiling doesn't read as a rigid grid.
-ROWS, COLS = 3, 2
+FONT_SIZE = 58
+# Rows x columns of marks, with alternate rows offset half a column so the tiling
+# doesn't read as a rigid grid. 4x3 puts 12 on screen: the earlier 3x2 left large
+# clear areas between marks, and a free video has to be obviously unusable at a
+# glance rather than merely annotated.
+ROWS, COLS = 4, 3
 ANGLE_DEG = -30
-# Low enough to see the footage through it, high enough that nobody publishes it.
-# The paired shadow is what keeps it legible over bright frames -- pure white at
-# this opacity vanishes against pale artwork on its own.
-MARK_OPACITY = 0.20
+# Deliberately assertive. The free tier exists to show what the tool does, not to
+# hand over a postable video, so this sits well above "tasteful" -- you can still
+# read the frame and judge the result, but publishing it is not an option. The
+# paired shadow keeps the letterforms legible over bright artwork, where flat
+# white would otherwise disappear.
+MARK_OPACITY = 0.34
 
 
 def _find_chrome() -> str:
