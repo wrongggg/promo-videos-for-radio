@@ -425,14 +425,15 @@ PRESET_THEMES = {
             {"bg1": "#101c1e", "bg2": "#030708", "accent": "#7fd8cd", "accent2": "#c4ece7", "orb1": "#2c6159", "orb2": "#569089"},
         ],
     },
-    "bulletin": {
-        "label": "Bulletin", "style": "swiss", "layout": "press",
-        "motion": "calm", "frame": "clean",
-        "palettes": [
-            {"bg1": "#191b1e", "bg2": "#040506", "accent": "#c6ccd2", "accent2": "#8b9299", "orb1": "#343a40", "orb2": "#5b6268"},
-            {"bg1": "#141a1c", "bg2": "#030506", "accent": "#a8c4c9", "accent2": "#d5e2e4", "orb1": "#2c4448", "orb2": "#527076"},
-        ],
-    },
+    # Bulletin (swiss style / press layout) was cut, and it is worth naming the
+    # pattern it came out of. Four themes sat in a 2x2 -- {plate, swiss} styles
+    # crossed with {gallery, press} layouts -- so Gallery/Swiss and
+    # Plate/Bulletin were each a pair identical in crop and composition,
+    # differing only serif-vs-sans, which is not a choice anyone can see at
+    # tile size. Bulletin was the corner that went: the sans voice survives in
+    # Swiss, the press geometry in Plate and Slab. Gallery and Swiss remain the
+    # other such pair, so PRESET_ORDER keeps them apart rather than inviting
+    # the comparison.
     "gallery": {
         "label": "Gallery", "style": "plate", "layout": "gallery",
         "motion": "calm", "frame": "clean",
@@ -474,23 +475,13 @@ PRESET_THEMES = {
             {"bg1": "#0f1a1a", "bg2": "#010404", "accent": "#5eead4", "accent2": "#ccfbf1", "orb1": "#115e59", "orb2": "#3f8f8a"},
         ],
     },
-    "catalogue": {
-        "label": "Catalogue", "style": "index", "layout": "gallery", "transition": "pixelate",
-        "motion": "normal", "frame": "clean",
-        "palettes": [
-            {"bg1": "#16181a", "bg2": "#020303", "accent": "#f2f2ef", "accent2": "#9aa0a6", "orb1": "#2e3235", "orb2": "#565c61"},
-            {"bg1": "#1a1710", "bg2": "#040302", "accent": "#e8b923", "accent2": "#f2f2ef", "orb1": "#5c4a12", "orb2": "#8a7a3f"},
-        ],
-    },
-    "pop": {
-        "label": "Pop", "style": "poppy", "layout": "canvas",
-        "motion": "energetic", "frame": "clean",
-        "palettes": [
-            {"bg1": "#2b0a3d", "bg2": "#0a0210", "accent": "#ff2e88", "accent2": "#ffd166", "orb1": "#ff2e88", "orb2": "#ffd166"},
-            {"bg1": "#062a3d", "bg2": "#01080d", "accent": "#00e5ff", "accent2": "#ff6b9d", "orb1": "#00e5ff", "orb2": "#ff6b9d"},
-            {"bg1": "#3d1400", "bg2": "#0d0400", "accent": "#ff9f1c", "accent2": "#ffe066", "orb1": "#ff9f1c", "orb2": "#ff5e5b"},
-        ],
-    },
+    # Catalogue (index/gallery) and Pop (poppy/canvas) were cut from the picker:
+    # 23 tiles was more choice than the decision deserves, and these two were
+    # the ones a user was least likely to miss -- Catalogue reads as a quieter
+    # Gallery, and Pop's bright card is the furthest thing here from a radio
+    # promo. Their STYLES entries stay in the vocabulary: nothing else costs
+    # them, and STYLE_MENU still offers both to the custom-theme prompt, so the
+    # looks remain reachable without occupying a tile.
     "kinetic": {
         "label": "Kinetic", "style": "kinetic", "layout": "bleed",
         "motion": "energetic", "frame": "glow-frame",
@@ -555,7 +546,88 @@ PRESET_THEMES = {
             {"bg1": "#0f1118", "bg2": "#020203", "accent": "#a5b4fc", "accent2": "#e0e7ff", "orb1": "#2a3157", "orb2": "#525c8f"},
         ],
     },
+
+    # --- the contemporary five ---------------------------------------------
+    "chrome": {
+        "label": "Chrome", "style": "chrome", "layout": "bleed",
+        "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#16062e", "bg2": "#040108", "accent": "#b18cff", "accent2": "#59f3ff", "orb1": "#5a2ea6", "orb2": "#0e8fa8"},
+            {"bg1": "#2e0620", "bg2": "#080105", "accent": "#ff5ea8", "accent2": "#ffd166", "orb1": "#a62e6b", "orb2": "#b8860b"},
+        ],
+    },
+    "ink": {
+        "label": "Ink", "style": "flux", "layout": "strip", "transition": "dissolve",
+        "motion": "calm", "frame": "film-grain",
+        "palettes": [
+            {"bg1": "#1c1a17", "bg2": "#050404", "accent": "#b5a48c", "accent2": "#e6dccb", "orb1": "#4a4234", "orb2": "#7d7159"},
+            {"bg1": "#171a1c", "bg2": "#040505", "accent": "#8ca6b5", "accent2": "#cbdce6", "orb1": "#34424a", "orb2": "#59707d"},
+        ],
+    },
+    "cutout": {
+        "label": "Cutout", "style": "cutout", "layout": "gallery", "transition": "swap",
+        "motion": "normal", "frame": "clean",
+        "palettes": [
+            {"bg1": "#18181a", "bg2": "#030303", "accent": "#e8e8e4", "accent2": "#9a9aa0", "orb1": "#303034", "orb2": "#5a5a60"},
+            {"bg1": "#1a1614", "bg2": "#040302", "accent": "#e0b894", "accent2": "#f2e4d4", "orb1": "#5c4430", "orb2": "#8f6f52"},
+        ],
+    },
+    "reel": {
+        "label": "Reel", "style": "reel", "layout": "bleed", "transition": "slide",
+        "motion": "energetic", "frame": "clean",
+        "palettes": [
+            {"bg1": "#200808", "bg2": "#060101", "accent": "#ff3b30", "accent2": "#ffe8e6", "orb1": "#8f1c14", "orb2": "#c9564d"},
+            {"bg1": "#081420", "bg2": "#010306", "accent": "#37b6ff", "accent2": "#e2f4ff", "orb1": "#14508f", "orb2": "#4d86c9"},
+        ],
+    },
+    "coverstar": {
+        "label": "Cover Star", "style": "coverpiece", "layout": "cover", "transition": "dissolve",
+        "motion": "calm", "frame": "clean",
+        "palettes": [
+            {"bg1": "#1a1a1a", "bg2": "#000000", "accent": "#111214", "accent2": "#8a8a8a", "orb1": "#3a3a3a", "orb2": "#6a6a6a"},
+            {"bg1": "#1a1214", "bg2": "#040202", "accent": "#c2453a", "accent2": "#2b2b2b", "orb1": "#7a2a22", "orb2": "#4a4a4a"},
+        ],
+    },
 }
+
+# The order the picker shows them in, which is a different decision from the
+# order they are authored in above -- and one worth making explicitly, because
+# the authored order is chronological. Themes were added in waves, so the loud
+# ones (the display faces, the masked and cut-out headlines, the colour font)
+# all arrived last and all sat together at the bottom of the grid. Anyone
+# scanning the first row saw four quiet, largely interchangeable tiles and had
+# no reason to believe the tool did anything else.
+#
+# So: alternate. Every row of four in the picker carries at least one quiet
+# theme and at least one loud one, and the range is visible before any
+# scrolling happens. Classic stays first because it is DEFAULT_PRESET and the
+# safe pick belongs where the eye lands first.
+#
+# Adding a theme above without naming it here is a mistake, not a default --
+# the assertion below is what turns it into a startup failure instead of a
+# theme that silently never appears in the picker.
+#
+# The grid is four wide, so "next to" means horizontally AND vertically: a
+# theme four places later sits directly underneath. Gallery and Swiss are the
+# remaining pair that share a layout and differ only by typeface, so they are
+# placed to share neither a row nor a column position -- an earlier
+# arrangement stacked the pale themes in column 3 and the picker grew a stripe
+# of near-identical tiles down its middle.
+PRESET_ORDER = (
+    # quiet         loud            quiet           loud
+    "classic",      "xl",           "gallery",      "chrome",
+    "halo",         "cutout",       "marquee",      "kinetic",
+    "swiss",        "split",        "ink",          "coverstar",
+    "tide",         "slab",         "nightshift",   "reel",
+    "plate",        "offcut",       "terminal",     "coverline",
+)
+
+assert set(PRESET_ORDER) == set(PRESET_THEMES), (
+    "PRESET_ORDER and PRESET_THEMES disagree: "
+    f"unplaced={sorted(set(PRESET_THEMES) - set(PRESET_ORDER))} "
+    f"unknown={sorted(set(PRESET_ORDER) - set(PRESET_THEMES))}"
+)
+PRESET_THEMES = {key: PRESET_THEMES[key] for key in PRESET_ORDER}
 
 
 HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
