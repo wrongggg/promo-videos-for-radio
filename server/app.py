@@ -1514,9 +1514,9 @@ def story_action(job_id):
 
 @app.route("/tracks/<job_id>", methods=["POST"])
 def confirm_tracks(job_id):
-    """Apply the cover and tagline choices from the tracklist screen, then render.
+    """Apply the cover, tagline and removal choices from the tracklist screen, then render.
 
-    Both maps are sparse -- only tracks the user actually changed appear, so an empty
+    Everything here is sparse -- only tracks the user actually changed appear, so an empty
     body means "everything as proposed"."""
     job = JOBS.get(job_id)
     if not job:
@@ -1566,6 +1566,44 @@ def confirm_tracks(job_id):
             "license": option.get("license", ""),
         })
         _log(job, f"Cover swapped for {item['track']['artist']} ({option['source']}).")
+
+    # Removals come last, on purpose: the two loops above address tracks by their index in
+    # the list the screen was built from, and dropping an entry renumbers everything after
+    # it. Editing first and deleting second means neither loop has to know about the other.
+    #
+    # The pair of lists is rebuilt rather than mutated in place so standout and resolved
+    # stay index-aligned -- _apply_story_order and the render both walk them together, and
+    # a drop applied to one and not the other would silently pair a track with another
+    # track's artwork.
+    drop = set()
+    for key in body.get("dropped") or []:
+        try:
+            i = int(key)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < len(job["standout"]):
+            drop.add(i)
+    # Never empty the promo. The client disables the last row's trash, so reaching this is
+    # a stale page or a hand-made request; keeping the last track beats failing the render.
+    if drop and len(drop) < len(job["standout"]):
+        for i in sorted(drop):
+            t = job["standout"][i]["track"]
+            _log(job, f"Removed {t['artist']} - {t['title']} from the promo.")
+        closing_dropped = (len(job["standout"]) - 1) in drop
+        job["standout"] = [s for i, s in enumerate(job["standout"]) if i not in drop]
+        job["resolved"] = [r for i, r in enumerate(job["resolved"]) if i not in drop]
+        # The closing track's audio is extended to play under the outro card, so removing
+        # it leaves whatever is now last running out early. Same repair /skip makes when
+        # an upload is skipped off the end.
+        if closing_dropped and job["standout"][-1]["media"]["audio"]:
+            _extend_closing_audio(job, job["resolved"][-1], job["job_dir"],
+                                  job["scene_duration"],
+                                  allow_youtube=job.get("allow_youtube", False),
+                                  cookie_file=job.get("cookie_file"))
+            if job["resolved"][-1]["media"]["audio"]:
+                job["standout"][-1]["media"]["audio"] = job["resolved"][-1]["media"]["audio"]
+    elif drop:
+        _log(job, "Ignored a request to remove every track -- a promo needs at least one.")
 
     job["tracks_confirmed"] = True
     job.pop("track_choices", None)

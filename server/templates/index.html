@@ -496,6 +496,16 @@
         .cover-nav button:disabled { opacity: 0.35; cursor: default; }
         .cover-meta { font-size: 11px; color: var(--text-muted); flex: 1; }
         .cover-side { flex: 1; min-width: 0; }
+        /* The trash sits on the title line rather than at the end of the row, so it reads
+           as "remove this track" and not as an action on the tagline field below it. */
+        .cover-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+        .cover-head .cover-title { flex: 1; min-width: 0; margin-bottom: 0; }
+        .cover-head .icon-btn { flex: none; width: 30px; align-self: flex-start; padding: 4px 0; }
+        .cover-head .icon-btn svg { width: 14px; height: 14px; }
+        /* The last track cannot go -- a promo with nothing in it is not a promo, and a
+           button that fails on click is worse than one that says why it can't. */
+        .cover-head .icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .cover-head .icon-btn:disabled:hover { background: rgba(0,0,0,0.035); color: var(--text-muted); }
         .cover-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
         .cover-title span { font-weight: 400; color: var(--text-muted); }
         .tagline-input {
@@ -1655,6 +1665,7 @@ function storyAction(payload) {
 // re-rendered, so a poll can't wipe what someone is typing.
 let trackChoices = null;      // the rows as served
 let coverPicks = {};          // index -> option id
+let droppedTracks = new Set();  // indices the user removed on the review screen
 let tracksRendered = false;
 
 function loadThumb(url) {
@@ -1686,7 +1697,15 @@ function renderCoverRow(row) {
             </div>
         </div>
         <div class="cover-side">
-            <div class="cover-title"></div>
+            <div class="cover-head">
+                <div class="cover-title"></div>
+                <button type="button" class="icon-btn" data-danger data-drop
+                        data-tip="Remove this track" aria-label="Remove this track">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3.5 6h17"/><path d="M9 6V3.8h6V6"/><path d="M6 6l1 14.2h10L18 6"/>
+                    </svg>
+                </button>
+            </div>
             <input class="tagline-input" type="text" maxlength="200"
                    placeholder="a line to show under the title (optional)">
             <div class="tagline-count"></div>
@@ -1730,9 +1749,33 @@ function renderCoverRow(row) {
     }
     input.addEventListener("input", countUp);
     countUp();
+
+    // Removing is local until Generate: the row disappears, its index joins droppedTracks
+    // and goes up with the rest of the choices. Nothing is deleted server-side while the
+    // person is still deciding, so a mistake costs a click on Start over rather than a
+    // re-render, and the covers already fetched for the other tracks stay warm.
+    wrap.querySelector("[data-drop]").addEventListener("click", () => {
+        droppedTracks.add(String(row.index));
+        delete coverPicks[row.index];
+        wrap.remove();
+        syncDropButtons();
+    });
+
     wrap.dataset.index = row.index;
     paint();
     return wrap;
+}
+
+// A promo needs at least one track, so the last remaining row's trash is disabled rather
+// than left to fail on the server -- the reason is on the tooltip where the click lands.
+function syncDropButtons() {
+    const rows = document.querySelectorAll("#trackRows .cover-row");
+    rows.forEach((r) => {
+        const btn = r.querySelector("[data-drop]");
+        btn.disabled = rows.length <= 1;
+        btn.dataset.tip = rows.length <= 1
+            ? "A promo needs at least one track" : "Remove this track";
+    });
 }
 
 function renderTrackRows(rows) {
@@ -1740,6 +1783,7 @@ function renderTrackRows(rows) {
     box.textContent = "Loading covers…";
     trackChoices = rows;
     coverPicks = {};
+    droppedTracks = new Set();
     // Every thumbnail is checked before anything is drawn, so the counter reflects the
     // covers that actually exist rather than the ones that were offered.
     Promise.all(rows.map((row) =>
@@ -1748,6 +1792,7 @@ function renderTrackRows(rows) {
     )).then(() => {
         box.textContent = "";
         rows.forEach((row) => box.appendChild(renderCoverRow(row)));
+        syncDropButtons();
     });
 }
 
@@ -1761,7 +1806,8 @@ function confirmTracks() {
     fetch(`/tracks/${currentJobId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ covers: coverPicks, lines: lines }),
+        body: JSON.stringify({ covers: coverPicks, lines: lines,
+                               dropped: [...droppedTracks] }),
     }).then((r) => r.json()).then(() => {
         document.getElementById("tracksBox").style.display = "none";
         pollStatus();
