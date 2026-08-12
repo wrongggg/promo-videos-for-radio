@@ -1,0 +1,67 @@
+{% extends "legal_base.html" %}
+{% block title %}Pricing{% endblock %}
+{% block heading %}Pricing{% endblock %}
+{% block body %}
+
+<style>
+    .plans { display: grid; gap: 12px; margin: 6px 0 4px; }
+    @media (min-width: 620px) { .plans { grid-template-columns: repeat(3, 1fr); } }
+    .plan {
+        border: 1px solid var(--border); border-radius: 14px;
+        padding: 16px 18px; background: rgba(255,255,255,0.55);
+    }
+    .plan h3 { margin: 0 0 2px; font-size: 15px; }
+    .plan .amount { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .plan .amount span { font-size: 13px; font-weight: 400; color: var(--text-muted); }
+    .plan .exports { font-size: 13px; margin: 6px 0 2px; }
+    .plan .note { font-size: 12.5px; color: var(--text-muted); margin: 0; }
+    table.packs { border-collapse: collapse; width: 100%; margin: 6px 0 4px; }
+    table.packs th, table.packs td {
+        text-align: left; font-size: 14px; padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+    }
+    table.packs th { color: var(--text-muted); font-weight: 600; font-size: 12.5px; }
+</style>
+
+<p>Making a video is always free, and you can make as many as you like. You
+only pay to download one without a watermark across it. One credit buys one
+watermark&#8209;free export, and re&#8209;downloading a video you have already
+paid for never costs another.</p>
+
+<h2>Monthly plans</h2>
+<div class="plans">
+    {% for p in subscriptions %}
+    <div class="plan">
+        <h3>{{ p.name }}</h3>
+        <div class="amount">${{ p.price }}<span> / month</span></div>
+        <p class="exports"><strong>{{ p.exports }}</strong> watermark-free exports a month</p>
+        <p class="note">{{ p.note }}</p>
+    </div>
+    {% endfor %}
+</div>
+<p>Plan credits refresh each month and don't roll over. Cancel whenever you
+like from the customer portal — see <a href="{{ url_for('refunds') }}">Refunds
+&amp; Cancellations</a>.</p>
+
+<h2>One-off credit packs</h2>
+<p>No subscription, and these credits never expire.</p>
+<table class="packs">
+    <tr><th>Credits</th><th>Price</th></tr>
+    {% for p in packs %}
+    <tr><td>{{ p.credits }}</td><td>${{ p.price }}</td></tr>
+    {% endfor %}
+</table>
+
+<h2>What you're charged</h2>
+<p>All prices are in US dollars. Payments are handled by Paddle, who act as the
+merchant of record — they appear on your statement, and they collect any sales
+tax or VAT due in your country, shown before you confirm.</p>
+
+{% if not paywall %}
+<h2>While we're in beta</h2>
+<p>Billing isn't switched on yet. Every export from {{ brand_name }} is
+currently free and without a watermark, no account needed. The prices above are
+what will apply once billing opens.</p>
+{% endif %}
+
+{% endblock %}
