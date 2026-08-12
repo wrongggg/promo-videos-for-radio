@@ -151,8 +151,22 @@
            is capped so its controls can never squeeze the two text fields. */
         .row.identity { grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(120px, 160px); align-items: start; }
         .row.identity .logo-controls { flex-wrap: nowrap; }
-        #logoPickGroup { margin: -4px 0 14px; }
-        #logoPickGroup input[type="file"] { max-width: 100%; font-size: 12px; }
+        /* Three across stops working once the text fields drop under ~150px: the
+           placeholder truncates to "Your sh", and both labels wrap to two lines while the
+           short "Logo" beside them does not, so the row's baselines go ragged. The logo
+           is what moves, because a name you cannot read while typing it is worse than a
+           control one row further down -- and unlike the text fields it has a natural
+           minimum width it cannot go below anyway. */
+        @media (max-width: 620px) {
+            .row.identity { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+            .row.identity > .form-group:last-child { grid-column: 1 / -1; }
+        }
+        /* On a phone even two columns leaves ~120px a field, which truncates the
+           placeholder again. One per row: this section is three optional fields, so
+           length costs nothing -- the tracklist below is what people came to fill in. */
+        @media (max-width: 440px) {
+            .row.identity { grid-template-columns: minmax(0,1fr); }
+        }
         .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
         /* Pace / Language / Logo. The two selects are short values, so they get
            narrow fixed columns and the logo control takes the rest. */
@@ -190,7 +204,17 @@
                will appear rather than the raw file. */
             filter: brightness(0) invert(1);
         }
-        #logoToggle button { display: inline-flex; align-items: center; justify-content: center; }
+        /* Styled to sit in the row like the segmented controls it replaced, so the
+           identity row still reads as three controls of a kind. */
+        .logo-upload {
+            flex: 1; min-width: 0; margin: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.035); border: 1px solid var(--border-soft);
+            border-radius: 14px; color: var(--text-muted);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: background .12s, color .12s;
+        }
+        .logo-upload:hover { background: rgba(0,0,0,0.075); color: var(--text); }
         /* Controls for a logo that is already chosen. The file input's native
            "Choose File / No file chosen" is the right affordance for picking a
            logo and the wrong one for having picked one -- it reads as though
@@ -345,8 +369,25 @@
         /* Side by side and weighted, so they read as the same destination reached two
            ways. Stacked full-width they looked like unrelated buttons. */
         .submit-actions { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; }
-        .submit-actions button.primary { flex: 1.6 1 0; margin-top: 0; }
-        .submit-actions button.secondary { flex: 1 1 0; line-height: 1.3; margin-top: 0; }
+        .submit-actions button.primary { flex: 1 1 0; margin-top: 0; }
+        /* The shortcut, sized like one. It keeps a real button's affordance -- border,
+           background, full height -- but takes only what its label needs (flex-grow 0),
+           so the row reads as one call to action with an escape hatch beside it rather
+           than as two options of comparable weight. */
+        .submit-actions button.secondary {
+            flex: 0 1 auto; margin-top: 0; line-height: 1.3;
+            padding: 12px 14px; font-size: 13px; font-weight: 600;
+            color: var(--text-muted); white-space: nowrap;
+        }
+        .submit-actions button.secondary:hover { color: var(--text); }
+        /* Side by side on a phone the two end up nearly the same width -- the primary
+           shrinks to the row while the shortcut holds its label -- which is the opposite
+           of the intent. Stacked, the hierarchy comes from order and weight instead of
+           width, and both stay comfortably tappable. */
+        @media (max-width: 440px) {
+            .submit-actions { flex-direction: column; }
+            .submit-actions button.secondary { flex: none; width: 100%; }
+        }
         /* Order rather than markup order: which button leads depends on the mode, and
            the DOM order has to stay put for the form's own submit handling. */
         .submit-actions.review-first #reviewBtn { order: 0; }
@@ -629,12 +670,15 @@
                     <input type="text" name="episode_label" placeholder="Episode 42">
                 </div>
                 <div class="form-group">
-                    <label>Logo</label>
+                    <label>Logo <span class="label-note">optional</span></label>
                     <div class="logo-controls">
-                        <div class="segmented" id="logoToggle">
-                            <button type="button" data-value="show"{% if station_mode %} class="active"{% endif %}>Upload</button>
-                            <button type="button" data-value="none"{% if not station_mode %} class="active"{% endif %}>None</button>
-                        </div>
+                        <!-- One action, not a two-way switch. "None" was a state you had
+                             to select rather than the state you were already in, and it
+                             sat next to Upload as if the two were equal choices. Having
+                             no logo is simply what "optional" means; Remove is how you
+                             get back to it. -->
+                        <button type="button" class="logo-upload" id="logoUploadBtn"
+                                data-tip="Square or wide PNG, transparent background. Max 2 MB.">Upload</button>
                         <div class="logo-chosen" id="logoChosenGroup" style="display:none;">
                             <img id="logoChip" alt="">
                             <button type="button" class="icon-btn" id="logoReplaceBtn" data-tip="Replace logo" aria-label="Replace logo">
@@ -653,10 +697,12 @@
                 </div>
             </div>
 
-            <div id="logoPickGroup" style="display:none;">
-                <input type="file" id="logoInput" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp">
-                <p class="hint">Square or wide PNG, transparent background. Max 2&nbsp;MB.</p>
-            </div>
+            <!-- Always hidden, never removed: a display:none file input still submits its
+                 file, and both Upload and Replace reach it through .click(). The format
+                 and size note it used to carry now rides on Upload's tooltip, where it is
+                 read at the moment it matters instead of sitting in the form. -->
+            <input type="file" id="logoInput" name="logo" style="display:none"
+                   accept="image/png,image/jpeg,image/svg+xml,image/webp">
 
             <div class="form-group">
                 <label>Tracklist <span class="label-note">— one per line, as <strong>Artist - Title</strong>, artist first</span></label>
@@ -749,11 +795,15 @@
             {% endif %}
 
             <!-- One decision at two speeds, not two actions: both end in a rendered
-                 video, so both say so. -->
-            <div class="submit-actions">
-                <button type="submit" class="primary" id="submitBtn">Generate video</button>
-                <button type="submit" class="secondary" id="reviewBtn"
-                        title="Stop and show me what it decided, before it renders.">Continue to story</button>
+                 video. Reviewing leads in every mode, so the pair is fixed here rather
+                 than rewritten per mode in applySelectionMode. submitBtn stays first in
+                 the DOM because it is the form's default submit (Enter in the tracklist
+                 should not silently open a review screen); CSS order puts it second. -->
+            <div class="submit-actions review-first">
+                <button type="submit" class="secondary" id="submitBtn"
+                        title="Render straight away, without showing me what it chose.">Just generate</button>
+                <button type="submit" class="primary" id="reviewBtn"
+                        title="Stop and show me what it decided, before it renders.">Continue to review</button>
             </div>
             <input type="hidden" name="review_first" id="reviewFirstInput" value="">
         </form>
@@ -869,28 +919,17 @@ function setActive(container, value) {
 // scoped -- restoreDraftIfAny() calls it too.
 function applySelectionMode() {
     const story = selectionMode === "auto" || selectionMode === "brief";
-    // When there is a story to look at, looking at it is the recommended path -- so it
-    // gets the primary button and generating blind becomes the deliberate shortcut.
-    const submit = document.getElementById("submitBtn");
-    const review = document.getElementById("reviewBtn");
-    submit.className = story ? "secondary" : "primary";
-    review.className = story ? "primary" : "secondary";
-    document.querySelector(".submit-actions").classList.toggle("review-first", story);
+    // Reviewing is the recommended path in every mode -- there is always something the
+    // person has not seen yet, whether that is the story or just the covers -- so the
+    // pair of buttons no longer changes label, weight or order with the mode. Generating
+    // blind stays available as the deliberate shortcut it is.
     // The brief is optional when the AI is finding the story (a steer), and the whole
     // point when the user is supplying one -- same field, different weight.
     document.getElementById("userBriefGroup").style.display =
         selectionMode === "brief" ? "block" : "none";
     document.getElementById("briefNote").textContent =
         selectionMode === "brief" ? "— the story it should tell" : "";
-    // Named for the screen it opens, not for the act of reviewing: "continue" reads as
-    // the next step in one flow, where "review first" framed it as an extra chore
-    // standing between the person and their video. Which screen differs by mode -- the
-    // story path stops at the story, the manual path has no story and goes to the covers.
-    review.textContent = story ? "Continue to story" : "Continue to covers";
-    // The shortcut says only what it does. It used to argue with the button beside it
-    // ("Skip review, just generate"), which sold against the recommended path from
-    // inside the form.
-    submit.textContent = story ? "Just generate" : "Generate video";
+    // Labels are fixed in the markup now -- see the .submit-actions block.
 }
 
 document.getElementById("selectionModeToggle").addEventListener("click", (e) => {
@@ -923,15 +962,11 @@ function refreshLogoPreview() {
     // own upload, or the station mark a station session starts with.
     const chosen = on && (file || STATION_MODE);
 
-    // Picking a logo and having one are different states, so they get different
-    // controls -- the file input only appears while there is nothing to show.
-    // It stays in the DOM either way (a display:none input still submits its
-    // file), and Replace reaches it through .click().
-    document.getElementById("logoPickGroup").style.display = (on && !chosen) ? "block" : "none";
+    // Two states, one control each: Upload while there is nothing, chip plus
+    // Replace/Remove once there is. Never both -- side by side they crushed the two
+    // text fields beside them.
+    document.getElementById("logoUploadBtn").style.display = chosen ? "none" : "block";
     document.getElementById("logoChosenGroup").style.display = chosen ? "flex" : "none";
-    // With a logo in hand the Upload/None pair is redundant -- Remove is how you get
-    // back to no logo -- and showing both side by side crushed the two text fields.
-    document.getElementById("logoToggle").style.display = chosen ? "none" : "flex";
     if (!chosen) return;
 
     // Once something is chosen, show the thumbnail and the two things you can do
@@ -966,21 +1001,24 @@ document.getElementById("logoRemoveBtn").addEventListener("click", () => {
     // Remove means no logo, whether the mark came from an upload or from the
     // station default. Clearing only the upload and silently revealing the
     // station's underneath would leave a logo on screen right after the user
-    // asked for it to go; switching Show back on brings the default back.
+    // asked for it to go; uploading again is how you get one back.
     document.getElementById("useLogoInput").value = "none";
-    setActive(document.getElementById("logoToggle"), "none");
     refreshLogoPreview();
 });
 
-document.getElementById("logoToggle").addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    setActive(e.currentTarget, btn.dataset.value);
-    document.getElementById("useLogoInput").value = btn.dataset.value;
-    refreshLogoPreview();
+document.getElementById("logoUploadBtn").addEventListener("click", () => {
+    document.getElementById("logoInput").click();
 });
 
-document.getElementById("logoInput").addEventListener("change", refreshLogoPreview);
+// Choosing a file is what turns the logo on -- there is no separate "yes I want one"
+// step any more, because picking one is that step. Cancelling the picker leaves no
+// file and so changes nothing.
+document.getElementById("logoInput").addEventListener("change", () => {
+    if (document.getElementById("logoInput").files[0]) {
+        document.getElementById("useLogoInput").value = "show";
+    }
+    refreshLogoPreview();
+});
 
 document.getElementById("trackList").addEventListener("change", (e) => {
     if (PERSONAL_MODE || e.target.type !== "checkbox") return;
