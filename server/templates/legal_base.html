@@ -42,6 +42,7 @@
 <body>
 <nav>
     <a href="{{ url_for('index') }}">← {{ brand_name }}</a>
+    <a href="{{ url_for('pricing') }}" {% if page == 'pricing' %}aria-current="page"{% endif %}>Pricing</a>
     <a href="{{ url_for('terms') }}" {% if page == 'terms' %}aria-current="page"{% endif %}>Terms</a>
     <a href="{{ url_for('refunds') }}" {% if page == 'refunds' %}aria-current="page"{% endif %}>Refunds</a>
     <a href="{{ url_for('privacy') }}" {% if page == 'privacy' %}aria-current="page"{% endif %}>Privacy</a>

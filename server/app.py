@@ -1037,6 +1037,41 @@ def _run_render_stage(job_id):
 # the container last restarted.
 LEGAL_LAST_UPDATED = "31 July 2026"
 
+# The published catalogue. Paddle's review compares the prices shown here
+# against the live Paddle catalogue, so these two must not drift: change a
+# number here and you must change the matching Paddle price, and vice versa.
+# Prices are USD, which is what Paddle bills in; it handles local display and
+# tax itself as merchant of record.
+#
+# Note the app itself never reads these -- it only knows price id -> credits
+# (see paddle.price_map). Names and amounts exist here purely to be published.
+SUBSCRIPTIONS = [
+    {"name": "Solo", "price": 5, "exports": 5,
+     "note": "A weekly show, comfortably."},
+    {"name": "Resident", "price": 12, "exports": 15,
+     "note": "Several shows, or a busy month."},
+    {"name": "Station", "price": 29, "exports": 45,
+     "note": "A full schedule, or a team sharing one account."},
+]
+
+# One-time, never expiring. They exist so an occasional user isn't pushed into
+# a subscription they'd forget to cancel.
+CREDIT_PACKS = [
+    {"credits": 3, "price": 5},
+    {"credits": 10, "price": 12},
+    {"credits": 25, "price": 25},
+]
+
+
+@app.route("/pricing")
+def pricing():
+    """Public pricing. Required by Paddle's website review, and reachable from
+    the footer rather than buried, which that review also checks for."""
+    return render_template(
+        "pricing.html", page="pricing", last_updated=LEGAL_LAST_UPDATED,
+        subscriptions=SUBSCRIPTIONS, packs=CREDIT_PACKS, paywall=PAYWALL,
+    )
+
 
 @app.route("/terms")
 def terms():
