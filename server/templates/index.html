@@ -609,7 +609,11 @@
                          the brand_name variable for that reason -- this is a
                          typographic choice about one slot, not the brand. -->
                     <h1 class="wordmark">onrepeat</h1>
-                    <p class="subtitle">Music showcase reel for your radio show or event, ready to share.</p>
+                    <!-- Radio shows only for now. Events were in this line before the
+                         product had anything event-shaped in it: no lineup, no date, no
+                         venue, and a tracklist is the wrong input for one. Claiming the
+                         use case ahead of supporting it sets up the wrong expectation. -->
+                    <p class="subtitle">Music showcase reel for your radio show, ready to share.</p>
                 </div>
             </div>
         </div>
@@ -747,9 +751,9 @@
             <!-- One decision at two speeds, not two actions: both end in a rendered
                  video, so both say so. -->
             <div class="submit-actions">
-                <button type="submit" class="primary" id="submitBtn">Generate Promo Video Now</button>
+                <button type="submit" class="primary" id="submitBtn">Generate video</button>
                 <button type="submit" class="secondary" id="reviewBtn"
-                        title="Stop and show me what it decided, before it renders.">Find the story for me</button>
+                        title="Stop and show me what it decided, before it renders.">Continue to story</button>
             </div>
             <input type="hidden" name="review_first" id="reviewFirstInput" value="">
         </form>
@@ -878,13 +882,15 @@ function applySelectionMode() {
         selectionMode === "brief" ? "block" : "none";
     document.getElementById("briefNote").textContent =
         selectionMode === "brief" ? "— the story it should tell" : "";
-    // Named for what the button actually does in this mode, rather than one generic
-    // "review first" label stretched across three different next steps.
-    review.textContent =
-        selectionMode === "auto" ? "Find the story for me"
-        : selectionMode === "brief" ? "Build my story first"
-        : "Review covers first";
-    submit.textContent = story ? "Skip review, just generate" : "Generate Promo Video Now";
+    // Named for the screen it opens, not for the act of reviewing: "continue" reads as
+    // the next step in one flow, where "review first" framed it as an extra chore
+    // standing between the person and their video. Which screen differs by mode -- the
+    // story path stops at the story, the manual path has no story and goes to the covers.
+    review.textContent = story ? "Continue to story" : "Continue to covers";
+    // The shortcut says only what it does. It used to argue with the button beside it
+    // ("Skip review, just generate"), which sold against the recommended path from
+    // inside the form.
+    submit.textContent = story ? "Just generate" : "Generate video";
 }
 
 document.getElementById("selectionModeToggle").addEventListener("click", (e) => {

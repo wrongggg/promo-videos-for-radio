@@ -216,7 +216,15 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
 
 
 def sign_in_available() -> bool:
-    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+    """Whether to offer Google sign-in -- checked by the UI and by both auth routes,
+    so hiding the button also closes the door rather than just painting over it.
+
+    Gated on PAYWALL as well as its own credentials: an account exists to hold credits
+    and to attach a purchase to, and with the paywall off there is nothing to hold and
+    nothing to buy. Signing in would cost the visitor a Google consent screen and get
+    them a badge reading zero. Operator access is a separate token route and is
+    unaffected."""
+    return PAYWALL and bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
 @app.context_processor
@@ -1048,7 +1056,8 @@ def privacy():
 @app.route("/auth/google")
 def auth_google():
     if not sign_in_available():
-        return "Google sign-in isn't configured (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET).", 503
+        return ("Sign-in is off right now -- every export is free and unwatermarked, "
+                "so there is nothing an account would get you."), 503
     session["post_login_redirect"] = request.args.get("next") or url_for("index")
     return oauth.google.authorize_redirect(url_for("auth_google_callback", _external=True))
 
@@ -1274,8 +1283,8 @@ def start():
     is_admin_user = access.is_operator()
 
     # With sign-in gone there's nothing in front of a job that spends Anthropic
-    # tokens and render CPU, so an anonymous visitor gets a daily cap. The
-    # operator is exempt.
+    # tokens and render CPU, so an anonymous visitor can be given a daily cap.
+    # Off by default -- see access.DAILY_JOB_LIMIT. The operator is exempt.
     allowed, remaining = access.check_job_quota()
     if not allowed:
         return jsonify({

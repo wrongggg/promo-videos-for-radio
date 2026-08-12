@@ -37,17 +37,19 @@ def _env(name: str) -> str:
 
 # Jobs per IP per rolling 24h for anonymous visitors. The operator is exempt.
 #
-# This was 25 back when generating was the whole product and the only risk was a
-# scraper running up an Anthropic bill. Now that a free render is the marketing
-# for a paid export, the number that matters is "enough to be convinced, not
-# enough to never need an account": a weekly show makes one promo a week, so
-# three a day is already generous, and anyone who genuinely wants more is the
-# person we want signing in.
+# OFF by default (0 = no cap). A cap of three a day only made sense as the shape of a
+# free tier -- "enough to be convinced, not enough to never need an account" -- and there
+# is no account to push anyone towards while sign-in and the paywall are switched off.
+# Capping people in that state is all cost and no conversion: the person who hits the
+# limit is someone using the tool, and they have nothing to buy and nowhere to sign in.
 #
-# Deliberately still per-IP and not per-account: this cap has to hold for
-# visitors who have not signed in, which is exactly when we know least about
-# them. Raise it with DAILY_JOB_LIMIT if a station behind one NAT complains.
-DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "3"))
+# The mechanism stays because the risk it covers is real -- a scraper running up an
+# Anthropic bill -- and it is one env var away. Set DAILY_JOB_LIMIT to a positive number
+# to bring it back, most likely alongside PAYWALL.
+#
+# Deliberately per-IP and not per-account: this has to hold for visitors who have not
+# signed in, which is exactly when we know least about them.
+DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "0"))
 _WINDOW = 24 * 3600
 
 _lock = threading.Lock()
@@ -150,7 +152,12 @@ def _client_ip() -> str:
 
 
 def check_job_quota() -> tuple[bool, int]:
-    """Returns (allowed, remaining). Records the job when allowed."""
+    """Returns (allowed, remaining). Records the job when allowed.
+
+    A limit of 0 means no cap. Checked before the bookkeeping so an uncapped instance
+    does not accumulate a timestamp list per IP for a number nothing ever reads."""
+    if DAILY_JOB_LIMIT <= 0:
+        return True, 0
     if is_operator():
         return True, DAILY_JOB_LIMIT
 
