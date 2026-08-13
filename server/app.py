@@ -175,6 +175,10 @@ YOUTUBE_COOKIE_FILE = os.environ.get("YOUTUBE_COOKIE_FILE") or None
 # what the terms already say happens -- see media_finder's module docstring.
 # CLIENT_FETCH_AUDIO=0 reverts to server-side fetching without a code change.
 CLIENT_FETCH_AUDIO = os.environ.get("CLIENT_FETCH_AUDIO", "1") != "0"
+# Which keys of a standout entry's `media` hold a file path. Everything else in
+# there (scene_seconds) is data the composition reads as a number, and must not
+# be run through _composition_path.
+MEDIA_PATH_KEYS = frozenset({"video", "audio", "image", "artwork", "artist_image"})
 # A catalog preview is 30s of AAC/MP3 -- about 1MB. The cap is what stops the
 # endpoint being a disk-fill for anyone holding a job id.
 MAX_PREVIEW_BYTES = 8 * 1024 * 1024
@@ -494,19 +498,36 @@ def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=
 
 
 def _extend_closing_audio(job, last_entry, job_dir, scene_duration, allow_youtube=False, cookie_file=None):
-    extended = scene_duration + compose.OUTRO_DURATION
     track_obj = last_entry["track_obj"]
     idx = last_entry["media_index"]
     _log(job, f"Extending closing track's audio to cover the outro card...")
     try:
-        audio_path = media_finder.find_audio_only(
-            track_obj, job_dir, idx, audio_duration=extended,
+        audio_path, scene_seconds = media_finder.find_audio_only(
+            track_obj, job_dir, idx, scene_target=scene_duration,
+            extra=compose.OUTRO_DURATION,
             allow_youtube=allow_youtube, cookie_file=cookie_file,
         )
         if audio_path:
             last_entry["media"]["audio"] = audio_path
+            # The re-cut chose its own window and its own bar alignment; the
+            # scene has to be laid out at that length or the bed runs past it.
+            if scene_seconds:
+                last_entry["media"]["scene_seconds"] = scene_seconds
     except Exception as e:
         _log(job, f"  could not extend closing audio ({e}) — outro may be quiet")
+
+
+def _adopt_reextended_closing(job):
+    """Copy a re-extended closing track's audio back onto the standout entry.
+
+    Both the length and the file have to move together: the re-cut picks its own
+    window and so its own bar alignment, and a scene left at the previous length
+    would drift against the audio actually playing under it."""
+    src = job["resolved"][-1]["media"]
+    dest = job["standout"][-1]["media"]
+    dest["audio"] = src["audio"]
+    if src.get("scene_seconds"):
+        dest["scene_seconds"] = src["scene_seconds"]
 
 
 def _friendly_error(e: Exception) -> str:
@@ -845,9 +866,10 @@ def _run_media_stage(job_id):
     if client_fetch:
         # Nothing to extend yet -- the closing track just asks for a longer trim when
         # its bytes arrive, which also spares the second fetch the server path needs.
+        # Only the bed grows: the scene itself still gets rounded to a bar.
         closing = resolved[-1]["media"]
         if closing.get("audio_url"):
-            closing["audio_seconds"] = scene_duration + compose.OUTRO_DURATION
+            closing["audio_extra"] = compose.OUTRO_DURATION
         else:
             _extend_closing_audio(job, resolved[-1], job_dir, scene_duration,
                                   allow_youtube=allow_youtube, cookie_file=cookie_file)
@@ -872,6 +894,9 @@ def _run_media_stage(job_id):
         "video": r["media"]["video"],
         "audio": r["media"]["audio"],
         "image": r["media"]["image"],
+        # None until the audio has been cut; compose falls back to the job's
+        # requested pace for any scene that never got a tempo.
+        "scene_seconds": r["media"].get("scene_seconds"),
     }} for r in resolved]
 
     # One gate covers both cases. A row with `fetch_url` is fetched by the page
@@ -887,6 +912,7 @@ def _run_media_stage(job_id):
             "title": s["track"]["title"],
             "fetch_url": r["media"].get("audio_url"),
             "seconds": r["media"].get("audio_seconds"),
+            "extra": r["media"].get("audio_extra") or 0.0,
         })
 
     video_count = sum(1 for r in resolved if r["has_video"])
@@ -1011,8 +1037,12 @@ def _run_render_stage(job_id):
         # Absolute job paths become document-root-relative here and nowhere
         # else -- this is the boundary between "paths we read" and "paths the
         # browser fetches". See _composition_path.
-        standout = [{**item, "media": {k: _composition_path(v) for k, v in item["media"].items()}}
-                    for item in job["standout"]]
+        #
+        # Only the path-valued entries: media also carries scene_seconds, which
+        # is a duration and must reach compose as the number it is.
+        standout = [{**item, "media": {
+            k: (_composition_path(v) if k in MEDIA_PATH_KEYS else v)
+            for k, v in item["media"].items()}} for item in job["standout"]]
         html = compose.build_composition_html(
             job["show_name"], job["episode_label"], standout, job["remaining"],
             job["theme"], job["scene_duration"], language=job.get("language", "en"),
@@ -1679,7 +1709,7 @@ def confirm_tracks(job_id):
                                   allow_youtube=job.get("allow_youtube", False),
                                   cookie_file=job.get("cookie_file"))
             if job["resolved"][-1]["media"]["audio"]:
-                job["standout"][-1]["media"]["audio"] = job["resolved"][-1]["media"]["audio"]
+                _adopt_reextended_closing(job)
     elif drop:
         _log(job, "Ignored a request to remove every track -- a promo needs at least one.")
 
@@ -1766,8 +1796,9 @@ def preview_audio(job_id, track_index):
         if os.path.getsize(raw) > MAX_PREVIEW_BYTES:
             return jsonify({"error": "preview too large"}), 413
         dest = os.path.join(job_dir, f"track{track_index}_audio.m4a")
-        trimmed = media_finder.trim_uploaded_preview(
-            raw, dest, pending.get("seconds") or job["scene_duration"])
+        trimmed, scene_seconds = media_finder.trim_uploaded_preview(
+            raw, dest, pending.get("seconds") or job["scene_duration"],
+            extra=pending.get("extra") or 0.0)
     finally:
         try:
             os.remove(raw)
@@ -1779,8 +1810,10 @@ def preview_audio(job_id, track_index):
         return jsonify({"error": "could not read that preview"}), 400
 
     job["standout"][track_index]["media"]["audio"] = trimmed
+    job["standout"][track_index]["media"]["scene_seconds"] = scene_seconds
     job["needs_upload"] = [u for u in job["needs_upload"] if u["index"] != track_index]
-    _log(job, f"Browser supplied the catalog preview for track {track_index}")
+    _log(job, f"Browser supplied the catalog preview for track {track_index} "
+              f"({scene_seconds:g}s scene)")
 
     if not job["needs_upload"]:
         _advance_after_media(job_id)
@@ -1821,7 +1854,7 @@ def skip_upload(job_id, track_index):
         if last_standout["media"]["audio"]:
             _extend_closing_audio(job, job["resolved"][-1], job["job_dir"], job["scene_duration"], allow_youtube=job.get("allow_youtube", False), cookie_file=job.get("cookie_file"))
             if job["resolved"][-1]["media"]["audio"]:
-                last_standout["media"]["audio"] = job["resolved"][-1]["media"]["audio"]
+                _adopt_reextended_closing(job)
 
     if not job["needs_upload"]:
         _advance_after_media(job_id)

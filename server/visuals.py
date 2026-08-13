@@ -281,20 +281,35 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     return x * x * (3 - 2 * x);
   }}
 
-  // Artwork hand-over. An element stays on screen for TRANS.secs past its own
+  // Artwork hand-over. An element starts arriving TRANS.secs *before* its own
   // window so the outgoing and incoming covers overlap, and both are driven
   // from the same timeline time -- no CSS transitions, nothing stateful, so a
   // re-rendered frame is identical.
   //
+  // The overlap is CENTRED on the boundary rather than starting at it, so the
+  // dissolve is half done exactly on s.start. Scene boundaries are downbeats
+  // now -- media_finder cuts each clip to a whole number of bars and starts it
+  // on an onset -- and the moment a viewer reads as "the change" in a crossfade
+  // is its midpoint, not its beginning. Starting the fade on the beat puts that
+  // midpoint half a second late, which is what made cuts feel loose.
+  //
+  // Centred rather than finishing on the beat because .art-field, .art-backdrop
+  // and .art-wash are framework-timed clips that still switch at s.start: the
+  // artwork can lead its own background by half a transition without the two
+  // visibly separating, but not by a whole one.
+  //
   // Returns null when the element should not be drawn at all.
   function transitionState(t, s) {{
     var T = TRANS.secs;
-    var enterEnd = s.start + T;
-    var leaveEnd = s.start + s.dur + T;
+    var half = T / 2;
+    var enterStart = s.start - half;
+    var enterEnd = s.start + half;
+    var leaveStart = s.start + s.dur - half;
+    var leaveEnd = s.start + s.dur + half;
 
-    if (t < s.start || t >= leaveEnd) return null;
+    if (t < enterStart || t >= leaveEnd) return null;
 
-    // "swap" has no overlap: a hard cut on the scene boundary.
+    // "swap" has no overlap: a hard cut, already on the boundary.
     if (T <= 0) {{
       if (t >= s.start + s.dur) return null;
       return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0, blur: 0 }};
@@ -305,11 +320,11 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
     // compressed ends hand the coarsest blocks a couple of frames each while
     // the fine ones sit there for a third of a second.
     if (t < enterEnd) {{
-      var rp = (t - s.start) / T;                     // 0 -> 1 arriving
+      var rp = (t - enterStart) / T;                  // 0 -> 1 arriving
       return applyTransition(smoothstep(rp), true, rp);
     }}
-    if (t >= s.start + s.dur) {{
-      var rq = (t - s.start - s.dur) / T;             // 0 -> 1 departing
+    if (t >= leaveStart) {{
+      var rq = (t - leaveStart) / T;                  // 0 -> 1 departing
       return applyTransition(smoothstep(rq), false, rq);
     }}
     return {{ op: 1, dx: 0, dy: 0, scale: 1, rot: 0 }};
@@ -449,8 +464,9 @@ def runtime_js(scenes: list[dict], total_duration: float, fps: int = 30,
       // pulse get pure camera motion (see `reactive` in runtime_js).
       if (s.reactive) scale *= 1 + bassEnv * 0.018;
 
-      // The arriving cover sits above the departing one.
-      el.style.zIndex = (t < s.start + TRANS.secs) ? "2" : "1";
+      // The arriving cover sits above the departing one. The crossfade is
+      // centred on s.start, so it finishes half a transition after it.
+      el.style.zIndex = (t < s.start + TRANS.secs / 2) ? "2" : "1";
       el.style.opacity = (ART_OP * st.op).toFixed(4);
       el.style.transform =
         "scale(" + scale.toFixed(4) + ") translate(" +

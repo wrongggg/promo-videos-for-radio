@@ -287,6 +287,57 @@ def analyze(audio_path: str, fps: int = 30, duration: Optional[float] = None) ->
     return out
 
 
+# Time resolution for probe(). A beat at 120 BPM is 500ms and a cut reads as
+# early or late somewhere around 20-30ms, so 10ms is comfortably below the
+# threshold that matters and still cheap on a 30s preview.
+PROBE_FPS = 100
+
+
+def probe(audio_path: str) -> Optional[dict]:
+    """Where the interesting moments are in an *untrimmed* source, in seconds.
+
+    analyze() bakes per-frame arrays for a scene that has already been cut;
+    this answers the question that comes before it -- which ten seconds of a
+    30-second preview to keep, and where inside them the music actually lands.
+    Same flux/onset/tempo code, run at PROBE_FPS and reported in seconds so a
+    caller can hand the numbers straight to ffmpeg."""
+    pcm = _decode(audio_path)
+    if pcm is None or len(pcm) == 0:
+        return None
+
+    hop = max(1, SAMPLE_RATE // PROBE_FPS)
+    mags, _freqs = _stft_frames(pcm, hop)
+    n_frames = mags.shape[1]
+    if n_frames < 3:
+        return None
+
+    flux = _spectral_flux(mags)
+    onsets = _detect_onsets(flux, PROBE_FPS)
+    bpm, grid, confidence = _estimate_bpm(flux, onsets, PROBE_FPS, n_frames)
+
+    usable = (len(pcm) // hop) * hop
+    if usable > 0:
+        rms = np.sqrt((pcm[:usable].reshape(-1, hop) ** 2).mean(axis=1) + 1e-12)
+        if len(rms) < n_frames:
+            rms = np.pad(rms, (0, n_frames - len(rms)), mode="edge")
+        energy = _normalize(rms[:n_frames])
+    else:
+        energy = np.zeros(n_frames)
+
+    return {
+        "fps": PROBE_FPS,
+        "frames": n_frames,
+        "duration": len(pcm) / SAMPLE_RATE,
+        # Normalized 0..1 per probe frame. Kept as arrays, not lists: the only
+        # consumer is the trimmer, and it does arithmetic on them.
+        "energy": energy,
+        "onsets": [f / PROBE_FPS for f in onsets],
+        "beats": [f / PROBE_FPS for f in grid],
+        "bpm": bpm,
+        "beat_confidence": confidence,
+    }
+
+
 def analyze_to_file(audio_path: str, dest: str, fps: int = 30,
                     duration: Optional[float] = None) -> Optional[dict]:
     data = analyze(audio_path, fps=fps, duration=duration)

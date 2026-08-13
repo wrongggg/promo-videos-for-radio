@@ -795,25 +795,32 @@ def build_composition_html(
     for i, item in enumerate(standout):
         pal = palette[i % len(palette)]
         is_last = i == len(standout) - 1
-        audio_duration = scene_duration + OUTRO_DURATION if is_last else None
+        # Each scene runs for a whole number of bars of its own track, so the
+        # cut lands where that music was going to change anyway. media_finder
+        # picked the length when it cut the audio; `scene_duration` is only the
+        # pace the user asked for, and the fallback when a track had no usable
+        # tempo. A scene laid out at any other length would drift against its
+        # own audio, so this must be the value the trim actually produced.
+        this_duration = item["media"].get("scene_seconds") or scene_duration
+        audio_duration = this_duration + OUTRO_DURATION if is_last else None
         # Sampled per scene, so the field tracks each sleeve rather than one
         # colour being chosen for the whole promo from whatever happened to be
         # track one. Cached inside palette.field by (path, mode).
         scene_field = palette_mod.field(_abs(item["media"].get("image")), field_mode) if field_mode else None
-        sh, mh, sj = _scene_html(i, cursor, scene_duration, item["track"], item["media"], pal, audio_duration=audio_duration, motion=motion, language=language, style=style, lay=lay, field=scene_field)
+        sh, mh, sj = _scene_html(i, cursor, this_duration, item["track"], item["media"], pal, audio_duration=audio_duration, motion=motion, language=language, style=style, lay=lay, field=scene_field)
         scenes_html.append(sh)
         media_tags_html.append(mh)
         scenes_js.append(sj)
         visual_scenes.append({
             "index": i,
             "start": cursor,
-            "duration": scene_duration,
+            "duration": this_duration,
             "analysis": item.get("analysis"),
             # Video keeps its own footage; only still artwork gets the
             # Ken Burns / breathing treatment from the visuals runtime.
             "has_art": bool(item["media"].get("image")) and not item["media"].get("video"),
         })
-        cursor += scene_duration
+        cursor += this_duration
 
     outro_pal = palette[len(standout) % len(palette)]
     # Sampled from the LAST sleeve rather than the first, so the card carries

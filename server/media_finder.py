@@ -31,6 +31,7 @@ from typing import Optional
 import numpy as np
 import static_ffmpeg
 
+import audio_analysis
 import providers
 from providers import Candidate
 from track import Track
@@ -60,6 +61,14 @@ class ResolvedMedia:
     # fetch, and how many seconds the trim should keep once it posts the bytes back.
     audio_url: Optional[str] = None
     audio_seconds: Optional[float] = None
+    # Seconds of audio beyond the scene itself -- the closing track's bed runs
+    # under the outro card. Kept apart from audio_seconds because only the scene
+    # portion gets rounded to a bar.
+    audio_extra: float = 0.0
+    # How long this scene should actually run. The requested duration rounded to
+    # a whole number of bars of this particular track -- see _bar_aligned. Only
+    # known once the audio has been analysed, so it travels back with the media.
+    scene_seconds: Optional[float] = None
     needs_manual_audio: bool = False
     matched_label: str = ""
     release_note: str = ""
@@ -102,6 +111,8 @@ class ResolvedMedia:
             "artwork": self.artwork,
             "audio_url": self.audio_url,
             "audio_seconds": self.audio_seconds,
+            "audio_extra": self.audio_extra,
+            "scene_seconds": self.scene_seconds,
             "needs_manual_audio": self.needs_manual_audio,
             "matched_label": self.matched_label,
             "release_note": self.release_note,
@@ -128,10 +139,74 @@ def _decode_pcm(audio_path: str, sample_rate: int = ENERGY_SAMPLE_RATE) -> Optio
         return None
 
 
+# How much a window's *lift* counts next to its loudness when picking what to
+# keep. A hook is where a track arrives, and an arrival is usually preceded by a
+# breakdown -- so scoring on loudness alone finds a loud sustained middle and
+# walks straight past the drop. Weighted above 1 so a genuine arrival beats a
+# slightly louder plateau, but not so high that a quiet track's least-quiet
+# moment outranks a real chorus.
+LIFT_WEIGHT = 1.6
+# How far back "before" reaches when measuring that lift.
+LIFT_LOOKBACK = 2.0
+# A chosen start is pulled to a real onset within this distance. Kept under half
+# a beat at 150 BPM, so snapping can only ever move the cut to the hit it was
+# already next to -- never to the previous or next one.
+SNAP_WINDOW = 0.18
+
+
+def _pick_window(probe: dict, want_seconds: float) -> float:
+    """Where to start the cut, in seconds, given audio_analysis.probe output.
+
+    Two decisions. Which window to keep, scored by loudness *and* lift so the
+    cut lands on an arrival rather than a plateau; then where exactly to start
+    it, snapped to a real onset so the scene opens on a hit instead of part way
+    through one."""
+    fps = probe["fps"]
+    energy = probe["energy"]
+    n = len(energy)
+    win = max(1, int(round(want_seconds * fps)))
+    if n <= win:
+        return 0.0
+
+    # Cumulative sums make every candidate window a constant-time lookup; at
+    # 100fps over 30s there are ~2000 candidates and scoring them one at a
+    # time in Python is the difference between milliseconds and a second.
+    cum = np.cumsum(np.insert(energy, 0, 0.0))
+    starts = np.arange(0, n - win + 1)
+    inside = (cum[starts + win] - cum[starts]) / win
+
+    look = max(1, int(round(LIFT_LOOKBACK * fps)))
+    before_start = np.maximum(0, starts - look)
+    before_len = np.maximum(1, starts - before_start)
+    before = (cum[starts] - cum[before_start]) / before_len
+    # Only a rise counts. A window quieter than what preceded it is not an
+    # arrival, but it shouldn't be penalised below a flat one either.
+    lift = np.maximum(0.0, inside - before)
+
+    score = inside + LIFT_WEIGHT * lift
+
+    # Same margins as before: a cold intro and an outro fade are almost never
+    # the right ten seconds, whatever they score.
+    margin = max(1, int(round(n * 0.05)))
+    lo, hi = margin, max(margin + 1, len(score) - margin)
+    if hi <= lo:
+        lo, hi = 0, len(score)
+    start_frame = int(lo + int(np.argmax(score[lo:hi])))
+    start = start_frame / fps
+
+    # Snap to the nearest onset, but never past the end of the audio.
+    onsets = probe.get("onsets") or []
+    latest = max(0.0, probe["duration"] - want_seconds)
+    candidates = [o for o in onsets if abs(o - start) <= SNAP_WINDOW and o <= latest]
+    if candidates:
+        start = min(candidates, key=lambda o: abs(o - start))
+    return float(min(start, latest))
+
+
 def _energetic_start(pcm: np.ndarray, sample_rate: int, window_length: float) -> Optional[float]:
-    """Find the `window_length`-second window with the highest average energy --
-    a proxy for the drop/hook/chorus, rather than an arbitrary fixed offset.
-    Skips the first/last 5% (cold intro, outro fade/silence)."""
+    """Fallback for when probe() can't decode the source: the original
+    highest-average-energy window, at one-second resolution and with no onset
+    snapping. Worse cuts, but a cut."""
     hop = sample_rate  # 1-second resolution
     n_hops = len(pcm) // hop
     if n_hops < 3:
@@ -155,45 +230,109 @@ def _energetic_start(pcm: np.ndarray, sample_rate: int, window_length: float) ->
     return float(lo + int(np.argmax(window_sums[lo:hi])))
 
 
-def _trim_to_best_window(src: str, dest: str, want_seconds: float) -> Optional[str]:
-    """Cut the most energetic `want_seconds` out of an already-downloaded clip.
+# A scene may stretch or shrink by this much to land on a bar line. Wide enough
+# to reach the nearest bar at any tempo we detect, narrow enough that the promo's
+# pacing is still the one the user picked.
+BAR_FLEX = 0.25
+# Below this, the tempo estimate is a guess -- rubato, ambient, spoken word. The
+# scene keeps its requested length rather than being cut to an imaginary grid.
+MIN_BEAT_CONFIDENCE = 0.35
+BEATS_PER_BAR = 4
+
+
+def _bar_aligned(probe: dict, target: float) -> float:
+    """Round `target` to a whole number of bars, within BAR_FLEX.
+
+    A cut on a bar line is a cut where the music was going to change anyway,
+    which is what makes a scene boundary feel authored instead of arbitrary.
+    Returns `target` unchanged whenever the tempo isn't trustworthy enough to
+    be worth bending the pacing for."""
+    bpm = probe.get("bpm")
+    if not bpm or probe.get("beat_confidence", 0.0) < MIN_BEAT_CONFIDENCE:
+        return target
+
+    bar = BEATS_PER_BAR * 60.0 / bpm
+    if bar <= 0.05:
+        return target
+
+    lo, hi = target * (1.0 - BAR_FLEX), target * (1.0 + BAR_FLEX)
+    # Whole bars first; at slow tempos a bar can be most of a scene, so a half
+    # bar is allowed as a fallback rather than giving up on alignment entirely.
+    for unit in (bar, bar / 2.0):
+        n = round(target / unit)
+        for cand_n in (n, n - 1, n + 1):
+            if cand_n < 1:
+                continue
+            cand = cand_n * unit
+            if lo <= cand <= hi:
+                return round(cand, 3)
+    return target
+
+
+def _trim_to_best_window(src: str, dest: str, scene_target: float,
+                         extra: float = 0.0) -> tuple[Optional[str], float]:
+    """Cut the best window out of an already-downloaded clip.
+
+    Returns (path, scene_seconds). `scene_seconds` is the requested length
+    rounded to a whole number of bars, and is what the scene should actually be
+    laid out at; the file itself runs `scene_seconds + extra`, where extra
+    covers the outro card for the closing track.
 
     Catalog previews are label-chosen and usually already sit on the hook, but
     they run 30s and a scene needs ~10s, so it still pays to pick the best
-    window inside them."""
-    pcm = _decode_pcm(src)
+    window inside them -- to start it on a hit, and to end it on a bar line."""
     start = 0.0
-    if pcm is not None and len(pcm) > 0:
-        available = len(pcm) / ENERGY_SAMPLE_RATE
-        if available > want_seconds:
-            found = _energetic_start(pcm, ENERGY_SAMPLE_RATE, want_seconds)
-            if found is not None:
-                start = min(found, max(0.0, available - want_seconds))
+    scene_seconds = scene_target
+    probe = None
+    try:
+        probe = audio_analysis.probe(src)
+    except Exception:
+        probe = None
+
+    if probe:
+        scene_seconds = _bar_aligned(probe, scene_target)
+
+    want = scene_seconds + extra
+    if probe and probe["duration"] > want:
+        start = _pick_window(probe, want)
+    else:
+        # probe() failed, or the source is too short to choose a window inside.
+        pcm = _decode_pcm(src)
+        if pcm is not None and len(pcm) > 0:
+            available = len(pcm) / ENERGY_SAMPLE_RATE
+            if available > want:
+                found = _energetic_start(pcm, ENERGY_SAMPLE_RATE, want)
+                if found is not None:
+                    start = min(found, max(0.0, available - want))
 
     subprocess.run(
-        ["ffmpeg", "-y", "-ss", str(start), "-i", src, "-t", str(want_seconds),
+        ["ffmpeg", "-y", "-ss", str(start), "-i", src, "-t", str(want),
          "-acodec", "aac", "-b:a", "192k", dest],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    return dest if os.path.exists(dest) and os.path.getsize(dest) > 0 else None
+    if not (os.path.exists(dest) and os.path.getsize(dest) > 0):
+        return None, scene_target
+    return dest, scene_seconds
 
 
 # --------------------------------------------------------------------------
 # catalog preview path (the default for everyone)
 # --------------------------------------------------------------------------
 
-def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds: float,
+def _resolve_preview_audio(track: Track, out_dir: str, index: int, scene_target: float,
                            result: ResolvedMedia, collect_options: bool = False,
-                           client_fetch: bool = False) -> bool:
+                           client_fetch: bool = False, extra: float = 0.0) -> bool:
     cand = providers.find_audio_candidate(track)
     if not cand or not cand.audio_url:
         return False
 
     if client_fetch:
         # Stop at the candidate. The browser fetches the preview and posts it to
-        # /preview_audio, which runs the same trim this function would have.
+        # /preview_audio, which runs the same trim this function would have --
+        # including the bar alignment, which needs the audio to decide.
         result.audio_url = cand.audio_url
-        result.audio_seconds = want_seconds
+        result.audio_seconds = scene_target
+        result.audio_extra = extra
     else:
         raw = os.path.join(out_dir, f"track{index}_preview_raw")
         downloaded = providers.download(cand.audio_url, raw)
@@ -201,7 +340,7 @@ def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds:
             return False
 
         dest = os.path.join(out_dir, f"track{index}_audio.m4a")
-        trimmed = _trim_to_best_window(downloaded, dest, want_seconds)
+        trimmed, scene_seconds = _trim_to_best_window(downloaded, dest, scene_target, extra=extra)
         try:
             os.remove(downloaded)
         except OSError:
@@ -210,6 +349,7 @@ def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds:
         if not trimmed:
             return False
         result.audio = trimmed
+        result.scene_seconds = scene_seconds
 
     result.matched_label = cand.label()
     result.release_note = cand.release_note()
@@ -381,12 +521,14 @@ def resolve_track(
     must not treat it as a dead end.
     """
     audio_duration = audio_duration or clip_duration
-    want = max(clip_duration, audio_duration)
+    # Only the scene itself is rounded to a bar; anything asked for beyond it
+    # is a bed under the outro and must keep its exact length.
+    extra = max(0.0, audio_duration - clip_duration)
     result = ResolvedMedia()
 
-    got_audio = _resolve_preview_audio(track, out_dir, index, want, result,
+    got_audio = _resolve_preview_audio(track, out_dir, index, clip_duration, result,
                                        collect_options=collect_options,
-                                       client_fetch=client_fetch)
+                                       client_fetch=client_fetch, extra=extra)
 
     if not got_audio and allow_youtube:
         _resolve_youtube(track, out_dir, index, clip_duration, audio_duration, cookie_file, result)
@@ -413,22 +555,27 @@ def process_track(
     ).to_dict()
 
 
-def trim_uploaded_preview(src: str, dest: str, want_seconds: float) -> Optional[str]:
+def trim_uploaded_preview(src: str, dest: str, scene_target: float,
+                          extra: float = 0.0) -> tuple[Optional[str], float]:
     """Public entry point for /preview_audio: the browser fetched the preview,
-    so all that's left is the window pick this module would have done inline."""
-    return _trim_to_best_window(src, dest, want_seconds)
+    so all that's left is the window pick and bar alignment this module would
+    have done inline. Returns (path, scene_seconds)."""
+    return _trim_to_best_window(src, dest, scene_target, extra=extra)
 
 
-def find_audio_only(track: Track, out_dir: str, index: int, audio_duration: int = CLIP_DURATION,
-                    allow_youtube: bool = False, cookie_file: Optional[str] = None) -> Optional[str]:
+def find_audio_only(track: Track, out_dir: str, index: int, scene_target: float = CLIP_DURATION,
+                    extra: float = 0.0, allow_youtube: bool = False,
+                    cookie_file: Optional[str] = None) -> tuple[Optional[str], Optional[float]]:
     """Audio without the imagery lookup -- used to extend the closing track's
-    bed over the outro card."""
+    bed over the outro card. Returns (path, scene_seconds); the re-cut picks its
+    own window and so its own bar alignment, which the caller must adopt."""
     result = ResolvedMedia()
-    if _resolve_preview_audio(track, out_dir, index, audio_duration, result):
-        return result.audio
+    if _resolve_preview_audio(track, out_dir, index, scene_target, result, extra=extra):
+        return result.audio, result.scene_seconds
     if allow_youtube:
-        _resolve_youtube(track, out_dir, index, audio_duration, audio_duration, cookie_file, result)
-    return result.audio
+        total = scene_target + extra
+        _resolve_youtube(track, out_dir, index, total, total, cookie_file, result)
+    return result.audio, result.scene_seconds
 
 
 if __name__ == "__main__":
