@@ -170,6 +170,15 @@ LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 # more, and they must never be reachable by anyone else's job.
 YOUTUBE_COOKIE_FILE = os.environ.get("YOUTUBE_COOKIE_FILE") or None
 
+# Have the browser fetch catalog previews rather than this process. The copy of
+# the recording is then made on the user's machine, from their session, which is
+# what the terms already say happens -- see media_finder's module docstring.
+# CLIENT_FETCH_AUDIO=0 reverts to server-side fetching without a code change.
+CLIENT_FETCH_AUDIO = os.environ.get("CLIENT_FETCH_AUDIO", "1") != "0"
+# A catalog preview is 30s of AAC/MP3 -- about 1MB. The cap is what stops the
+# endpoint being a disk-fill for anyone holding a job id.
+MAX_PREVIEW_BYTES = 8 * 1024 * 1024
+
 
 def _load_or_create_secret_key() -> str:
     key = os.environ.get("FLASK_SECRET_KEY")
@@ -388,7 +397,7 @@ def _resolve_theme(theme_mode, theme_value, tracks, job_id=None, model=curator.M
     return curator.PRESET_THEMES[curator.DEFAULT_PRESET]
 
 
-def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=False, cookie_file=None, show_info=False, collect_options=False):
+def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, allow_youtube=False, cookie_file=None, show_info=False, collect_options=False, client_fetch=False):
     """Fetch media for ranked candidates (best first) until num_standout have resolved.
 
     Candidates beyond num_standout are pulled in only to replace ones that failed to
@@ -398,6 +407,8 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
     resolved = []
     media_index = 0
     attempts = 0
+    # A client-fetch track has no audio on disk yet but is not a failure, so it must
+    # not count against the retry budget or be dropped as a dead end.
 
     for cand in ranked:
         if attempts >= num_standout + MAX_EXTRA_FETCH_ATTEMPTS:
@@ -408,11 +419,11 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
 
         track_obj = Track(artist=cand["artist"], title=cand["title"], album=cand.get("album"))
         _log(job, f"Fetching media for {cand['artist']} - {cand['title']}...")
-        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file, collect_options=collect_options)
+        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file, collect_options=collect_options, client_fetch=client_fetch)
         this_index = media_index
         media_index += 1
         has_video = bool(result["video"])
-        _log(job, f"  video={'yes' if result['video'] else 'no'} audio={'yes' if result['audio'] else 'no'} image={'yes' if result['image'] else 'no'}")
+        _log(job, f"  video={'yes' if result['video'] else 'no'} audio={_audio_log(result)} image={'yes' if result['image'] else 'no'}")
 
         entry = {
             "track": {"artist": cand["artist"], "title": cand["title"],
@@ -428,7 +439,14 @@ def _resolve_standout_media(job, ranked, job_dir, num_standout, scene_duration, 
     return resolved
 
 
-def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False, collect_options=False):
+def _audio_log(result) -> str:
+    """'yes' once the file is on disk, 'pending' while the browser is fetching it."""
+    if result["audio"]:
+        return "yes"
+    return "pending" if result.get("audio_url") else "no"
+
+
+def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=None, personal=False, allow_youtube=False, cookie_file=None, use_search=True, model=curator.MODEL_SIMPLE, show_info=False, collect_options=False, client_fetch=False):
     """picks: list of {artist, title, album}. Unlike auto mode, there's no backup
     pool to draw from -- every pick is attempted once, in order, and only true
     dead-ends (no video, no image, no audio found anywhere) get dropped."""
@@ -448,13 +466,13 @@ def _resolve_manual_media(job, picks, job_dir, scene_duration, language, job_id=
     for p in picks:
         track_obj = Track(artist=p["artist"], title=p["title"], album=p.get("album"))
         _log(job, f"Fetching media for {p['artist']} - {p['title']}...")
-        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file, collect_options=collect_options)
+        result = media_finder.process_track(track_obj, job_dir, media_index, clip_duration=scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file, collect_options=collect_options, client_fetch=client_fetch)
         this_index = media_index
         media_index += 1
         has_video = bool(result["video"])
-        _log(job, f"  video={'yes' if result['video'] else 'no'} audio={'yes' if result['audio'] else 'no'} image={'yes' if result['image'] else 'no'}")
+        _log(job, f"  video={'yes' if result['video'] else 'no'} audio={_audio_log(result)} image={'yes' if result['image'] else 'no'}")
 
-        if not result["video"] and not result["image"] and not result["audio"]:
+        if not result["video"] and not result["image"] and not result["audio"] and not result["audio_url"]:
             _log(job, f"  couldn't find anything for {p['artist']} - {p['title']} — skipping it")
             continue
 
@@ -785,12 +803,16 @@ def _run_media_stage(job_id):
     job["status"] = "fetching_media"
     # Alternates are only worth collecting if someone is going to look at them.
     collect_options = bool(p.get("gate_tracks"))
+    # The operator's YouTube path writes audio here on the server by definition, so
+    # it and client fetching are mutually exclusive.
+    client_fetch = CLIENT_FETCH_AUDIO and not p["allow_youtube"]
     if p["selection_mode"] == "manual":
         resolved = _resolve_manual_media(
             job, job["picks"], job_dir, scene_duration, p["language"], job_id=job_id,
             personal=p["personal"], allow_youtube=p["allow_youtube"],
             cookie_file=p["cookie_file"], use_search=p["use_search"], model=p["model"],
-            show_info=p["show_info"], collect_options=collect_options)
+            show_info=p["show_info"], collect_options=collect_options,
+            client_fetch=client_fetch)
     else:
         ranked = job["ranked"]
         if job.get("story"):
@@ -801,7 +823,8 @@ def _run_media_stage(job_id):
         resolved = _resolve_standout_media(
             job, ranked, job_dir, want, scene_duration,
             allow_youtube=p["allow_youtube"], cookie_file=p["cookie_file"],
-            show_info=p["show_info"], collect_options=collect_options)
+            show_info=p["show_info"], collect_options=collect_options,
+            client_fetch=client_fetch)
 
     if not resolved:
         raise ValueError("Could not resolve media for any standout track")
@@ -819,7 +842,17 @@ def _run_media_stage(job_id):
     language = p["language"]
 
     job["resolved"] = resolved
-    _extend_closing_audio(job, resolved[-1], job_dir, scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
+    if client_fetch:
+        # Nothing to extend yet -- the closing track just asks for a longer trim when
+        # its bytes arrive, which also spares the second fetch the server path needs.
+        closing = resolved[-1]["media"]
+        if closing.get("audio_url"):
+            closing["audio_seconds"] = scene_duration + compose.OUTRO_DURATION
+        else:
+            _extend_closing_audio(job, resolved[-1], job_dir, scene_duration,
+                                  allow_youtube=allow_youtube, cookie_file=cookie_file)
+    else:
+        _extend_closing_audio(job, resolved[-1], job_dir, scene_duration, allow_youtube=allow_youtube, cookie_file=cookie_file)
 
     # Exclude by artist too, not just exact track match -- the "also in this
     # episode" list shouldn't repeat an artist already featured in the video.
@@ -841,10 +874,20 @@ def _run_media_stage(job_id):
         "image": r["media"]["image"],
     }} for r in resolved]
 
-    needs_upload = [
-        {"index": i, "artist": s["track"]["artist"], "title": s["track"]["title"]}
-        for i, s in enumerate(standout) if not s["media"]["audio"]
-    ]
+    # One gate covers both cases. A row with `fetch_url` is fetched by the page
+    # without the user doing anything; a row without one is a track no catalog
+    # carries, and still gets the file picker it always got.
+    needs_upload = []
+    for i, (s, r) in enumerate(zip(standout, resolved)):
+        if s["media"]["audio"]:
+            continue
+        needs_upload.append({
+            "index": i,
+            "artist": s["track"]["artist"],
+            "title": s["track"]["title"],
+            "fetch_url": r["media"].get("audio_url"),
+            "seconds": r["media"].get("audio_seconds"),
+        })
 
     video_count = sum(1 for r in resolved if r["has_video"])
     _log(job, f"{video_count}/{len(resolved)} standout tracks have video ({round(100 * video_count / len(resolved))}%)")
@@ -1685,6 +1728,59 @@ def upload(job_id, track_index):
     job["standout"][track_index]["media"]["audio"] = dest
     job["needs_upload"] = [u for u in job["needs_upload"] if u["index"] != track_index]
     _log(job, f"Received manual audio for track {track_index}")
+
+    if not job["needs_upload"]:
+        _advance_after_media(job_id)
+
+    return jsonify({"ok": True, "remaining": job["needs_upload"]})
+
+
+@app.route("/preview_audio/<job_id>/<int:track_index>", methods=["POST"])
+def preview_audio(job_id, track_index):
+    """A catalog preview the page fetched from the provider's CDN.
+
+    Same gate as /upload; the difference is that these bytes are a full 30s preview
+    and still need the window pick media_finder would have done inline. Only a track
+    the server actually offered a `fetch_url` for is accepted, so this cannot be used
+    to post arbitrary audio against a track that resolved some other way."""
+    job = JOBS.get(job_id)
+    if not _owns_job(job):
+        return jsonify({"error": "not your job"}), 403
+    if job["status"] != "awaiting_uploads":
+        return jsonify({"error": "job not accepting uploads"}), 400
+    if "audio_file" not in request.files:
+        return jsonify({"error": "no file"}), 400
+
+    pending = next((u for u in job["needs_upload"] if u["index"] == track_index), None)
+    if not pending or not pending.get("fetch_url"):
+        return jsonify({"error": "track is not awaiting a catalog preview"}), 400
+    if request.content_length and request.content_length > MAX_PREVIEW_BYTES:
+        return jsonify({"error": "preview too large"}), 413
+
+    job_dir = job["job_dir"]
+    raw = os.path.join(job_dir, f"track{track_index}_preview_raw")
+    request.files["audio_file"].save(raw)
+
+    try:
+        # content_length is what the client claimed; this is what it actually sent.
+        if os.path.getsize(raw) > MAX_PREVIEW_BYTES:
+            return jsonify({"error": "preview too large"}), 413
+        dest = os.path.join(job_dir, f"track{track_index}_audio.m4a")
+        trimmed = media_finder.trim_uploaded_preview(
+            raw, dest, pending.get("seconds") or job["scene_duration"])
+    finally:
+        try:
+            os.remove(raw)
+        except OSError:
+            pass
+
+    if not trimmed:
+        # Leave the row pending so the page can fall back to the file picker.
+        return jsonify({"error": "could not read that preview"}), 400
+
+    job["standout"][track_index]["media"]["audio"] = trimmed
+    job["needs_upload"] = [u for u in job["needs_upload"] if u["index"] != track_index]
+    _log(job, f"Browser supplied the catalog preview for track {track_index}")
 
     if not job["needs_upload"]:
         _advance_after_media(job_id)

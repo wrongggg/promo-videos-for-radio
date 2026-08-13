@@ -825,7 +825,7 @@
         </div>
 
         <div class="uploads-box" id="uploadsBox">
-            <label>Some tracks need an audio file</label>
+            <label id="uploadsLabel">Some tracks need an audio file</label>
             <div id="uploadRows"></div>
         </div>
 
@@ -1882,6 +1882,11 @@ function renderUploadRows(needsUpload) {
     const uploadRows = document.getElementById("uploadRows");
     const seenKeys = new Set();
 
+    // Only call it a chore if some row actually is one. When every pending track has
+    // a catalog preview this box is a progress indicator, not a request.
+    document.getElementById("uploadsLabel").textContent =
+        needsUpload.every((u) => u.fetch_url) ? "Preparing audio" : "Some tracks need an audio file";
+
     needsUpload.forEach((u) => {
         const key = `${u.artist}|||${u.title}`;
         seenKeys.add(key);
@@ -1901,6 +1906,10 @@ function renderUploadRows(needsUpload) {
         row.querySelector(".skip-btn").addEventListener("click", () => skipUpload(row));
         uploadRows.appendChild(row);
         activeUploadRows[key] = row;
+
+        // A row the catalog has a preview for fetches itself. The picker stays in
+        // the DOM but hidden, so a blocked CDN can reveal it without a re-render.
+        if (u.fetch_url) fetchPreview(row, u.fetch_url);
     });
 
     Object.keys(activeUploadRows).forEach((key) => {
@@ -1909,6 +1918,44 @@ function renderUploadRows(needsUpload) {
             delete activeUploadRows[key];
         }
     });
+}
+
+// The page fetches the catalog preview itself and posts the bytes back. Both
+// providers send access-control-allow-origin: *, so this is an ordinary
+// cross-origin GET -- but ad blockers and corporate proxies do block these hosts,
+// which is why every failure path here ends at the manual picker rather than at
+// an error.
+function fetchPreview(row, url) {
+    const status = row.querySelector(".upload-status");
+    const picker = row.querySelector("input");
+    const skip = row.querySelector(".skip-btn");
+    picker.style.display = "none";
+    skip.style.display = "none";
+    status.textContent = "Preparing audio…";
+
+    fetch(url, { mode: "cors", credentials: "omit" })
+        .then((res) => {
+            if (!res.ok) throw new Error(`provider returned ${res.status}`);
+            return res.blob();
+        })
+        .then((blob) => {
+            const formData = new FormData();
+            formData.append("audio_file", blob, "preview");
+            return fetch(`/preview_audio/${currentJobId}/${row.dataset.index}`,
+                         { method: "POST", body: formData });
+        })
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.error) throw new Error(data.error);
+            status.textContent = "Ready";
+            pollStatus();
+        })
+        .catch(() => {
+            // Hand the row back to the user rather than failing the job.
+            picker.style.display = "";
+            skip.style.display = "";
+            status.textContent = "Couldn't load it — pick a file";
+        });
 }
 
 function uploadAudio(row, file) {

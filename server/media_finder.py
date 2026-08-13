@@ -5,6 +5,14 @@ Audio comes from the catalog preview chain in `providers` (iTunes, then
 Deezer) -- 30-second clips published by the rights holders' own APIs, fetched
 with a single HTTP GET, no API key and nothing for the user to upload.
 
+With `client_fetch`, that GET is made by the user's browser instead of by this
+process: resolution stops at the candidate and hands its `audio_url` upward, and
+the browser posts the bytes back to /preview_audio for trimming. The user still
+uploads nothing -- both CDNs send `access-control-allow-origin: *`, so the page
+fetches the preview itself and the flow looks identical from the outside. The
+point is that the copy is then made on the user's machine, from their session,
+rather than by the server on their behalf. See app.py CLIENT_FETCH_AUDIO.
+
 The version is never negotiable. A tracklist records what actually aired, so a
 live take or a remix is a different recording, not a substitute. When no
 provider carries the exact version the track resolves to artwork only and the
@@ -48,7 +56,10 @@ class ResolvedMedia:
     audio: Optional[str] = None
     video: Optional[str] = None
     artwork: Optional[str] = None
-    artist_image: Optional[str] = None
+    # Set instead of `audio` under client_fetch: the preview the browser should
+    # fetch, and how many seconds the trim should keep once it posts the bytes back.
+    audio_url: Optional[str] = None
+    audio_seconds: Optional[float] = None
     needs_manual_audio: bool = False
     matched_label: str = ""
     release_note: str = ""
@@ -72,7 +83,7 @@ class ResolvedMedia:
         Carries the same provenance credit() writes, so a later selection can be
         credited from what was captured here rather than re-querying the provider."""
         self.image_options.append({
-            "id": f"{'art' if kind == 'artwork' else 'artist'}_{len(self.image_options)}",
+            "id": f"art_{len(self.image_options)}",
             "kind": kind,
             "source": cand.source,
             "matched": cand.label(),
@@ -87,9 +98,10 @@ class ResolvedMedia:
         return {
             "audio": self.audio,
             "video": self.video,
-            "image": self.artwork or self.artist_image,
+            "image": self.artwork,
             "artwork": self.artwork,
-            "artist_image": self.artist_image,
+            "audio_url": self.audio_url,
+            "audio_seconds": self.audio_seconds,
             "needs_manual_audio": self.needs_manual_audio,
             "matched_label": self.matched_label,
             "release_note": self.release_note,
@@ -171,27 +183,34 @@ def _trim_to_best_window(src: str, dest: str, want_seconds: float) -> Optional[s
 # --------------------------------------------------------------------------
 
 def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds: float,
-                           result: ResolvedMedia, collect_options: bool = False) -> bool:
+                           result: ResolvedMedia, collect_options: bool = False,
+                           client_fetch: bool = False) -> bool:
     cand = providers.find_audio_candidate(track)
     if not cand or not cand.audio_url:
         return False
 
-    raw = os.path.join(out_dir, f"track{index}_preview_raw")
-    downloaded = providers.download(cand.audio_url, raw)
-    if not downloaded:
-        return False
+    if client_fetch:
+        # Stop at the candidate. The browser fetches the preview and posts it to
+        # /preview_audio, which runs the same trim this function would have.
+        result.audio_url = cand.audio_url
+        result.audio_seconds = want_seconds
+    else:
+        raw = os.path.join(out_dir, f"track{index}_preview_raw")
+        downloaded = providers.download(cand.audio_url, raw)
+        if not downloaded:
+            return False
 
-    dest = os.path.join(out_dir, f"track{index}_audio.m4a")
-    trimmed = _trim_to_best_window(downloaded, dest, want_seconds)
-    try:
-        os.remove(downloaded)
-    except OSError:
-        pass
+        dest = os.path.join(out_dir, f"track{index}_audio.m4a")
+        trimmed = _trim_to_best_window(downloaded, dest, want_seconds)
+        try:
+            os.remove(downloaded)
+        except OSError:
+            pass
 
-    if not trimmed:
-        return False
+        if not trimmed:
+            return False
+        result.audio = trimmed
 
-    result.audio = trimmed
     result.matched_label = cand.label()
     result.release_note = cand.release_note()
     result.credit(cand, "audio")
@@ -215,18 +234,21 @@ def _resolve_preview_audio(track: Track, out_dir: str, index: int, want_seconds:
 
 def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedia,
                     collect_options: bool = False) -> None:
-    """Album art and an artist photo, from whichever providers have them.
-    These are what the generative/audio-reactive scenes are built around, so
-    it's worth checking every provider rather than stopping at the first.
+    """Album art, from whichever provider has it. This is what the
+    generative/audio-reactive scenes are built around, so it's worth checking
+    every provider rather than stopping at the first.
 
-    With collect_options, keep walking after both are downloaded to record the other
-    covers as URLs for the picker. Image matching allows alternate releases, so the
-    first hit is often a compilation or best-of sleeve rather than the single that
+    Release artwork only -- artist photos are not sourced; see
+    providers.find_image_candidates for why.
+
+    With collect_options, keep walking after the cover is downloaded to record the
+    other covers as URLs for the picker. Image matching allows alternate releases, so
+    the first hit is often a compilation or best-of sleeve rather than the single that
     aired -- the alternates are usually where the right one is. Nothing extra is
     fetched: the candidates come from the same cached searches, and only URLs are kept.
 
     Without it, the control flow is exactly what it was, early return included."""
-    if result.artwork and result.artist_image and not collect_options:
+    if result.artwork and not collect_options:
         return
 
     # Seeded with whatever the audio candidate already offered, so the cover in use
@@ -241,24 +263,15 @@ def _resolve_images(track: Track, out_dir: str, index: int, result: ResolvedMedi
             if art:
                 result.artwork = art
                 result.credit(cand, "artwork")
-        if cand.artist_image_url and not result.artist_image:
-            pic = providers.download(
-                cand.artist_image_url, os.path.join(out_dir, f"track{index}_artist.jpg")
-            )
-            if pic:
-                result.artist_image = pic
-                result.credit(cand, "artist_image")
 
         if collect_options:
             # The same sleeve comes back repeatedly within one provider's results and
             # again from the others; without deduping, the gallery is mostly repeats.
-            for url, kind in ((cand.artwork_url, "artwork"),
-                              (cand.artist_image_url, "artist_image")):
-                key = _image_key(url)
-                if url and key not in seen_urls:
-                    seen_urls.add(key)
-                    pool.append((cand, kind, url))
-        elif result.artwork and result.artist_image:
+            key = _image_key(cand.artwork_url)
+            if cand.artwork_url and key not in seen_urls:
+                seen_urls.add(key)
+                pool.append((cand, "artwork", cand.artwork_url))
+        elif result.artwork:
             return
 
     if collect_options:
@@ -293,8 +306,7 @@ def _pick_varied(pool: list[tuple], limit: int) -> list[tuple]:
 
     Candidates arrive grouped by provider, so a plain head-of-list slice fills the whole
     gallery with one source -- ten near-identical iTunes releases, and the Deezer sleeve
-    or the artist photo never seen. Round-robin keeps the browsing worthwhile, and the
-    artist photo (usually last, from Deezer) actually reachable."""
+    never seen. Round-robin keeps the browsing worthwhile."""
     if limit <= 0:
         return []
     buckets: dict[str, list] = {}
@@ -356,26 +368,32 @@ def resolve_track(
     allow_youtube: bool = False,
     cookie_file: Optional[str] = None,
     collect_options: bool = False,
+    client_fetch: bool = False,
 ) -> ResolvedMedia:
     """audio_duration lets the caller request a longer audio bed than the
     visual clip (e.g. the last featured track, whose audio also covers the
     outro card so the video is never silent).
 
     allow_youtube must only be true for the operator's own session.
+
+    client_fetch leaves `audio` unset and reports `audio_url` instead; the track
+    is pending, not failed, so `needs_manual_audio` stays false and the caller
+    must not treat it as a dead end.
     """
     audio_duration = audio_duration or clip_duration
     want = max(clip_duration, audio_duration)
     result = ResolvedMedia()
 
     got_audio = _resolve_preview_audio(track, out_dir, index, want, result,
-                                       collect_options=collect_options)
+                                       collect_options=collect_options,
+                                       client_fetch=client_fetch)
 
     if not got_audio and allow_youtube:
         _resolve_youtube(track, out_dir, index, clip_duration, audio_duration, cookie_file, result)
 
     _resolve_images(track, out_dir, index, result, collect_options=collect_options)
 
-    if not result.audio:
+    if not result.audio and not result.audio_url:
         result.needs_manual_audio = True
     return result
 
@@ -384,15 +402,21 @@ def process_track(
     track: Track, out_dir: str, index: int,
     clip_duration: int = CLIP_DURATION, audio_duration: Optional[int] = None,
     allow_youtube: bool = False, cookie_file: Optional[str] = None,
-    collect_options: bool = False,
+    collect_options: bool = False, client_fetch: bool = False,
 ) -> dict:
     """Dict-returning wrapper kept for the existing callers in compose/app."""
     return resolve_track(
         track, out_dir, index,
         clip_duration=clip_duration, audio_duration=audio_duration,
         allow_youtube=allow_youtube, cookie_file=cookie_file,
-        collect_options=collect_options,
+        collect_options=collect_options, client_fetch=client_fetch,
     ).to_dict()
+
+
+def trim_uploaded_preview(src: str, dest: str, want_seconds: float) -> Optional[str]:
+    """Public entry point for /preview_audio: the browser fetched the preview,
+    so all that's left is the window pick this module would have done inline."""
+    return _trim_to_best_window(src, dest, want_seconds)
 
 
 def find_audio_only(track: Track, out_dir: str, index: int, audio_duration: int = CLIP_DURATION,
@@ -419,4 +443,4 @@ if __name__ == "__main__":
             r = resolve_track(t, d, 0)
             print(f"{t.label()!r:55s} -> matched={r.matched_label!r}")
             print(f"    audio={bool(r.audio)} artwork={bool(r.artwork)} "
-                  f"artist_img={bool(r.artist_image)} manual={r.needs_manual_audio}")
+                  f"manual={r.needs_manual_audio}")

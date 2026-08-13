@@ -57,7 +57,6 @@ class Candidate:
     audio_url: Optional[str] = None   # direct URL to a downloadable preview clip
     audio_seconds: Optional[float] = None  # length of that preview
     artwork_url: Optional[str] = None      # release/album art, largest available
-    artist_image_url: Optional[str] = None
     album: str = ""                  # release the track appears on
     year: str = ""                   # release year, 4 digits
     attribution_url: Optional[str] = None  # link back to the track on the service
@@ -122,15 +121,40 @@ def _throttle(host: str, min_interval: float) -> None:
         _last_call[host] = time.monotonic()
 
 
+# Deezer signs its preview URLs with an Akamai token that carries its own expiry
+# (`hdnea=exp=<unix>`), and the signature is good for only 15 minutes. The metadata
+# around it is as stable as any other search result, but the URL inside it dies, so a
+# cached payload has to be revalidated against that expiry instead of trusted forever.
+# Without this, every Deezer hit older than a quarter of an hour 403s and the track
+# falls through to "upload a file" for no visible reason. iTunes previews are unsigned
+# and genuinely are stable, so they never trip this.
+_SIGNED_URL_EXPIRY = re.compile(r"exp=(\d{10,})")
+# How much life a cached URL must have left to be worth handing out: enough to cover
+# the trip from here to the browser that fetches it, without throwing away the cache.
+PREVIEW_URL_MARGIN_SECONDS = 300
+
+
+def _signed_urls_live(data: dict, margin: float = PREVIEW_URL_MARGIN_SECONDS) -> bool:
+    """True if nothing in this payload is a signed URL that has expired or is about to.
+
+    Scans the serialized payload rather than known keys -- it costs one dump of an
+    already-small dict, and it can't miss a signed URL by looking in the wrong field."""
+    try:
+        expiries = [int(x) for x in _SIGNED_URL_EXPIRY.findall(json.dumps(data))]
+    except (TypeError, ValueError):
+        return True
+    return not expiries or min(expiries) > time.time() + margin
+
+
 def _get_json(host: str, url: str, params: dict, min_interval: float = 0.0) -> Optional[dict]:
-    """Cached, throttled GET. Search results are stable enough to cache
-    indefinitely -- a track's preview URL doesn't change day to day."""
+    """Cached, throttled GET. Search results are cached indefinitely, except when the
+    payload carries a signed URL that expires sooner -- see _signed_urls_live."""
     # The URL is part of the key, not just host+params: lookup-by-id endpoints put the
     # identifier in the path and often send identical params, so keying on params alone
     # makes every such call collide onto whichever one ran first.
     key = f"{host}:{url}:{json.dumps(params, sort_keys=True, ensure_ascii=False)}"
     cache = _load_cache()
-    if key in cache:
+    if key in cache and _signed_urls_live(cache[key]):
         return cache[key]
 
     if min_interval:
@@ -345,7 +369,7 @@ def search_itunes(track: Track, limit: int = 15) -> list[Candidate]:
 # --------------------------------------------------------------------------
 
 DEEZER_LICENSE = (
-    "30s preview clip, cover art and artist photo from the public Deezer API, "
+    "30s preview clip and cover art from the public Deezer API, "
     "used to promote and link back to the release on Deezer."
 )
 
@@ -373,7 +397,6 @@ def search_deezer(track: Track, limit: int = 15) -> list[Candidate]:
             audio_url=r.get("preview"),
             audio_seconds=30.0,
             artwork_url=album.get("cover_xl") or album.get("cover_big"),
-            artist_image_url=artist.get("picture_xl") or artist.get("picture_big"),
             album=album.get("title") or "",
             year=(r.get("release_date") or album.get("release_date") or "")[:4],
             attribution_url=r.get("link"),
@@ -538,8 +561,12 @@ def find_audio_candidate(track: Track, allow_alternate: bool = False) -> Optiona
 
 
 def find_image_candidates(track: Track) -> list[Candidate]:
-    """All matching candidates that carry imagery, best-provider-first, so the
-    caller can take album art from one and an artist photo from another.
+    """All matching candidates that carry cover art, best-provider-first, so the
+    caller can offer sleeves from several providers rather than one.
+
+    Release artwork only. Artist photos are deliberately not sourced: they are
+    press/agency images licensed separately from the recording, and they are
+    what draws an automated image claim first.
 
     Unlike audio, imagery tolerates an alternate version: when the exact
     version isn't in any catalog the track still needs something on screen, and
@@ -549,7 +576,7 @@ def find_image_candidates(track: Track) -> list[Candidate]:
     out = []
     for _name, search in IMAGE_PROVIDERS:
         for cand in search(track):
-            if not (cand.artwork_url or cand.artist_image_url):
+            if not cand.artwork_url:
                 continue
             if candidate_matches(track, cand, allow_alternate=True):
                 out.append(cand)
