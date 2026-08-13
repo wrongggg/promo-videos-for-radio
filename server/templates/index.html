@@ -663,8 +663,17 @@
                     <!-- Radio shows only for now. Events were in this line before the
                          product had anything event-shaped in it: no lineup, no date, no
                          venue, and a tracklist is the wrong input for one. Claiming the
-                         use case ahead of supporting it sets up the wrong expectation. -->
-                    <p class="subtitle">Music showcase reel for your radio show, ready to share.</p>
+                         use case ahead of supporting it sets up the wrong expectation.
+
+                         What the line sells is the design and the speed, and the input is
+                         the user's own tracklist -- a factual record of what they aired.
+                         It deliberately does not offer the music. "Music showcase reel"
+                         did: it framed somebody else's catalogue as the thing being
+                         handed over, which is both untrue (the design is the product) and
+                         the exact expression Grokster treats as evidence that a tool was
+                         built to be used for infringement. Keep every marketing surface
+                         pointed at the show. -->
+                    <p class="subtitle">A promo video for your radio show, designed from your tracklist.</p>
                 </div>
             </div>
         </div>
@@ -716,7 +725,11 @@
 
             <div class="form-group">
                 <label>Tracklist <span class="label-note">— one per line, as <strong>Artist - Title</strong>, artist first</span></label>
-                <textarea id="tracklistInput" name="tracklist" required placeholder="Four Tet - Baby&#10;Bicep - Glue&#10;Overmono - So U Kno"></textarea>
+                <!-- The placeholder demonstrates the format and nothing else. It named
+                     three real records before, which read as a suggestion of what to put
+                     in the box rather than as a spec for how to type it -- the same
+                     reason the subtitle above no longer offers the music. -->
+                <textarea id="tracklistInput" name="tracklist" required placeholder="Artist - Title&#10;Artist - Title&#10;Artist - Title"></textarea>
             </div>
 
             <div class="form-group">

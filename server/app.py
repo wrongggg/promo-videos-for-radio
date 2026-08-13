@@ -1078,7 +1078,7 @@ def _run_render_stage(job_id):
 # each reachable from the site's navigation rather than buried. LAST_UPDATED is
 # a constant so the date reflects when the wording actually changed, not when
 # the container last restarted.
-LEGAL_LAST_UPDATED = "31 July 2026"
+LEGAL_LAST_UPDATED = "13 August 2026"
 
 # The published catalogue. Paddle's review compares the prices shown here
 # against the live Paddle catalogue, so these two must not drift: change a
