@@ -329,6 +329,20 @@
 
         .uploads-box { margin-top: 20px; display: none; }
 
+        /* The audio gate is the only screen that stops until the user acts, so when a
+           row actually is a request it is drawn as one: pulled to the top of the
+           column, boxed, and in the accent. Rows that fetch their own preview keep the
+           plain heading -- nothing is being asked for there, and dressing progress up
+           as a chore is how a callout stops being read. */
+        #uploadsBox.needs-you {
+            margin-top: 0; margin-bottom: 22px; padding: 14px 16px;
+            border: 1px solid var(--accent); border-radius: 14px;
+            background: rgba(214,51,108,0.06);
+        }
+        #uploadsBox.needs-you > label { color: var(--accent); }
+        .uploads-sub { display: none; font-size: 12.5px; color: var(--text-muted); margin: 2px 0 12px; }
+        #uploadsBox.needs-you .uploads-sub { display: block; }
+
         /* Shown the instant a review screen is asked for, so the working column changes
            immediately rather than sitting on the old screen until the data lands. */
         .prep { display: none; margin-top: 20px; }
@@ -678,6 +692,18 @@
             </div>
         </div>
 
+        <!-- First thing in the column, above the form and above any prep skeleton.
+             This is the one gate that cannot clear itself: the job sits parked until
+             every row here has a file or is skipped. Below the skeleton it fell off
+             the bottom of the screen on a longer tracklist, while the shimmer above
+             it went on saying work was in progress -- so people waited on a screen
+             that was waiting on them. -->
+        <div class="uploads-box" id="uploadsBox">
+            <label id="uploadsLabel">Some tracks need an audio file</label>
+            <div class="uploads-sub" id="uploadsSub">Nothing renders until each track below has a file or is skipped.</div>
+            <div id="uploadRows"></div>
+        </div>
+
         <form id="startForm">
             <div class="row identity">
                 <div class="form-group">
@@ -837,11 +863,6 @@
             <div id="prepRows"></div>
         </div>
 
-        <div class="uploads-box" id="uploadsBox">
-            <label id="uploadsLabel">Some tracks need an audio file</label>
-            <div id="uploadRows"></div>
-        </div>
-
         <div class="uploads-box" id="storyBox">
             <div class="story-head">
                 <span class="story-headline" id="storyHeadline"></span>
@@ -933,6 +954,11 @@ let lastTheme = null;
 // cents. Picking your own tracks is the deliberate alternative, not the starting point.
 let selectionMode = "auto";
 let activeUploadRows = {};
+// Scrolled to once per gate: the audio box sits at the top of the column, but the
+// column may well be scrolled past it when the job parks -- a story or a track list
+// was on screen a moment ago. Declared up here with the other job state, not beside
+// the function that reads it, so the poll can never touch it before it exists.
+let uploadsScrolled = false;
 
 function setActive(container, value) {
     container.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.value === value));
@@ -1434,11 +1460,18 @@ function pollStatus() {
 
             if (job.status === "awaiting_uploads" && job.needs_upload.length) {
                 uploadsBox.style.display = "block";
+                // The skeleton has to go, not just lose its place in the column: while
+                // the job is parked here nothing is being looked up, and a shimmering
+                // list above the request is what made this look like a wait rather
+                // than a question.
+                hidePrep();
                 renderUploadRows(job.needs_upload);
             } else {
                 uploadsBox.style.display = "none";
+                uploadsBox.classList.remove("needs-you");
                 Object.values(activeUploadRows).forEach((r) => r.remove());
                 activeUploadRows = {};
+                uploadsScrolled = false;
             }
 
             // prepActive covers the stretch between asking for a screen and it being
@@ -1562,6 +1595,7 @@ function showPrep(title, sub, rows, shape) {
     ["storyBox", "tracksBox", "uploadsBox"].forEach((id) => {
         document.getElementById(id).style.display = "none";
     });
+    document.getElementById("uploadsBox").classList.remove("needs-you");
     box.style.display = "block";
     showWorkingView("gate");
 }
@@ -1891,14 +1925,31 @@ document.getElementById("saveThemeBtn").addEventListener("click", function () {
         });
 });
 
+// Derived from the rows on screen rather than from the poll payload, because a row
+// whose catalog fetch fails is handed back to the user mid-flight: the server still
+// thinks it is fetching, and the difference between "preparing" and "waiting on you"
+// is the whole point of the callout.
+function syncUploadsPrompt() {
+    const box = document.getElementById("uploadsBox");
+    const waiting = Object.values(activeUploadRows)
+        .filter((r) => r.dataset.manual === "1").length;
+
+    // The count is the message. "Some tracks" left people scanning a long list for
+    // which ones, and reads the same whether one row is pending or nine.
+    document.getElementById("uploadsLabel").textContent = waiting
+        ? `${waiting} track${waiting === 1 ? "" : "s"} need${waiting === 1 ? "s" : ""} an audio file`
+        : "Preparing audio";
+    box.classList.toggle("needs-you", waiting > 0);
+
+    if (waiting && !uploadsScrolled) {
+        uploadsScrolled = true;
+        box.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+}
+
 function renderUploadRows(needsUpload) {
     const uploadRows = document.getElementById("uploadRows");
     const seenKeys = new Set();
-
-    // Only call it a chore if some row actually is one. When every pending track has
-    // a catalog preview this box is a progress indicator, not a request.
-    document.getElementById("uploadsLabel").textContent =
-        needsUpload.every((u) => u.fetch_url) ? "Preparing audio" : "Some tracks need an audio file";
 
     needsUpload.forEach((u) => {
         const key = `${u.artist}|||${u.title}`;
@@ -1911,6 +1962,9 @@ function renderUploadRows(needsUpload) {
         const row = document.createElement("div");
         row.className = "upload-row";
         row.dataset.index = u.index;
+        // Only a row with no catalog preview is a request as it stands. fetchPreview
+        // flips this when it gives up, uploadAudio and skipUpload clear it.
+        row.dataset.manual = u.fetch_url ? "" : "1";
         row.innerHTML = `<span class="upload-track">${u.artist} - ${u.title}</span>
             <span class="upload-status"></span>
             <input type="file" accept="audio/*">
@@ -1931,6 +1985,8 @@ function renderUploadRows(needsUpload) {
             delete activeUploadRows[key];
         }
     });
+
+    syncUploadsPrompt();
 }
 
 // The page fetches the catalog preview itself and posts the bytes back. Both
@@ -1964,10 +2020,14 @@ function fetchPreview(row, url) {
             pollStatus();
         })
         .catch(() => {
-            // Hand the row back to the user rather than failing the job.
+            // Hand the row back to the user rather than failing the job -- and say so
+            // at the top of the box, since this is the moment a progress indicator
+            // silently turns into something the job is waiting on.
             picker.style.display = "";
             skip.style.display = "";
             status.textContent = "Couldn't load it — pick a file";
+            row.dataset.manual = "1";
+            syncUploadsPrompt();
         });
 }
 
@@ -1984,12 +2044,19 @@ function uploadAudio(row, file) {
         .then((data) => {
             if (data.error) throw new Error(data.error);
             status.textContent = "Uploaded";
+            // Drop out of the count now rather than at the next poll, so the last
+            // upload doesn't leave the callout claiming a track is still missing.
+            row.dataset.manual = "";
+            syncUploadsPrompt();
             pollStatus();
         })
         .catch((err) => {
+            // Back into the count: a failed upload is a row the job is still parked on.
             status.textContent = "Failed — try again";
             row.querySelector("input").disabled = false;
             row.querySelector(".skip-btn").disabled = false;
+            row.dataset.manual = "1";
+            syncUploadsPrompt();
         });
 }
 
@@ -2002,6 +2069,8 @@ function skipUpload(row) {
         .then((res) => res.json())
         .then((data) => {
             if (data.error) throw new Error(data.error);
+            row.dataset.manual = "";
+            syncUploadsPrompt();
             pollStatus();
         })
         .catch((err) => {
@@ -2011,6 +2080,8 @@ function skipUpload(row) {
             status.textContent = err.message ? `Failed — ${err.message}` : "Failed — try again";
             row.querySelector("input").disabled = false;
             row.querySelector(".skip-btn").disabled = false;
+            row.dataset.manual = "1";
+            syncUploadsPrompt();
         });
 }
 
