@@ -528,8 +528,16 @@
         }
         .tagline-count { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-align: right; }
         .tagline-count.over { color: #d6336c; }
-        .tracks-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+        .tracks-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
         .tracks-actions button.primary { width: auto; flex: 1; margin-top: 0; }
+        /* Full-width above the button rather than beside it: it rides the sticky bar, and
+           a message that pushes the button narrower moves the thing it is explaining. */
+        .gate-note {
+            display: none; flex: 1 0 100%; margin: 0; order: -1;
+            font-size: 12.5px; line-height: 1.45; color: var(--text-muted);
+        }
+        .gate-note.on { display: block; }
+        .gate-note.bad { color: var(--accent); font-weight: 600; }
 
         /* The action rides the column instead of sitting at the bottom of a form
            nobody has scrolled to. Sticky, not fixed: it belongs to the working
@@ -932,8 +940,15 @@
         <div class="uploads-box" id="tracksBox">
             <label>Covers &amp; taglines <span class="label-note">— the line shows under the title in the video</span></label>
             <div id="trackRows"></div>
+            <!-- The note sits with the button, not in the preview column where render
+                 errors go: this is about a control in this column, and under 900px that
+                 column is off the bottom of the page entirely. A disabled primary button
+                 with nothing beside it is what turned a failed POST into "it's broken and
+                 won't say why". -->
             <div class="tracks-actions">
-                <button type="button" class="primary" id="tracksConfirmBtn">Generate Video Now</button>
+                <p class="gate-note" id="tracksNote" role="status"></p>
+                <button type="button" class="primary" id="tracksConfirmBtn"
+                        aria-describedby="tracksNote">Generate Video Now</button>
             </div>
         </div>
     </div>
@@ -1389,16 +1404,44 @@ document.getElementById("backBtn").addEventListener("click", () => {
     if (currentJobId) fetch(`/cancel/${currentJobId}`, { method: "POST" }).catch(() => {});
     if (pollInterval) clearInterval(pollInterval);
     currentJobId = null;
+    closeGates();
+    resetGateButtons();
+    showWorkingView("form");
+    document.getElementById("statusLine").classList.remove("on");
+});
+
+// Every gate screen down, and the state that decides whether one gets rebuilt with it.
+function closeGates() {
     ["storyBox", "tracksBox", "uploadsBox"].forEach((id) => {
         document.getElementById(id).style.display = "none";
     });
+    const uploadsBox = document.getElementById("uploadsBox");
+    uploadsBox.classList.remove("needs-you");
+    uploadsScrolled = false;
     hidePrep();
     tracksRendered = false;
     renderedStoryRev = -1;
-    showWorkingView("form");
-    document.getElementById("submitBtn").disabled = false;
-    document.getElementById("statusLine").classList.remove("on");
-});
+}
+
+// Every button that commits a gate, back to how the markup ships it.
+//
+// These buttons are static markup: renderTrackRows and renderStory fill the screens
+// around them but never recreate them, so a disable outlives the job that caused it,
+// the next job, and Start Over -- only a reload cleared it. One failed click could
+// therefore leave Generate dead for the whole life of the page, which is the shape
+// of the bug that was reported. Anything that begins a new job resets them here
+// rather than remembering which one it touched.
+function resetGateButtons() {
+    ["submitBtn", "tracksConfirmBtn", "storyGenerateBtn", "storyReviewBtn"].forEach((id) => {
+        document.getElementById(id).disabled = false;
+    });
+    // Retell is the exception, and disabled is its ship state: it commits a choice
+    // that hasn't been made yet on a fresh screen. syncRetell turns it on once an
+    // alternate is selected, so enabling it here would only be undone -- after
+    // briefly offering a button that does nothing.
+    document.getElementById("retellBtn").disabled = true;
+    tracksNote("");
+}
 
 // The working column shows exactly one thing at a time: the form, or the screen that
 // has replaced it. The preview column is only ever for the finished video.
@@ -1419,11 +1462,17 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
     const spinner = document.getElementById("spinner");
     const statusLine = document.getElementById("statusLine");
 
+    // A new job starts with every gate button live again, not just this one: the
+    // others are static markup that a previous attempt may have left disabled, and
+    // nothing downstream would have re-enabled them.
+    resetGateButtons();
     btn.disabled = true;
     previewPanel.style.display = "block";
     uploadsBox.style.display = "none";
+    uploadsBox.classList.remove("needs-you");
     document.getElementById("uploadRows").innerHTML = "";
     activeUploadRows = {};
+    uploadsScrolled = false;
     downloadBox.style.display = "none";
     saveThemeBox.style.display = "none";
     document.getElementById("errorBox").style.display = "none";
@@ -1477,7 +1526,15 @@ function pollStatus() {
             if (!job.status) {
                 clearInterval(pollInterval);
                 statusLine.classList.remove("on");
-                btn.disabled = false;
+                // This return jumps the code that hides the gate screens, so whichever
+                // one was up stayed up: a story or cover screen with live-looking
+                // buttons, wired to a job that no longer exists. Every click on it
+                // fails silently. Put the form back instead -- starting again is the
+                // only thing left to do, and it is what the buttons would have to
+                // reach for anyway.
+                closeGates();
+                resetGateButtons();
+                showWorkingView("form");
                 showRenderError(job.error === "not your job"
                     ? "This job belongs to a different browser session."
                     : "This job is no longer on the server (it restarted). Please start again.");
@@ -1551,6 +1608,16 @@ function pollStatus() {
                     tracksRendered = true;
                     renderTrackRows(job.track_choices);
                 }
+                // The screen says the job is still waiting on this button, so the button
+                // is live -- whatever left it disabled. confirmTracks disables it and only
+                // re-enables in its .catch(), and fetch does not reject on a 4xx: an error
+                // body ran the success path instead, hid this screen, and the next poll
+                // put it back with a dead button and nothing to explain it. The story
+                // branch above has always healed itself this way; this one didn't.
+                // The note is deliberately left alone -- it is the only thing on screen
+                // saying what went wrong, and clearing it on a 2s poll would take the
+                // explanation away a moment after it appeared.
+                document.getElementById("tracksConfirmBtn").disabled = false;
                 hidePrep();
             } else if (job.status !== "awaiting_tracks") {
                 tracksBox.style.display = "none";
@@ -1884,9 +1951,22 @@ function renderTrackRows(rows) {
     });
 }
 
+// The line under the Generate button. Empty text clears it; bad marks it as a
+// failure rather than progress.
+function tracksNote(text, bad) {
+    const note = document.getElementById("tracksNote");
+    const btn = document.getElementById("tracksConfirmBtn");
+    note.textContent = text || "";
+    note.classList.toggle("on", !!text);
+    note.classList.toggle("bad", !!text && !!bad);
+    // Same words on hover, for the pointer that arrives at the button first.
+    if (text) btn.title = text; else btn.removeAttribute("title");
+}
+
 function confirmTracks() {
     const btn = document.getElementById("tracksConfirmBtn");
     btn.disabled = true;
+    tracksNote("Sending your choices…");
     const lines = {};
     document.querySelectorAll("#trackRows .cover-row").forEach((row) => {
         lines[row.dataset.index] = row.querySelector(".tagline-input").value.slice(0, MAX_TAGLINE);
@@ -1896,10 +1976,23 @@ function confirmTracks() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ covers: coverPicks, lines: lines,
                                dropped: [...droppedTracks] }),
-    }).then((r) => r.json()).then(() => {
+    }).then((r) => r.json()).then((res) => {
+        // fetch only rejects on a network failure, so a 403 or a 404 arrives here
+        // looking exactly like success. Hiding this screen and polling on an error
+        // body is what dropped the user back onto the same screen with a disabled
+        // button and no explanation anywhere on the page.
+        if (res && res.error) {
+            btn.disabled = false;
+            tracksNote(`Couldn't start the render — ${res.error}. Try again.`, true);
+            return;
+        }
+        tracksNote("");
         document.getElementById("tracksBox").style.display = "none";
         pollStatus();
-    }).catch(() => { btn.disabled = false; });
+    }).catch(() => {
+        btn.disabled = false;
+        tracksNote("Couldn't reach the server — check your connection and try again.", true);
+    });
 }
 
 function escapeHtml(s) {
