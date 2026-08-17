@@ -530,6 +530,46 @@
         .tagline-count.over { color: #d6336c; }
         .tracks-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
         .tracks-actions button.primary { width: auto; flex: 1; margin-top: 0; }
+
+        /* The action rides the column instead of sitting at the bottom of a form
+           nobody has scrolled to. Sticky, not fixed: it belongs to the working
+           column, so it never floats over the preview and never outlives the screen
+           that owns it -- a screen with nothing below the fold doesn't pin at all.
+           Full-bleed into the panel's 32px padding so content passes under an opaque
+           bar rather than beside a half-covered one; the panel's own radius clips it.
+           Two rows, one rule: the form's Generate pair and the cover screen's confirm
+           are the same button on two screens, and the cover list is the longest thing
+           in the app. */
+        .submit-actions, .tracks-actions {
+            position: sticky; bottom: 0; z-index: 4;
+            margin-left: -32px; margin-right: -32px; margin-bottom: -32px;
+            padding: 16px 32px 32px;
+            /* A fixed fade, not a percentage: the covers bar grows a message line above
+               its button, and a proportional fade put that text in the translucent part
+               with a track row reading through it. Fractionally more opaque than
+               --glass-strong for the same reason -- at 0.85 a cover row was legible
+               through the one line explaining why the button under it didn't work. */
+            background: linear-gradient(to bottom, rgba(255,255,255,0) 0, rgba(255,255,255,0.94) 16px);
+            backdrop-filter: blur(10px) saturate(140%);
+            -webkit-backdrop-filter: blur(10px) saturate(140%);
+            border-radius: 0 0 28px 28px;
+        }
+        /* Only where the panel is its own scrollport. A sticky element is constrained
+           to the scroll container's *content* box, so bottom:0 there parks the bar 32px
+           up and lets the form scroll through the panel's bottom padding beneath it;
+           the negative offset drops it flush with the inner edge, where its own bottom
+           padding fills that band. Below 900px the page is the scroller, no padding is
+           in play, and the same offset would push a third of the bar off-screen. */
+        @media (min-width: 900px) {
+            .submit-actions, .tracks-actions { bottom: -32px; }
+        }
+        /* Stacked, the pair is ~150px -- a fifth of a phone screen given over to a bar,
+           on the one layout where the page scrolls as a whole and the form ends at the
+           buttons anyway. The cover screen's single button stays pinned: that list is
+           long enough to bury it either way. */
+        @media (max-width: 440px) {
+            .submit-actions { position: static; }
+        }
         button.linkish {
             background: none; border: none; padding: 0; cursor: pointer;
             color: var(--text-muted); font-size: 12px; text-decoration: underline;
