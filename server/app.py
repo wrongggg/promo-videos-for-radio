@@ -228,6 +228,28 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
     )
 
 
+# Who may hold operator rights when they arrive by Google rather than by token.
+# ADMIN_EMAIL is the name to set going forward; INITIAL_ADMIN_EMAIL is read as a
+# fallback because it is already set in the hosted environment and was left behind,
+# unread by anything, when the old sign-in was removed. Comma-separated for a second
+# pair of hands later.
+ADMIN_EMAILS = {
+    accounts.normalize(e)
+    for e in (os.environ.get("ADMIN_EMAIL") or os.environ.get("INITIAL_ADMIN_EMAIL") or "").split(",")
+    if accounts.normalize(e)
+}
+
+
+def admin_sign_in_available() -> bool:
+    """Whether the operator can get in with Google.
+
+    Deliberately not gated on PAYWALL the way sign_in_available() is. That gate is
+    about accounts -- an account holds credits, and with the paywall off there is
+    nothing to hold. Operator rights are not an account and are wanted exactly when
+    the paywall is off, which is when there is no other door at all."""
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and ADMIN_EMAILS)
+
+
 def sign_in_available() -> bool:
     """Whether to offer Google sign-in -- checked by the UI and by both auth routes,
     so hiding the button also closes the door rather than just painting over it.
@@ -1175,7 +1197,11 @@ def auth_google():
 
 @app.route("/auth/google/callback")
 def auth_google_callback():
-    if not sign_in_available():
+    # One callback for both doors, so Google only ever needs the one redirect URI
+    # registered. Which door was used is carried in the session, set just before the
+    # redirect out, and read exactly once here.
+    admin_login = session.pop("admin_login", False)
+    if not (sign_in_available() or (admin_login and admin_sign_in_available())):
         return "Google sign-in isn't configured.", 503
     try:
         token = oauth.google.authorize_access_token()
@@ -1194,6 +1220,18 @@ def auth_google_callback():
     # promo and then signed in to export it would lose the job they came to buy.
     # Only the operator flag is dropped, since that is granted per browser by a
     # token and shouldn't silently ride along into a different account.
+    if admin_login:
+        # An operator arriving by Google gets operator and nothing else: no account is
+        # opened, because an account is a credit balance and this is not about credits.
+        # A verified email that is not on the list is answered exactly like a stranger
+        # at /admin -- 404, not "wrong account" -- so the door does not announce
+        # itself to whoever else happens to be signed into Google on this machine.
+        if accounts.normalize(email) not in ADMIN_EMAILS:
+            session.pop("post_login_redirect", None)
+            abort(404)
+        access.grant_operator()
+        return redirect(session.pop("post_login_redirect", None) or url_for("index"))
+
     session.pop("operator", None)
     session["account"] = accounts.normalize(email)
     session.permanent = True
@@ -1355,6 +1393,27 @@ def index():
         account=current_account(),
         sign_in_available=sign_in_available(),
     )
+
+
+@app.route("/admin")
+def admin():
+    """Where the operator signs in, and the URL you would guess.
+
+    Sign-in used to be a token in a URL (/o/<ADMIN_TOKEN>), which is still there and
+    still works. It has one failure mode that costs a whole afternoon: with the token
+    unset -- as it was in production -- every /o/ URL 404s, the header strip that holds
+    Analytics and Exit operator mode never appears, and there is nothing anywhere on
+    the site to indicate that operator mode exists or how to reach it.
+
+    A 404 for everyone else: an anonymous visitor should not learn that this route is
+    here, which is the same reasoning as admin_required."""
+    if access.is_operator():
+        return redirect(url_for("analytics_page"))
+    if not admin_sign_in_available():
+        abort(404)
+    session["admin_login"] = True
+    session["post_login_redirect"] = url_for("analytics_page")
+    return oauth.google.authorize_redirect(url_for("auth_google_callback", _external=True))
 
 
 @app.route("/analytics")

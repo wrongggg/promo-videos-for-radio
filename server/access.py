@@ -9,8 +9,13 @@ What sign-in was also quietly providing, re-homed here:
 
   * Operator privileges (AI curation, web search, the Opus model, custom and
     saved themes, unlimited manual tracks, /analytics, and the operator-only
-    YouTube source). Now granted by visiting /o/<ADMIN_TOKEN> once, which sets
-    a signed, long-lived session flag.
+    YouTube source). Granted two ways, both setting the same signed, long-lived
+    session flag: signing in at /admin with an address on app.ADMIN_EMAILS, or
+    visiting /o/<ADMIN_TOKEN> once. The token came first and still works; it is
+    the fallback for a deployment with no Google credentials. Neither is a
+    fallback to "open" -- with both unconfigured there is no operator mode at
+    all, which is how the hosted app spent a while with /analytics unreachable
+    and nothing on the site admitting operator mode existed.
   * A stable id for analytics. Now a random per-browser id in the session
     rather than an email address -- the numbers still work, nobody is named.
   * A cap on cost. With no login there is no gate at all in front of a job
