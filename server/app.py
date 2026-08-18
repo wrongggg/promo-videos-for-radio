@@ -1060,7 +1060,10 @@ def _run_render_stage(job_id):
             f.write(html)
 
         job["status"] = "rendering"
-        _log(job, "Rendering MP4 (this can take a minute)...")
+        # "a minute" was the local number. On the hosted box -- shared vCPU, software
+        # WebGL -- it is minutes, and a promise the render misses by 3x is what turns an
+        # ordinary wait into "it's stuck".
+        _log(job, "Rendering MP4 (this takes a few minutes)...")
         output_rel = _composition_path(os.path.join(job["job_dir"], "output.mp4"))
         compose.render_video(PROJECT_DIR, output_rel, quality="standard",
                              composition=composition_name)
@@ -1400,6 +1403,19 @@ def start():
         }), 429
 
     tracklist_text = request.form.get("tracklist", "")
+    # Answered before a job exists rather than left to the parsing stage. A tracklist
+    # whose lines carry no artist/title separator ("Bicep Glue" rather than
+    # "Bicep - Glue") parses to nothing, and failing inside the job puts the answer in
+    # the render error box -- the preview column, which under 900px is off the bottom
+    # of the page. This is a question about the field the user is looking at, so it
+    # goes back as a 400 the form can show beside that field. The message names the
+    # shape rather than the count: "no tracks found" is what the renderer says, and it
+    # reads as the app failing to find something rather than as a line to fix.
+    if not parse_tracklist(tracklist_text):
+        return jsonify({
+            "error": "None of those lines look like a track. Put one track per line, "
+                     "with a dash between artist and title -- \"Bicep - Glue\"."
+        }), 400
     # Show name and episode label are both optional and neither has a default.
     # There is no sensible generic value for a name that sits on screen for the
     # whole promo, and substituting one behind the user's back is worse than

@@ -346,6 +346,11 @@
         /* Shown the instant a review screen is asked for, so the working column changes
            immediately rather than sitting on the old screen until the data lands. */
         .prep { display: none; margin-top: 20px; }
+        /* What stands in the working column while a job runs. Same voice as .prep -- both
+           answer "what is happening right now" -- but it is not a skeleton: nothing is
+           being prepared for this column, the work is in the preview column. */
+        .working-box { display: none; margin-top: 4px; }
+        .working-box .prep-sub { margin-bottom: 0; }
         .prep-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
         .prep-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
         .prep-row { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--border-soft); }
@@ -382,7 +387,10 @@
         .back-link:hover { color: var(--text); }
         /* Side by side and weighted, so they read as the same destination reached two
            ways. Stacked full-width they looked like unrelated buttons. */
-        .submit-actions { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; }
+        /* Wrapping, like .tracks-actions: the message line above the buttons is a
+           full-basis flex item, and without wrap it would share the row and squeeze
+           the pair it is explaining. */
+        .submit-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-top: 8px; }
         .submit-actions button.primary { flex: 1 1 0; margin-top: 0; }
         /* The shortcut, sized like one. It keeps a real button's affordance -- border,
            background, full height -- but takes only what its label needs (flex-grow 0),
@@ -897,6 +905,11 @@
                  the DOM because it is the form's default submit (Enter in the tracklist
                  should not silently open a review screen); CSS order puts it second. -->
             <div class="submit-actions review-first">
+                <!-- Same idiom as the covers screen: anything wrong with the form is
+                     answered in the form's own column, not in the preview column where
+                     render errors go. A job that never started has nothing to say about
+                     a video, and under 900px that column is off the bottom of the page. -->
+                <p class="gate-note" id="startNote" role="status"></p>
                 <button type="submit" class="secondary" id="submitBtn"
                         title="Render straight away, without showing me what it chose.">Just generate</button>
                 <button type="submit" class="primary" id="reviewBtn"
@@ -904,6 +917,19 @@
             </div>
             <input type="hidden" name="review_first" id="reviewFirstInput" value="">
         </form>
+
+        <!-- The form is for starting a job. While one is running it is the wrong thing to
+             be looking at -- both its buttons are disabled, and on a phone it is three
+             thousand pixels of it between you and the render. This takes its place until
+             the job ends, on both layouts: on two columns the left column stops showing a
+             form nobody can submit, and stacked, the render moves up to where the form was.
+             The "keep this page open" line is the honest one -- the job id lives only in
+             this page, so a reload strands a render that is still running. -->
+        <div class="working-box" id="workingBox">
+            <div class="prep-title">Making your video</div>
+            <div class="prep-sub" id="workingSub">This takes a few minutes. Keep this page
+                open — the video appears here when it's done.</div>
+        </div>
 
         <div class="prep" id="prepBox">
             <div class="prep-title" id="prepTitle"></div>
@@ -1144,6 +1170,9 @@ if (PERSONAL_MODE) {
 
 let trackLoadTimer = null;
 document.getElementById("tracklistInput").addEventListener("input", () => {
+    // The note is about the text as it was submitted; the moment it is being edited it
+    // is stale, and leaving it up reads as the fix not having worked.
+    startNote("");
     if (selectionMode !== "manual") return;
     clearTimeout(trackLoadTimer);
     trackLoadTimer = setTimeout(loadTrackCheckboxes, 500);
@@ -1432,7 +1461,7 @@ function closeGates() {
 // of the bug that was reported. Anything that begins a new job resets them here
 // rather than remembering which one it touched.
 function resetGateButtons() {
-    ["submitBtn", "tracksConfirmBtn", "storyGenerateBtn", "storyReviewBtn"].forEach((id) => {
+    ["submitBtn", "reviewBtn", "tracksConfirmBtn", "storyGenerateBtn", "storyReviewBtn"].forEach((id) => {
         document.getElementById(id).disabled = false;
     });
     // Retell is the exception, and disabled is its ship state: it commits a choice
@@ -1443,11 +1472,39 @@ function resetGateButtons() {
     tracksNote("");
 }
 
-// The working column shows exactly one thing at a time: the form, or the screen that
-// has replaced it. The preview column is only ever for the finished video.
+// Every route into a render ends with the form back on screen: the gate screens hide
+// themselves and the poll, seeing a status that isn't a gate, puts the form back. On two
+// columns that is right -- the render is in the other column the whole time. Stacked
+// under 900px it means pressing Generate hands back the screen you started on, with the
+// render a full page below the fold: reported as "it goes back to the first screen", and
+// as a video that never appears. So the first tick of actual work scrolls the render into
+// view. Once per job -- after that the page belongs to whoever is scrolling it.
+let renderRevealed = false;
+function revealRender() {
+    if (renderRevealed) return;
+    renderRevealed = true;
+    if (window.matchMedia("(min-width: 900px)").matches) return;
+    const panel = document.getElementById("previewPanel");
+    // Only when it actually is out of sight. Hiding the form usually brings the render
+    // up on its own, and scrolling a page that is already showing it would just push
+    // the line explaining the wait off the top.
+    if (panel.getBoundingClientRect().top < window.innerHeight) return;
+    // Instant, not smooth: this follows a button press, so a jump reads as the press
+    // having worked, and animating three thousand pixels is a long time to watch the
+    // form you just left slide past.
+    panel.scrollIntoView({ block: "start" });
+}
+
+// The working column shows exactly one thing at a time: the form, a gate screen, or --
+// while a job is running and there is nothing to decide -- a line saying so.
+//
+// Start over belongs to the gates alone. It abandons the job, which is the right offer
+// when the job is parked waiting on a decision and the wrong one to put under someone's
+// thumb halfway through a render they are paying for.
 function showWorkingView(which) {
     document.getElementById("startForm").style.display = which === "form" ? "" : "none";
-    document.getElementById("backBtn").style.display = which === "form" ? "none" : "block";
+    document.getElementById("workingBox").style.display = which === "working" ? "block" : "none";
+    document.getElementById("backBtn").style.display = which === "gate" ? "block" : "none";
 }
 
 document.getElementById("startForm").addEventListener("submit", function (e) {
@@ -1466,7 +1523,13 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
     // others are static markup that a previous attempt may have left disabled, and
     // nothing downstream would have re-enabled them.
     resetGateButtons();
+    // Both, not just the one that was pressed. The form comes back the moment a job
+    // leaves its gate, so during a render the other Generate button was still live --
+    // one tap started a second job, currentJobId moved to it, and the render being
+    // waited on finished into a page that was no longer watching it.
     btn.disabled = true;
+    document.getElementById("reviewBtn").disabled = true;
+    renderRevealed = false;
     previewPanel.style.display = "block";
     uploadsBox.style.display = "none";
     uploadsBox.classList.remove("needs-you");
@@ -1499,14 +1562,49 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
         formData.set("theme_value", rawMode.slice(6));
     }
 
+    startNote("");
     fetch("/start", { method: "POST", body: formData })
         .then((res) => res.json())
         .then((data) => {
+            // fetch does not reject on 4xx, so a refused start -- an unparseable
+            // tracklist, the daily cap -- used to arrive here as a body with no job_id.
+            // Polling a job id of undefined returns on its first line, so the spinner
+            // turned until the page was reloaded and the reason was never shown: the
+            // "stuck generating" report. The reason goes back to the form.
+            if (!data.job_id) {
+                startFailed(data.error || "The server wouldn't start that render.");
+                return;
+            }
             currentJobId = data.job_id;
             if (pollInterval) clearInterval(pollInterval);
             pollInterval = setInterval(pollStatus, 2000);
-        });
+        })
+        .catch(() => startFailed("Couldn't reach the server -- check your connection and try again."));
 });
+
+// A note in the working column, beside the buttons it is about. Mirrors tracksNote.
+function startNote(text, bad) {
+    const note = document.getElementById("startNote");
+    note.textContent = text || "";
+    note.classList.toggle("on", !!text);
+    note.classList.toggle("bad", !!text && !!bad);
+}
+
+// No job was created, so there is nothing to poll and nothing to cancel: undo the
+// screen the submit handler put up and hand the form back with the reason on it.
+function startFailed(reason) {
+    if (pollInterval) clearInterval(pollInterval);
+    currentJobId = null;
+    hidePrep();
+    closeGates();
+    resetGateButtons();
+    showWorkingView("form");
+    document.getElementById("submitBtn").disabled = false;
+    document.getElementById("spinner").style.display = "none";
+    document.getElementById("statusLine").classList.remove("on");
+    startNote(reason, true);
+    document.getElementById("startNote").scrollIntoView({ block: "center" });
+}
 
 function pollStatus() {
     if (!currentJobId) return;
@@ -1576,7 +1674,15 @@ function pollStatus() {
             // poll would put the form back a second after it was replaced.
             const gated = prepActive || ["awaiting_story", "awaiting_tracks",
                                          "awaiting_uploads", "restorying"].includes(job.status);
-            showWorkingView(gated ? "gate" : "form");
+            // Not a gate and not over: the job is working, and the form has nothing to
+            // offer until it stops. Reported on both layouts as "hitting Generate puts
+            // me back on the first screen" -- which is exactly what it did, because the
+            // form is what the poll put back the moment a job left its gate.
+            const busy = !gated && !["done", "failed"].includes(job.status);
+            showWorkingView(gated ? "gate" : (busy ? "working" : "form"));
+            // After showWorkingView, never before it: the view decides the page height,
+            // and measuring first meant scrolling a page that was about to grow.
+            if (busy) revealRender();
 
             const storyBox = document.getElementById("storyBox");
             if (job.status === "awaiting_story" && job.story) {
@@ -1630,6 +1736,7 @@ function pollStatus() {
                 clearInterval(pollInterval);
                 statusLine.classList.remove("on");
                 btn.disabled = false;
+                document.getElementById("reviewBtn").disabled = false;
                 downloadBox.style.display = "block";
                 document.getElementById("downloadLink").href = `/download/${currentJobId}`;
                 document.getElementById("previewPlayer").src = `/preview/${currentJobId}`;
@@ -1643,6 +1750,17 @@ function pollStatus() {
                 clearInterval(pollInterval);
                 spinner.style.display = "none";
                 btn.disabled = false;
+                document.getElementById("reviewBtn").disabled = false;
+                // This is the last poll, so whatever is on screen now stays there. The
+                // gating above ran on a prepActive that hidePrep has since cleared, so a
+                // job that died while a review screen (or its skeleton) was up left the
+                // working column showing nothing at all -- form hidden, skeleton hidden,
+                // no way back but Start Over, and the error itself down in the preview
+                // column, off the bottom of a phone. Put the form back, the way the
+                // dead-job branch above does.
+                closeGates();
+                resetGateButtons();
+                showWorkingView("form");
                 showRenderError(job.error);
             }
         })

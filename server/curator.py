@@ -1219,6 +1219,11 @@ def restory(picks: list[dict], previous_story: dict, instruction: str,
             {
                 "role": "user",
                 "content": RESTORY_PROMPT.format(
+                    # Same anchor the curate and expand prompts pass. RESTORY_PROMPT
+                    # opens with "Today's date is {today}" and this call did not supply
+                    # it, so every retell raised KeyError('today') before reaching the
+                    # model -- the whole feature, not an edge case.
+                    today=datetime.date.today().isoformat(),
                     sequence=sequence_text,
                     headline=previous_story.get("headline", ""),
                     body=previous_story.get("body", ""),
