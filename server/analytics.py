@@ -81,8 +81,38 @@ def record_api_call(job_id: str | None, label: str, usage, model: str | None = N
     return cost
 
 
-def record_visit(route: str, visitor_id: str):
-    _append({"type": "visit", "route": route, "visitor_id": visitor_id})
+# Substrings that mark a request as automated. Matched case-insensitively against the
+# user agent. Deliberately a short list of the honest ones plus the tools that turn up in
+# this app's logs -- there is no winning an arms race here, and the point is not a perfect
+# count. It is that "unique visitors" stopped meaning "people".
+#
+# The mechanism that inflated it: owner_id() mints a fresh random id for any request with
+# no session cookie and records a visit against it. A browser keeps that cookie and stays
+# one visitor forever; a scanner that discards cookies is a brand new visitor every single
+# time it probes "/". The hosted log is thick with them -- /wp-admin/install.php,
+# /phpinfo, /.env, /wp-login.php -- and each of those runs also pulls "/" at least once.
+_BOT_UA_MARKERS = (
+    "bot", "crawler", "spider", "slurp", "curl", "wget", "python-requests",
+    "scrapy", "httpclient", "go-http-client", "libwww", "headlesschrome",
+    "facebookexternalhit", "phantomjs", "masscan", "zgrab", "nmap",
+)
+
+
+def looks_automated(user_agent: str | None) -> bool:
+    """A missing user agent counts as automated: every real browser sends one."""
+    ua = (user_agent or "").strip().lower()
+    if not ua:
+        return True
+    return any(marker in ua for marker in _BOT_UA_MARKERS)
+
+
+def record_visit(route: str, visitor_id: str, user_agent: str | None = None):
+    # The agent is stored, not judged, so the rule above can be changed later and
+    # re-applied to everything already recorded. Rows written before this existed have
+    # no "ua" at all, which is why summary() reports how many it could not classify
+    # rather than quietly counting them as people.
+    _append({"type": "visit", "route": route, "visitor_id": visitor_id,
+             "ua": (user_agent or "")[:200]})
 
 
 def record_job_start(job_id: str, route: str, visitor_id: str):
@@ -129,10 +159,29 @@ def summary() -> dict:
     downloads = [e for e in events if e.get("type") == "download"]
     job_dones = [e for e in events if e.get("type") == "job_done"]
 
-    unique_visitors = {e["visitor_id"] for e in visits if e.get("visitor_id")}
+    # People, machines, and the ones we cannot say. A visitor counts as a person only if
+    # every visit it made carried a browser-shaped agent; one automated hit is enough to
+    # disqualify an id, since a scanner never reuses one anyway. "Unclassified" is the
+    # backlog: rows written before the agent was recorded at all.
+    people, machines, unknown = set(), set(), set()
+    for e in visits:
+        vid = e.get("visitor_id")
+        if not vid:
+            continue
+        if "ua" not in e:
+            unknown.add(vid)
+        elif looks_automated(e.get("ua")):
+            machines.add(vid)
+        else:
+            people.add(vid)
+    people -= machines
+    unknown -= machines | people
+
+    unique_visitors = people
     total_generations = len(job_starts)
     total_cost = sum(e.get("cost_usd", 0) for e in api_calls)
     downloaded_jobs = {e["job_id"] for e in downloads if e.get("job_id")}
+    visitor_by_job = {j["job_id"]: j.get("visitor_id") for j in job_starts if j.get("job_id")}
 
     cost_by_job: dict[str, float] = {}
     for e in api_calls:
@@ -154,8 +203,19 @@ def summary() -> dict:
         if start_ts is not None:
             duration_by_job[jid] = max(0.0, done["ts"] - start_ts)
 
-    finished_durations = list(duration_by_job.values())
+    # Only jobs that finished, and only the ones that finished by producing a video.
+    # A failed job's duration is not a run time: a review screen nobody came back to is
+    # marked failed by the expiry sweep, and that sweep is driven by /status polls and by
+    # the next render rather than by a clock -- so an abandoned gate can sit for hours and
+    # then record every one of them as though it had been working. That is what put the
+    # average at nearly two hours.
+    done_job_ids = {jid for jid, d in done_by_job.items() if d.get("job_status") == "done"}
+    finished_durations = [d for jid, d in duration_by_job.items() if jid in done_job_ids]
     avg_duration = sum(finished_durations) / len(finished_durations) if finished_durations else 0
+    # Cost per video delivered, not per job started. Blending in the ones that died in
+    # the first second, and the manual-selection jobs that call no model at all, answers
+    # a question nobody asked and always answers it low.
+    delivered_cost = sum(cost_by_job.get(jid, 0) for jid in done_job_ids)
 
     recent_jobs = []
     for j in job_starts[-25:][::-1]:
@@ -170,16 +230,24 @@ def summary() -> dict:
             "downloaded": jid in downloaded_jobs,
             "status": done.get("job_status") if done else "in progress",
             "duration": _format_duration(duration) if duration is not None else "—",
+            # Who ran it. The id is a random per-browser token, not a name -- there are
+            # no accounts here -- but it is stable, so the same id down several rows is
+            # one person's afternoon and that is the thing worth seeing.
+            "visitor": visitor_by_job.get(jid) or "—",
         })
 
     return {
         "unique_visitors": len(unique_visitors),
+        "bot_visitors": len(machines),
+        "unclassified_visitors": len(unknown),
         "total_visits": len(visits),
         "total_generations": total_generations,
+        "videos_delivered": len(done_job_ids),
         "total_cost_usd": round(total_cost, 4),
-        "avg_cost_per_generation_usd": round(total_cost / total_generations, 4) if total_generations else 0,
+        "avg_cost_per_generation_usd": round(delivered_cost / len(done_job_ids), 4) if done_job_ids else 0,
         "videos_downloaded": len(downloaded_jobs),
-        "download_rate": round(len(downloaded_jobs) / total_generations, 2) if total_generations else 0,
+        # Of the videos that exist to download, not of every job ever started.
+        "download_rate": round(len(downloaded_jobs) / len(done_job_ids), 2) if done_job_ids else 0,
         "avg_duration": _format_duration(avg_duration) if finished_durations else "—",
         "recent_jobs": recent_jobs,
     }

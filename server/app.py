@@ -1361,7 +1361,7 @@ def kzradio():
     on their own promo. Nothing else follows from a station session -- no
     operator perks, no AI curation, no YouTube source (see access.py) -- and
     the token route stays for anyone who wants the unguessable version."""
-    analytics.record_visit("/kzradio", access.visitor_id())
+    analytics.record_visit("/kzradio", access.visitor_id(), request.headers.get("User-Agent"))
     access.grant_station()
     return redirect(url_for("index"))
 
@@ -1374,7 +1374,7 @@ def revoke_operator():
 
 @app.route("/")
 def index():
-    analytics.record_visit("/", access.visitor_id())
+    analytics.record_visit("/", access.visitor_id(), request.headers.get("User-Agent"))
     # personal_mode gates operator-only UI: custom/saved theme tools, AI
     # curation, quality mode and the Analytics link. Pop Lock curation
     # personalization is separate -- it keys off the show name (see /start).

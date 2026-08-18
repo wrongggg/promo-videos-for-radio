@@ -31,6 +31,10 @@
         font-size: 11px; color: var(--text-muted); text-transform: uppercase;
         letter-spacing: 0.4px; margin-top: 6px;
     }
+    /* Every number on this page counts something slightly narrower than its own name.
+       The line saying which is worth more than the extra tile it costs. */
+    .card .note { font-size: 10.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
     .panel { background: var(--glass); border: 1px solid var(--border); border-radius: 18px; padding: 8px 20px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
@@ -49,26 +53,46 @@
     <p class="subtitle">Local tally of app usage. Cost is estimated from actual Anthropic API usage at the rate for whichever model ran each call.</p>
 
     <div class="cards">
-        <div class="card"><div class="value">{{ stats.unique_visitors }}</div><div class="label">Unique visitors</div></div>
-        <div class="card"><div class="value">{{ stats.total_visits }}</div><div class="label">Page visits</div></div>
-        <div class="card"><div class="value">{{ stats.total_generations }}</div><div class="label">Videos generated</div></div>
+        <div class="card">
+            <div class="value">{{ stats.unique_visitors }}</div><div class="label">People</div>
+            <div class="note">{{ stats.bot_visitors }} bots excluded{% if stats.unclassified_visitors %},
+                {{ stats.unclassified_visitors }} unclassified{% endif %}</div>
+        </div>
+        <div class="card"><div class="value">{{ stats.total_visits }}</div><div class="label">Page visits</div>
+            <div class="note">everything, bots included</div></div>
+        <div class="card">
+            <div class="value">{{ stats.total_generations }}</div><div class="label">Jobs started</div>
+            <div class="note">{{ stats.videos_delivered }} produced a video</div>
+        </div>
         <div class="card"><div class="value">${{ "%.2f"|format(stats.total_cost_usd) }}</div><div class="label">Total API cost</div></div>
-        <div class="card"><div class="value">${{ "%.3f"|format(stats.avg_cost_per_generation_usd) }}</div><div class="label">Avg cost / video</div></div>
+        <div class="card">
+            <div class="value">${{ "%.3f"|format(stats.avg_cost_per_generation_usd) }}</div>
+            <div class="label">Avg cost / video</div>
+            <div class="note">per video delivered</div>
+        </div>
         <div class="card"><div class="value">{{ stats.videos_downloaded }}</div><div class="label">Videos downloaded</div></div>
-        <div class="card"><div class="value">{{ (stats.download_rate * 100) | round | int }}%</div><div class="label">Download rate</div></div>
-        <div class="card"><div class="value">{{ stats.avg_duration }}</div><div class="label">Avg run time</div></div>
+        <div class="card"><div class="value">{{ (stats.download_rate * 100) | round | int }}%</div><div class="label">Download rate</div>
+            <div class="note">of videos delivered</div></div>
+        <div class="card"><div class="value">{{ stats.avg_duration }}</div><div class="label">Avg run time</div>
+            <div class="note">successful renders only</div></div>
     </div>
 
     <h2>Recent generations</h2>
     <div class="panel">
         {% if stats.recent_jobs %}
         <table>
-            <thead><tr><th>When</th><th>Route</th><th>Status</th><th>Run time</th><th>Cost</th><th>Downloaded</th></tr></thead>
+            <thead><tr><th>When</th><th>Job</th><th>User</th><th>Status</th><th>Run time</th><th>Cost</th><th>Downloaded</th></tr></thead>
             <tbody>
                 {% for j in stats.recent_jobs %}
                 <tr>
                     <td>{{ j.when }}</td>
-                    <td>{{ j.route }}</td>
+                    <!-- Short enough to scan a column of, full value on hover and select:
+                         the id is what ties a tester's screenshot to the renderer log. -->
+                    <td class="mono" title="{{ j.job_id }}">{{ j.job_id[:8] }}</td>
+                    <!-- Not a name. There are no accounts; this is the random per-browser
+                         token the job is owned by, prefixed operator: or anon:. Its use is
+                         that it is stable -- the same value on five rows is one person. -->
+                    <td class="mono" title="{{ j.visitor }}">{{ j.visitor.split(":")[-1][:8] }}{% if j.visitor.startswith("operator:") %} ★{% endif %}</td>
                     <td class="{{ 'yes' if j.status == 'done' else ('no' if j.status == 'in progress' else 'bad') }}">{{ j.status }}</td>
                     <td>{{ j.duration }}</td>
                     <td>${{ "%.4f"|format(j.cost_usd) }}</td>
