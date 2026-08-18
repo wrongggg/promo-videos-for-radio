@@ -1432,6 +1432,8 @@ document.getElementById("backBtn").addEventListener("click", () => {
     // side rather than left holding its render directory until the timeout.
     if (currentJobId) fetch(`/cancel/${currentJobId}`, { method: "POST" }).catch(() => {});
     if (pollInterval) clearInterval(pollInterval);
+    pollInterval = null;
+    forgetJob();
     currentJobId = null;
     closeGates();
     resetGateButtons();
@@ -1576,8 +1578,8 @@ document.getElementById("startForm").addEventListener("submit", function (e) {
                 return;
             }
             currentJobId = data.job_id;
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(pollStatus, 2000);
+            rememberJob(data.job_id);
+            startPolling();
         })
         .catch(() => startFailed("Couldn't reach the server -- check your connection and try again."));
 });
@@ -1594,6 +1596,8 @@ function startNote(text, bad) {
 // screen the submit handler put up and hand the form back with the reason on it.
 function startFailed(reason) {
     if (pollInterval) clearInterval(pollInterval);
+    pollInterval = null;
+    forgetJob();
     currentJobId = null;
     hidePrep();
     closeGates();
@@ -1606,9 +1610,83 @@ function startFailed(reason) {
     document.getElementById("startNote").scrollIntoView({ block: "center" });
 }
 
+// --- surviving a reload, a locked screen, an app switch ------------------
+//
+// A render is three to four minutes. Nothing about this page used to last that long:
+// currentJobId was a variable and nothing else, so closing the tab, reloading, or
+// letting a phone freeze it -- mobile browsers throttle background timers and then
+// stop them -- ended the job as far as the page was concerned, while the server
+// carried on and finished the video into nobody. Three finished promos were lost that
+// way in one afternoon, each abandoned about halfway through its own render.
+//
+// localStorage rather than sessionStorage: a session store dies with the tab, which is
+// one of the two ways this went wrong.
+const JOB_KEY = "promoJobId";
+// Jobs live in server memory and gates expire in under an hour, so an id older than
+// this cannot be worth anything and reattaching to it would only produce a puzzling
+// message on an unrelated visit days later.
+const JOB_MEMORY_MS = 3 * 60 * 60 * 1000;
+
+function rememberJob(id) {
+    try { localStorage.setItem(JOB_KEY, JSON.stringify({ id: id, at: Date.now() })); }
+    catch (e) { /* private mode, quota -- the job just doesn't survive a reload */ }
+}
+
+function forgetJob() {
+    try { localStorage.removeItem(JOB_KEY); } catch (e) {}
+}
+
+function storedJob() {
+    let raw;
+    try { raw = localStorage.getItem(JOB_KEY); } catch (e) { return null; }
+    if (!raw) return null;
+    try {
+        const saved = JSON.parse(raw);
+        if (!saved.id || Date.now() - (saved.at || 0) > JOB_MEMORY_MS) { forgetJob(); return null; }
+        return saved.id;
+    } catch (e) { forgetJob(); return null; }
+}
+
+function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(pollStatus, 2000);
+}
+
+// True only while the page is picking a job back up on load. The dead-job branch in
+// pollStatus is written for a job that vanished while someone watched it, and says so;
+// as a greeting on an ordinary visit it would be alarming and meaningless, since the
+// usual reason is simply that the server restarted hours ago.
+let reattaching = false;
+
+function reattachToJob() {
+    const id = storedJob();
+    if (!id) return;
+    reattaching = true;
+    currentJobId = id;
+    document.getElementById("previewPanel").style.display = "block";
+    document.getElementById("spinner").style.display = "block";
+    document.getElementById("statusText").textContent = "Picking up where you left off...";
+    // One poll decides everything: still working and it resumes, already finished and
+    // the video is simply there, gone and the page quietly goes back to normal.
+    pollStatus().then(() => {
+        reattaching = false;
+        if (currentJobId) startPolling();
+    });
+}
+
+// A phone that locks mid-render freezes this page's timers, and unfreezing them is not
+// guaranteed. Coming back to the tab polls immediately and puts the interval back,
+// which is the difference between returning to a finished video and returning to the
+// status line it was showing when the screen went dark.
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !currentJobId) return;
+    pollStatus();
+    startPolling();
+});
+
 function pollStatus() {
-    if (!currentJobId) return;
-    fetch(`/status/${currentJobId}`)
+    if (!currentJobId) return Promise.resolve();
+    return fetch(`/status/${currentJobId}`)
         .then((res) => res.json())
         .then((job) => {
             const statusText = document.getElementById("statusText");
@@ -1623,6 +1701,8 @@ function pollStatus() {
             // below, and the page spins forever with no idea anything went wrong.
             if (!job.status) {
                 clearInterval(pollInterval);
+                pollInterval = null;
+                forgetJob();
                 statusLine.classList.remove("on");
                 // This return jumps the code that hides the gate screens, so whichever
                 // one was up stayed up: a story or cover screen with live-looking
@@ -1633,6 +1713,15 @@ function pollStatus() {
                 closeGates();
                 resetGateButtons();
                 showWorkingView("form");
+                spinner.style.display = "none";
+                // Nothing to report when we were only checking whether an old job was
+                // still there. The job being gone is the ordinary case on a later visit,
+                // and announcing a restart to someone who has just arrived explains a
+                // thing that did not happen to them.
+                if (reattaching) {
+                    currentJobId = null;
+                    return;
+                }
                 showRenderError(job.error === "not your job"
                     ? "This job belongs to a different browser session."
                     : "This job is no longer on the server (it restarted). Please start again.");
@@ -1734,6 +1823,11 @@ function pollStatus() {
 
             if (job.status === "done") {
                 clearInterval(pollInterval);
+                pollInterval = null;
+                // Kept until it finishes, then let go: the page is showing the video,
+                // so a reload from here should give back the form, not re-announce a
+                // render that already landed.
+                forgetJob();
                 statusLine.classList.remove("on");
                 btn.disabled = false;
                 document.getElementById("reviewBtn").disabled = false;
@@ -1748,6 +1842,8 @@ function pollStatus() {
                 }
             } else if (job.status === "failed") {
                 clearInterval(pollInterval);
+                pollInterval = null;
+                forgetJob();
                 spinner.style.display = "none";
                 btn.disabled = false;
                 document.getElementById("reviewBtn").disabled = false;
@@ -2343,6 +2439,10 @@ function skipUpload(row) {
 // submit handler, so the form fell back to a native GET.
 loadThemes();
 refreshLogoPreview();
+// Last, and after the form has been restored: a render still running belongs on screen
+// ahead of the form that started it, and reattachToJob decides which of the two the
+// page shows.
+reattachToJob();
 
 // --- credits ---------------------------------------------------------------
 // The export note exists so "Download MP4" never surprises anyone: a button
